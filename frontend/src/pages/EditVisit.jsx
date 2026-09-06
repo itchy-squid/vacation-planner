@@ -4,7 +4,6 @@ import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import { TextArea } from "../components/forms/TextField";
 import { textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
-import TagPicker from "../components/forms/TagPicker";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import MapPlaceholder from "../components/planner/MapPlaceholder";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
@@ -164,14 +163,6 @@ export default function EditVisit() {
               </div>
             </div>
           </div>
-
-          <TagPicker
-            selectedTags={pin.tags}
-            onToggle={(tag) => {
-              const has = pin.tags.includes(tag);
-              patch({ tags: has ? pin.tags.filter((t) => t !== tag) : [...pin.tags, tag] });
-            }}
-          />
 
           <TextArea label="Notes for the group" value={pin.notes} onChange={(e) => patch({ notes: e.target.value })} />
 
