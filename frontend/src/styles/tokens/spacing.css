@@ -1,0 +1,34 @@
+:root {
+  /* Mobile density: this system is fine-grained on purpose. Odd values (7, 9, 11, 13)
+     are intentional — do not snap them to a 4px grid. */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 7px;
+  --space-5: 9px;
+  --space-6: 10px;
+  --space-7: 12px;
+  --space-8: 14px;
+  --space-9: 16px;
+  --space-10: 20px;
+  --space-11: 24px;
+  --space-12: 34px;
+
+  --gutter-screen: 16px;   /* card rail inside a 402px phone */
+  --gutter-text:   20px;   /* headings sit 4px wider than cards */
+
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-pill: 999px;
+
+  --hit-min: 44px;         /* never smaller, per platform minimum */
+  --row-h: 46px;
+  --btn-h: 46px;
+  --btn-h-sm: 40px;
+}

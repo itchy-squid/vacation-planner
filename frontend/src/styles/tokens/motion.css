@@ -1,0 +1,11 @@
+:root {
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;   /* tint / border changes on tap */
+  --dur-base: 200ms;   /* selection, borders, shadows */
+  --dur-move: 300ms;   /* map pins growing, dimming, re-colouring */
+  --dur-route: 350ms;  /* route segments redrawing between sets */
+
+  --transition-select: border-color var(--dur-base), box-shadow var(--dur-base);
+  --transition-pin: all var(--dur-move) var(--ease-standard);
+  --transition-route: all var(--dur-route) var(--ease-standard);
+}

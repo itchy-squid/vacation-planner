@@ -1,0 +1,71 @@
+:root {
+  /* ---- base: cool grey stone ---- */
+  --stone-0:   #ffffff;
+  --stone-50:  #f9f8fa;
+  --stone-100: #f4f3f5;
+  --stone-150: #eceaee;
+  --stone-200: #e6e4e9;
+  --stone-250: #dcdae0;
+  --stone-300: #c9c6d0;
+  --stone-500: #8c8a95;
+  --stone-550: #a3a1ab;
+  --stone-600: #6f6d78;
+  --stone-700: #4a4852;
+  --stone-900: #1b1a1f;
+
+  /* ---- inverse / dark surfaces ---- */
+  --ink-900: #1b1a1f;
+  --ink-800: #26252b;
+  --ink-700: #33323a;
+  --ink-600: #3b3a43;
+
+  /* ---- accents: one hue family per meaning, matched lightness+chroma ---- */
+  --plum-600: #8f4478;   /* oklch(.55 .13 330) — decisions, votes, the live thing */
+  --plum-700: #6f3159;
+  --plum-tint: rgba(143, 68, 120, 0.06);
+  --plum-tint-strong: rgba(143, 68, 120, 0.13);
+
+  --teal-600: #3d8a9c;   /* oklch(.55 .11 200) — geography, regions, confirmed */
+  --teal-tint: rgba(61, 138, 156, 0.22);
+  --teal-line: rgba(61, 138, 156, 0.45);
+  --teal-50:  #eef2f3;
+
+  --moss-600: #6f7f3c;   /* oklch(.55 .11 110) — user drafts (Set C) */
+  --rust-600: #b4553f;   /* oklch(.55 .12 40)  — tight / at-risk numbers */
+
+  /* ---- contributor identity tints (desaturated, never used for status) ---- */
+  --who-1: #c9c6d0;
+  --who-2: #b9c8cd;
+  --who-3: #d3c1cd;
+  --who-4: #cdcabf;
+  --who-more: #eae8ec;
+
+  /* ---- semantic aliases: use these in components ---- */
+  --surface-page:    var(--stone-100);
+  --surface-card:    var(--stone-0);
+  --surface-inset:   var(--stone-50);
+  --surface-sunken:  var(--stone-150);
+  --surface-inverse: var(--ink-900);
+  --surface-inverse-raised: var(--ink-800);
+
+  --text-primary:   var(--stone-900);
+  --text-secondary: var(--stone-600);
+  --text-muted:     var(--stone-500);
+  --text-faint:     var(--stone-550);
+  --text-on-dark:   #f2f1f4;
+  --text-on-dark-muted: rgba(255, 255, 255, 0.55);
+  --text-on-accent: #ffffff;
+
+  --accent:        var(--plum-600);
+  --accent-press:  var(--plum-700);
+  --accent-quiet:  var(--plum-tint);
+  --geo:           var(--teal-600);
+  --geo-quiet:     var(--teal-50);
+  --draft:         var(--moss-600);
+  --warn:          var(--rust-600);
+
+  --hairline:      rgba(27, 26, 31, 0.09);
+  --border:        rgba(27, 26, 31, 0.12);
+  --border-strong: rgba(27, 26, 31, 0.14);
+  --border-on-dark: rgba(255, 255, 255, 0.13);
+}

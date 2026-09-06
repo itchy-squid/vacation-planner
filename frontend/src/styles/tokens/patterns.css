@@ -1,0 +1,11 @@
+:root {
+  /* Two literal placeholder textures. They are part of the visual language, not
+     scaffolding: photos and map tiles are user-supplied and honestly marked. */
+  --pattern-photo: repeating-linear-gradient(45deg, #e4e2e8 0 8px, #edecf0 8px 16px);
+  --pattern-photo-sm: repeating-linear-gradient(45deg, #e4e2e8 0 5px, #edecf0 5px 10px);
+  --pattern-photo-dark: repeating-linear-gradient(45deg, #33323a 0 6px, #3b3a43 6px 12px);
+  --pattern-map:
+    repeating-linear-gradient(0deg, #e2e5e6 0 1px, #eaedee 1px 24px),
+    repeating-linear-gradient(90deg, #e2e5e6 0 1px, #eaedee 1px 24px);
+  --pattern-ruled-out: repeating-linear-gradient(45deg, #e6e4e9 0 3px, #f4f3f5 3px 6px);
+}

@@ -1,0 +1,106 @@
+name: Deploy
+
+# Builds the backend image, pushes it to ACR, deploys/updates the Azure
+# infrastructure via Bicep, points the Container App at the new image, and
+# deploys the built frontend to Azure Static Web Apps.
+#
+# One-time setup this workflow assumes (see infra/README.md for the manual
+# steps and infra/main.bicep for what gets provisioned):
+#   - Resource group already exists.
+#   - Repo secrets: AZURE_CREDENTIALS (a service principal with Contributor
+#     on the resource group — `az ad sp create-for-rbac --sdk-auth`),
+#     AZURE_RESOURCE_GROUP, POSTGRES_ADMIN_PASSWORD,
+#     ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_TENANT_ID (optional —
+#     leave the Entra ones unset until Easy Auth is set up),
+#     AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App resource,
+#     after the first Bicep deploy creates it).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+
+jobs:
+  infra:
+    runs-on: ubuntu-latest
+    outputs:
+      backend-fqdn: ${{ steps.deploy.outputs.backendUrl }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy infrastructure (Bicep)
+        id: deploy
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          template: infra/main.bicep
+          parameters: >
+            infra/main.parameters.json
+            postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+            entraClientId=${{ secrets.ENTRA_CLIENT_ID }}
+            entraClientSecret=${{ secrets.ENTRA_CLIENT_SECRET }}
+            entraTenantId=${{ secrets.ENTRA_TENANT_ID }}
+
+  backend:
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build and push backend image
+        run: |
+          az acr build \
+            --registry "${{ secrets.ACR_NAME }}" \
+            --image "vacation-planner-backend:${{ github.sha }}" \
+            --image "vacation-planner-backend:latest" \
+            backend
+
+      - name: Point the Container App at the new image
+        run: |
+          az containerapp update \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.CONTAINER_APP_NAME }}" \
+            --image "${{ secrets.ACR_NAME }}.azurecr.io/vacation-planner-backend:${{ github.sha }}"
+
+  frontend:
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend/dist
+          skip_app_build: true

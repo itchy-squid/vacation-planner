@@ -1,0 +1,122 @@
+/* Base reset + shared utility classes used across the app. Design language:
+   see design_system/readme.md in the handoff for the full rationale. */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font: var(--type-body);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: var(--tabular);
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul, ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+h1, h2, h3, h4, p {
+  margin: 0;
+}
+
+/* Mono uppercase eyebrow/caption — used constantly: "IDEATION", "6/6 VOTED",
+   "TUE OCT 7". Never below 10px, and 10px is mono-only. */
+.mono-caption {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--micro-tracking);
+  color: var(--text-muted);
+}
+
+.mono-data {
+  font: var(--type-data);
+  font-feature-settings: var(--tabular);
+}
+
+.mono-data-sm {
+  font: var(--type-data-sm);
+  font-feature-settings: var(--tabular);
+}
+
+.serif-place {
+  font-family: var(--font-serif);
+  font-weight: 400;
+}
+
+/* App shell: mimics the 402x874 iPhone content box the designs were built
+   at, and centers on wider (desktop) viewports without pretending to be a
+   responsive app — this is a mobile-web product. */
+.app-viewport {
+  max-width: 430px;
+  min-height: 100%;
+  margin: 0 auto;
+  background: var(--surface-page);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 431px) {
+  .app-viewport {
+    min-height: 100vh;
+    box-shadow: 0 0 0 1px var(--hairline), var(--shadow-raised);
+  }
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.screen-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hit-target {
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}

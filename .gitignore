@@ -1,0 +1,57 @@
+# ---- Frontend (React + Vite) ----
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/vite.config.js.timestamp-*.mjs
+frontend/coverage/
+frontend/*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Backend (Python / FastAPI / uvicorn) ----
+backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+backend/.venv/
+backend/venv/
+backend/env/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/build/
+backend/dist/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+secrets/
+
+# ---- Database ----
+*.sqlite3
+*.db
+/pgdata/
+
+# ---- Azure ----
+.azure/
+
+# ---- Docker ----
+*.pid
+
+# ---- Editors / OS ----
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Design handoff (kept locally, not for repo history) ----
+.claude/

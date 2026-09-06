@@ -1,0 +1,43 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Lint
+        run: uv run ruff check app
+
+      - name: Import sanity check (against a throwaway SQLite DB)
+        run: |
+          DATABASE_URL="sqlite:///$(pwd)/.ci.db" uv run python -c "from app.main import app; assert app.routes"
+
+      - name: Alembic migration check (against a throwaway SQLite DB)
+        run: |
+          rm -f .ci.db
+          DATABASE_URL="sqlite:///$(pwd)/.ci.db" uv run alembic upgrade head
+
+      - name: Run tests
+        run: uv run pytest -q
+        continue-on-error: true # no tests exist yet — see root README "Next steps"
