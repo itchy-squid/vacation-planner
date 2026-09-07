@@ -21,7 +21,7 @@ const OUTLIER = { cx: 320, cy: 520, count: 2 };
 
 export default function LassoMap() {
   const navigate = useNavigate();
-  const { pins } = usePlannerState();
+  const { pins, trip } = usePlannerState();
   const pinsByRegion = (region) => Object.values(pins).filter((p) => p.region === region);
   const [lassoedRegion, setLassoedRegion] = useState("Xiaoliuqiu");
   const lassoedPins = pinsByRegion(lassoedRegion);
@@ -130,7 +130,7 @@ export default function LassoMap() {
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14 }}>
           <div style={{ flex: 1 }}>
-            <Button variant="primary" onClick={() => navigate("/schedule/5")}>Make these days 5–6</Button>
+            <Button variant="primary" onClick={() => navigate(`/trips/${trip.id}/schedule/5`)}>Make these days 5–6</Button>
           </div>
           <button style={{ width: 46, height: 46, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-strong)", background: "var(--surface-card)", flex: "none", fontSize: 18 }}>⋯</button>
         </div>

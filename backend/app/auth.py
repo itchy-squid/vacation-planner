@@ -114,7 +114,7 @@ def get_current_principal(request: Request) -> Principal:
 
 
 def get_current_contributor(
-    trip_id: str,
+    trip_id: int,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> Contributor:

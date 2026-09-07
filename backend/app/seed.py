@@ -113,8 +113,18 @@ def seed_taiwan(db: Session) -> None:
         dict(id_="p24", title="Sicao Green Tunnel", short="Green Tunnel", place="Annan, Tainan", region="Tainan", lat=23.0447, lng=120.1289, duration_minutes=50, cost_cents=900, who="jae", notes="", link="maps.app/sicao-green-tunnel", tags=["outdoors", "kid-ok"]),
     ]
 
+    # Logistics/activity items backing the schedule's non-contested blocks
+    # below (Day 1 arrival, Day 5's ferry + snorkel) — real pins like any
+    # other, just tagged "logistics" so they read as travel legs rather
+    # than optional attractions.
+    logistics = [
+        dict(id_="p25", title="Arrive Taipei · check in", short="Arrival", place="Taoyuan Airport / Da'an, Taipei", region="Taipei", lat=None, lng=None, duration_minutes=60, cost_cents=0, notes="", link="", tags=["logistics"]),
+        dict(id_="p26", title="Ferry to Xiaoliuqiu", short="Ferry", place="Donggang", region="Xiaoliuqiu", lat=None, lng=None, duration_minutes=75, cost_cents=0, notes="", link="", tags=["logistics"]),
+        dict(id_="p27", title="Turtle snorkel, Meirendong", short="Turtle snorkel", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=150, cost_cents=4500, who="jae", notes="", link="", tags=["swim", "outdoors"]),
+    ]
+
     pins_by_local_id: dict[str, Pin] = {}
-    for spec in xiaoliuqiu + taipei + hualien + tainan:
+    for spec in xiaoliuqiu + taipei + hualien + tainan + logistics:
         local_id = spec.pop("id_")
         pin = _add_pin(db, trip, contributors, **spec)
         pins_by_local_id[local_id] = pin
@@ -163,6 +173,54 @@ def seed_taiwan(db: Session) -> None:
     for key, voter_keys, target_set in [("A", ["jae", "ana", "theo"], set_a), ("B", ["lin", "priya"], set_b)]:
         for voter_key in voter_keys:
             db.add(Vote(block_id=block.id, candidate_set_id=target_set.id, contributor_id=contributors[voter_key].id))
+    db.flush()
+
+    # ---- Every other block on the schedule: single-pin blocks with real
+    # placed/pencilled/empty status, replacing what used to be
+    # frontend/src/data/schedule.js's OTHER_DAY_BLOCKS/DAY5_FIXED_BLOCKS
+    # mock content. A "simple" block is just a one-stop CandidateSet (the
+    # same tables the contested block above uses) — DaySchedule.jsx reads
+    # its title/cost straight off that stop's pin, so there is nothing
+    # schedule-specific to store beyond the block itself. ----
+    def _simple_block(pin: Pin, day_index: int, start_minute: int, end_minute: int, status: BlockStatus) -> Block:
+        b = Block(trip_id=trip.id, day_index=day_index, start_minute=start_minute, end_minute=end_minute, region=pin.region, status=status)
+        db.add(b)
+        db.flush()
+        cs = CandidateSet(block_id=b.id, key="A", label=pin.title, color="var(--accent)", is_draft=False)
+        db.add(cs)
+        db.flush()
+        db.add(CandidateSetStop(candidate_set_id=cs.id, pin_id=pin.id, position=0))
+        return b
+
+    def _empty_block(day_index: int, start_minute: int, region: str) -> Block:
+        b = Block(trip_id=trip.id, day_index=day_index, start_minute=start_minute, end_minute=start_minute + 60, region=region, status=BlockStatus.empty)
+        db.add(b)
+        return b
+
+    p = pins_by_local_id
+    _simple_block(p["p25"], day_index=1, start_minute=780, end_minute=840, status=BlockStatus.placed)
+    _simple_block(p["p9"], day_index=1, start_minute=1080, end_minute=1180, status=BlockStatus.placed)
+
+    _simple_block(p["p8"], day_index=2, start_minute=950, end_minute=1040, status=BlockStatus.placed)
+    _simple_block(p["p13"], day_index=2, start_minute=1140, end_minute=1215, status=BlockStatus.pencilled)
+    _empty_block(day_index=2, start_minute=1230, region="Taipei")
+
+    _simple_block(p["p10"], day_index=3, start_minute=570, end_minute=720, status=BlockStatus.placed)
+    _simple_block(p["p11"], day_index=3, start_minute=900, end_minute=1020, status=BlockStatus.placed)
+
+    _simple_block(p["p14"], day_index=4, start_minute=600, end_minute=690, status=BlockStatus.placed)
+    _empty_block(day_index=4, start_minute=780, region="Taipei")
+
+    _simple_block(p["p26"], day_index=5, start_minute=480, end_minute=555, status=BlockStatus.placed)
+    _simple_block(p["p27"], day_index=5, start_minute=570, end_minute=720, status=BlockStatus.placed)
+
+    _simple_block(p["p7"], day_index=6, start_minute=570, end_minute=615, status=BlockStatus.pencilled)
+    _empty_block(day_index=6, start_minute=720, region="Xiaoliuqiu")
+
+    _simple_block(p["p16"], day_index=7, start_minute=480, end_minute=660, status=BlockStatus.placed)
+    _empty_block(day_index=7, start_minute=780, region="Hualien")
+
+    _empty_block(day_index=8, start_minute=540, region="Hualien")
 
     db.commit()
 

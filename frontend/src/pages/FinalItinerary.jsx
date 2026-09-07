@@ -90,10 +90,10 @@ export default function FinalItinerary() {
               footerNote={`Set ${lockedSetKey} · ${day5Totals.cost === 0 ? "free" : `$${day5Totals.cost} each`} · ${fmtMin(day5Totals.slack)} slack`}
             />
           ) : (
-            <UnfinishedCard label="Day 5" place="Xiaoliuqiu · block still contested" onResume={() => navigate("/schedule/5")} />
+            <UnfinishedCard label="Day 5" place="Xiaoliuqiu · block still contested" onResume={() => navigate(`/trips/${TRIP.id}/schedule/5`)} />
           )}
 
-          <UnfinishedCard label="Days 6–8" place="Hualien · Tainan · 3 blocks still open" onResume={() => navigate("/schedule/6")} />
+          <UnfinishedCard label="Days 6–8" place="Hualien · Tainan · 3 blocks still open" onResume={() => navigate(`/trips/${TRIP.id}/schedule/6`)} />
         </div>
       </div>
     </div>

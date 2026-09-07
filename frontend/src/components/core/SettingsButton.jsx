@@ -1,16 +1,20 @@
 import { useNavigate } from "react-router-dom";
+import { usePlannerState } from "../../state/PlannerContext";
 
 // Persistent way to reach trip settings (name/regions/dates — see
 // pages/TripSettings.jsx) from any of the trip's main screens. Mirrors
 // HomeButton's shape/API since the two are meant to sit side by side.
+// Trip settings is a trip-scoped route (/trips/:tripId/trip-settings —
+// see App.jsx), so this needs the active trip's id, not just "/".
 export default function SettingsButton({ style, size = 36 }) {
   const navigate = useNavigate();
+  const { trip } = usePlannerState();
   return (
     <button
       type="button"
       aria-label="Trip settings"
       className="tap"
-      onClick={() => navigate("/trip-settings")}
+      onClick={() => navigate(`/trips/${trip.id}/trip-settings`)}
       style={{
         width: size,
         height: size,

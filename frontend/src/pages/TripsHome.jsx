@@ -8,9 +8,13 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 
 // Screen 1 — "pick a trip; read its phase at a glance." Handoff README
 // screen 1. "Add trip" opens the new-trip form (see pages/NewTrip.jsx);
-// tapping an "also planning" trip makes it the active one and opens its
-// board (see PlannerContext's OPEN_TRIP). Search is still not wired
-// beyond navigation in this mock-data pass.
+// tapping an "also planning" trip swaps it into the primary trip card
+// (see PlannerContext's OPEN_TRIP) so its overview is visible before the
+// user chooses "Open board" or "Start schedule"/"Open schedule" (label
+// reflects TRIP.phase — "Start schedule" pre-ideation-exit, "Open
+// schedule" once the trip has moved into scheduling/locked) — it does not
+// navigate away from this screen. Search is still not wired beyond
+// navigation in this mock-data pass.
 export default function TripsHome() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
@@ -25,10 +29,15 @@ export default function TripsHome() {
   const CONTRIBUTOR_OVERFLOW_COUNT = contributorOverflowCount;
 
   async function openTrip(tripId) {
+    // Swaps this "also planning" trip into the primary card (OPEN_TRIP
+    // re-derives both `trip` and `otherTrips`, so the former primary trip
+    // reappears in the "also planning" list automatically). Deliberately
+    // stays on this screen instead of navigating — the user sees the
+    // swapped-in trip's overview here and picks "Open board" or "Start
+    // schedule" themselves when ready.
     if (switchingTripId) return; // one switch at a time
     try {
       await dispatch({ type: "OPEN_TRIP", tripId });
-      navigate("/board");
     } catch (err) {
       console.error("open trip failed", err);
     }
@@ -76,8 +85,10 @@ export default function TripsHome() {
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-                <Button variant="primary" onClick={() => navigate("/board")}>Open board</Button>
-                <Button variant="secondary" onClick={() => navigate("/schedule/5")}>Start schedule</Button>
+                <Button variant="primary" onClick={() => navigate(`/trips/${TRIP.id}/board`)}>Open board</Button>
+                <Button variant="secondary" onClick={() => navigate(`/trips/${TRIP.id}/schedule/5`)}>
+                  {TRIP.phase === "ideation" ? "Start schedule" : "Open schedule"}
+                </Button>
               </div>
             </div>
           </div>
@@ -92,7 +103,7 @@ export default function TripsHome() {
                 key={t.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${t.name}`}
+                aria-label={`Switch to ${t.name}`}
                 onClick={() => openTrip(t.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {

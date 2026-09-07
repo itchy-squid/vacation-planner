@@ -21,7 +21,7 @@ export function relativeTime(isoString, now = new Date()) {
   const years = Math.round(days / 365);
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Parses a plain "YYYY-MM-DD" date string (what the API sends for
 // Trip.start_date/end_date — see backend/app/schemas.py TripOut) into
@@ -30,7 +30,7 @@ const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 // `new Date("YYYY-MM-DD")` parses as UTC midnight, which formats a day
 // early in any negative-UTC-offset timezone once passed through local
 // getters — splitting the string sidesteps that entirely.
-function parseISODate(value) {
+export function parseISODate(value) {
   if (!value) return null;
   const [y, m, d] = value.split("-").map(Number);
   if (!y || !m || !d) return null;

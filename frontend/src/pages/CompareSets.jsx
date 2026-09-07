@@ -29,7 +29,7 @@ export default function CompareSets() {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const currentUser = useCurrentUser();
-  const { day5Block, pins, draft, selectedSet, myVoteC } = state;
+  const { trip, day5Block, pins, draft, selectedSet, myVoteC } = state;
 
   const claimedIds = useMemo(
     () => new Set(day5Block ? day5Block.candidateSets.flatMap((s) => s.stopPinIds) : []),
@@ -91,12 +91,12 @@ export default function CompareSets() {
   const votedCount = day5Block ? day5Block.votedCount + (myVoteC && !day5Block.myVoteCandidateSetId ? 1 : 0) : 0;
 
   function openEdit(pinId) {
-    navigate(`/edit/${pinId}?from=compare`);
+    navigate(`/trips/${trip.id}/edit/${pinId}?from=compare`);
   }
 
   function handleLock(key) {
     dispatch({ type: "LOCK_SET", key });
-    navigate("/schedule/5");
+    navigate(`/trips/${trip.id}/schedule/5`);
   }
 
   if (!day5Block) {
@@ -115,7 +115,7 @@ export default function CompareSets() {
             <div style={{ position: "absolute", top: 58, left: 16, right: 16, display: "flex", alignItems: "center", gap: 10, zIndex: 5 }}>
               <button
                 className="tap"
-                onClick={() => navigate("/schedule/5")}
+                onClick={() => navigate(`/trips/${trip.id}/schedule/5`)}
                 style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(255,255,255,.95)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", font: "400 16px var(--font-sans)", color: "var(--text-primary)" }}
               >
                 ‹

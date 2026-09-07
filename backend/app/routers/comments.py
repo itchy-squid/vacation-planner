@@ -12,12 +12,12 @@ router = APIRouter(prefix="/api", tags=["comments"])
 
 
 @router.get("/pins/{pin_id}/comments", response_model=list[CommentOut])
-def list_pin_comments(pin_id: str, db: Session = Depends(get_db)):
+def list_pin_comments(pin_id: int, db: Session = Depends(get_db)):
     return db.scalars(select(Comment).where(Comment.pin_id == pin_id).order_by(Comment.created_at)).all()
 
 
 @router.post("/trips/{trip_id}/comments", response_model=CommentOut, status_code=201)
-def create_comment(trip_id: str, payload: CommentCreate, request: Request, db: Session = Depends(get_db)):
+def create_comment(trip_id: int, payload: CommentCreate, request: Request, db: Session = Depends(get_db)):
     if payload.pin_id:
         pin = db.get(Pin, payload.pin_id)
         if not pin or pin.trip_id != trip_id:

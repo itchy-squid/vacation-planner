@@ -30,7 +30,7 @@ function deriveTitleFromLink(link) {
 export default function NewPin() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
-  const { pins } = usePlannerState();
+  const { pins, trip } = usePlannerState();
 
   const knownRegions = [...new Set(Object.values(pins).map((p) => p.region).filter(Boolean))];
 
@@ -61,7 +61,7 @@ export default function NewPin() {
           tags: [],
         },
       });
-      navigate(`/edit/${pin.id}?from=board`);
+      navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`);
     } catch (err) {
       setError(err.message || "Couldn't add that pin. Try again.");
       setSubmitting(false);
@@ -74,7 +74,7 @@ export default function NewPin() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <HomeButton size={28} />
-            <button onClick={() => navigate("/board")} style={{ font: "500 13px var(--font-sans)", color: "var(--accent)" }}>‹ Cancel</button>
+            <button onClick={() => navigate(`/trips/${trip.id}/board`)} style={{ font: "500 13px var(--font-sans)", color: "var(--accent)" }}>‹ Cancel</button>
           </div>
           <span className="mono-caption">New pin</span>
           <button

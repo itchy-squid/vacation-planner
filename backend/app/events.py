@@ -26,17 +26,17 @@ class _TripChannel:
 
 class EventBus:
     def __init__(self) -> None:
-        self._channels: dict[str, _TripChannel] = defaultdict(_TripChannel)
+        self._channels: dict[int, _TripChannel] = defaultdict(_TripChannel)
 
-    def subscribe(self, trip_id: str) -> asyncio.Queue:
+    def subscribe(self, trip_id: int) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=100)
         self._channels[trip_id].subscribers.add(queue)
         return queue
 
-    def unsubscribe(self, trip_id: str, queue: asyncio.Queue) -> None:
+    def unsubscribe(self, trip_id: int, queue: asyncio.Queue) -> None:
         self._channels[trip_id].subscribers.discard(queue)
 
-    def publish(self, trip_id: str, event: str, data: dict[str, Any]) -> None:
+    def publish(self, trip_id: int, event: str, data: dict[str, Any]) -> None:
         channel = self._channels.get(trip_id)
         if not channel:
             return
@@ -53,7 +53,7 @@ class EventBus:
 bus = EventBus()
 
 
-async def sse_stream(trip_id: str) -> AsyncIterator[str]:
+async def sse_stream(trip_id: int) -> AsyncIterator[str]:
     queue = bus.subscribe(trip_id)
     try:
         yield "event: connected\ndata: {}\n\n"

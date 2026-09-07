@@ -16,9 +16,9 @@ const XIAOLIUQIU_COMPARE_LAYOUT = {
   p7: { cx: 154, cy: 316 },
 };
 
-// Pins are keyed by backend UUID once loaded from the API, not the old
-// mock's short ids ("p1"..."p7") — match on title instead, which is stable
-// sample content either way.
+// Pins are keyed by their real backend id once loaded from the API, not
+// the old mock's short ids ("p1"..."p7") — match on title instead, which
+// is stable sample content either way.
 const TITLE_TO_MOCK_ID = {
   "Vase Rock": "p1",
   "Meirendong tide pools": "p2",

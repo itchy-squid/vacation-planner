@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ContributorOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
+    id: int
     email: str
     display_name: str
     initial: str
@@ -28,7 +28,7 @@ class TripCreate(BaseModel):
 
 class TripOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
+    id: int
     name: str
     region_line: str
     start_date: date | None
@@ -89,8 +89,8 @@ class PinUpdate(BaseModel):
 
 class PinOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
-    trip_id: str
+    id: int
+    trip_id: int
     title: str
     short: str
     place: str
@@ -103,7 +103,7 @@ class PinOut(BaseModel):
     link: str
     tags: list[str]
     photo_url: str | None
-    added_by_id: str | None
+    added_by_id: int | None
     added_at: datetime
     # Included so the frontend can render the availability grid straight off
     # the pin fetch (list or detail) without a second round trip — see
@@ -123,7 +123,7 @@ class CandidateSetStopOut(BaseModel):
 
 
 class CandidateSetOut(BaseModel):
-    id: str
+    id: int
     key: str
     label: str
     color: str
@@ -138,42 +138,42 @@ class CandidateSetOut(BaseModel):
 
 
 class BlockOut(BaseModel):
-    id: str
-    trip_id: str
+    id: int
+    trip_id: int
     day_index: int
     start_minute: int
     end_minute: int
     region: str
     status: str
-    locked_set_id: str | None
+    locked_set_id: int | None
     candidate_sets: list[CandidateSetOut]
     voted_count: int
     contributor_count: int
     # Which set the requesting principal has voted for on this block, if any
     # — lets the frontend show "Voted ✓" without a separate lookup. See
     # app/routers/blocks.py::_block_to_schema.
-    my_vote_candidate_set_id: str | None = None
+    my_vote_candidate_set_id: int | None = None
 
 
 class VoteToggle(BaseModel):
-    candidate_set_id: str
+    candidate_set_id: int
 
 
 class LockRequest(BaseModel):
-    candidate_set_id: str
+    candidate_set_id: int
 
 
 class CommentCreate(BaseModel):
     body: str
-    pin_id: str | None = None
-    candidate_set_id: str | None = None
+    pin_id: int | None = None
+    candidate_set_id: int | None = None
 
 
 class CommentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
+    id: int
     body: str
-    contributor_id: str
-    pin_id: str | None
-    candidate_set_id: str | None
+    contributor_id: int
+    pin_id: int | None
+    candidate_set_id: int | None
     created_at: datetime

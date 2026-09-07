@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api", tags=["events"])
 
 
 @router.get("/trips/{trip_id}/events")
-async def trip_events(trip_id: str):
+async def trip_events(trip_id: int):
     """Server-Sent Events stream for one trip: votes, locks, pin edits, and
     comments all publish here (see app/events.py) so the group sees changes
     without refreshing — the "REST + SSE" answer from project setup.

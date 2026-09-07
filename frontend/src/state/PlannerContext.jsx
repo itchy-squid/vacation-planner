@@ -5,15 +5,12 @@ import { formatDateRange, relativeTime } from "../lib/format";
 
 // Client-side state, now sourced from the real FastAPI + Postgres backend
 // (see root README "Next steps" — this is that next pass). Trip,
-// contributors, pins, and Day 5's contested block all come from the API on
-// mount; only two things stay purely local, because the backend has
-// nothing to persist them to yet:
-//   - "Set C", the current user's in-progress draft grouping (the schema
-//     supports draft CandidateSet rows, but no endpoint creates/edits one
-//     yet — see backend/app/models.py CandidateSet.is_draft)
-//   - the decorative days (1-4, 6-8) and their placed/pencilled blocks,
-//     which were always flavor content, not modeled in the backend at all
-//     (see frontend/src/data/schedule.js)
+// contributors, pins, and every day's blocks (placed/pencilled/empty, plus
+// Day 5's contested block) all come from the API on mount; only one thing
+// stays purely local, because the backend has nothing to persist it to
+// yet: "Set C", the current user's in-progress draft grouping (the schema
+// supports draft CandidateSet rows, but no endpoint creates/edits one yet
+// — see backend/app/models.py CandidateSet.is_draft).
 
 function normalizeContributor(c) {
   return { id: c.id, name: c.display_name, initial: c.initial, tint: c.tint, isOwner: c.is_owner, email: c.email };
@@ -243,7 +240,23 @@ export function PlannerProvider({ children }) {
         if (!trips.length) {
           throw new Error('No trips in the database yet. From backend/, run: uv run python -m app.seed');
         }
-        const initialTrip = trips.find((t) => t.name === "Taiwan") ?? trips[0];
+        // Every trip-scoped route is /trips/:tripId/... (see App.jsx) — a
+        // shared link carries the trip right in the URL, so a fresh load
+        // opens straight into that trip instead of whatever trip happened
+        // to load last. Read via window.location rather than useLocation()
+        // on purpose: this effect is mount-only (deliberately does not
+        // react to in-app navigation — TripsHome's OPEN_TRIP already
+        // handles switching trips while the app is running).
+        const urlMatch = window.location.pathname.match(/^\/trips\/([^/]+)/);
+        const tripIdFromUrl = urlMatch ? urlMatch[1] : null;
+        // Trip ids are plain integers now (not UUID strings — see
+        // backend/app/models.py), but a URL segment is always a string, so
+        // compare as strings rather than `t.id === tripIdFromUrl`.
+        const linkedTrip = tripIdFromUrl ? trips.find((t) => String(t.id) === tripIdFromUrl) : null;
+        if (tripIdFromUrl && !linkedTrip) {
+          throw new Error("That link doesn't match a trip we have — it may have been deleted, or the link is wrong.");
+        }
+        const initialTrip = linkedTrip ?? trips.find((t) => t.name === "Taiwan") ?? trips[0];
         const payload = await loadTripView(initialTrip.id, trips);
         if (cancelled) return;
         dispatch({ type: "LOADED", payload });

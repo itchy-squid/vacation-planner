@@ -120,3 +120,45 @@ h1, h2, h3, h4, p {
   width: 0;
   height: 0;
 }
+
+/* AvailabilityGrid's vertical week marquee (components/planner/
+   AvailabilityGrid.jsx): once a trip runs past three calendar weeks, the
+   week list becomes a scroll region with hover-revealed up/down nudge
+   buttons. Touch devices already have native swipe on that same region,
+   so the buttons would be redundant chrome there — hide them for any
+   coarse (touch-primary) pointer and reveal them only on hover for
+   pointers that actually support it. */
+.week-marquee-nudge {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.week-marquee:hover .week-marquee-nudge {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .week-marquee-nudge {
+    display: none;
+  }
+}
+
+/* DaySchedule's horizontal day marquee (pages/DaySchedule.jsx): the same
+   idea sideways — once a trip runs long enough that the day strip
+   overflows the screen width, it becomes a swipeable scroll region with
+   hover-revealed left/right nudge buttons. Touch already swipes it
+   natively, so hide the buttons there too. */
+.day-marquee-nudge {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.day-marquee:hover .day-marquee-nudge {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .day-marquee-nudge {
+    display: none;
+  }
+}

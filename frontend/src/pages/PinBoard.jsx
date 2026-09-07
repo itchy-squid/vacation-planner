@@ -6,9 +6,9 @@ import HomeButton from "../components/core/HomeButton";
 import SettingsButton from "../components/core/SettingsButton";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
-// Board/Map segment switch navigates to the lasso map screen; filtering is
-// local UI state only in this pass. The "+" opens pages/NewPin.jsx to add
-// a pin from a link.
+// Board/Map segment switch navigates to the lasso map (see
+// pages/LassoMap.jsx); filtering is local UI state only in this pass.
+// The "+" opens pages/NewPin.jsx to add a pin from a link.
 export default function PinBoard() {
   const navigate = useNavigate();
   const { trip: TRIP, pins, contributors: CONTRIBUTORS } = usePlannerState();
@@ -56,7 +56,7 @@ export default function PinBoard() {
             <button
               type="button"
               aria-label="Add pin"
-              onClick={() => navigate("/new-pin")}
+              onClick={() => navigate(`/trips/${TRIP.id}/new-pin`)}
               style={{
                 width: 36,
                 height: 36,
@@ -75,7 +75,7 @@ export default function PinBoard() {
             </button>
             <div style={{ display: "flex", background: "var(--stone-200)", borderRadius: 999, padding: 3 }}>
               <SegButton label="Board" active onClick={() => {}} />
-              <SegButton label="Map" onClick={() => navigate("/map")} />
+              <SegButton label="Map" onClick={() => navigate(`/trips/${TRIP.id}/map`)} />
             </div>
           </div>
         </div>
@@ -105,7 +105,7 @@ export default function PinBoard() {
           {columns.map((col, ci) => (
             <div key={ci} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
               {col.map((pin) => (
-                <PinCard key={pin.id} pin={pin} column={ci} contributorInitial={initialFor(pin)} onOpen={() => navigate(`/edit/${pin.id}?from=board`)} />
+                <PinCard key={pin.id} pin={pin} column={ci} contributorInitial={initialFor(pin)} onOpen={() => navigate(`/trips/${TRIP.id}/edit/${pin.id}?from=board`)} />
               ))}
             </div>
           ))}

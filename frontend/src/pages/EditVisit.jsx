@@ -9,6 +9,7 @@ import MapPlaceholder from "../components/planner/MapPlaceholder";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
+import { getTripDays } from "../data/trip";
 import HomeButton from "../components/core/HomeButton";
 
 // Screen 6 — "change one stop's details, and see when it can happen."
@@ -17,7 +18,11 @@ import HomeButton from "../components/core/HomeButton";
 // "Interactions & behaviour → Editing" in the handoff.
 export default function EditVisit() {
   const navigate = useNavigate();
-  const { pinId } = useParams();
+  // Pin ids are plain integers now (see backend/app/models.py), but a URL
+  // segment always comes back as a string — convert once here so every
+  // comparison/lookup below (state.pins[pinId], stopPinIds.includes(pinId),
+  // draft.includes(pinId)) is a real number-to-number match.
+  const pinId = Number(useParams().pinId);
   const [searchParams] = useSearchParams();
   const from = searchParams.get("from") || "schedule";
   const state = usePlannerState();
@@ -53,6 +58,13 @@ export default function EditVisit() {
   }
 
   const rule = pin.availabilityRule;
+  // Real trip dates (pages/TripSettings.jsx), not a fixed calendar — same
+  // source pages/DaySchedule.jsx already derives its day strip from, so
+  // the "when this one can happen" grid tracks the trip's actual length
+  // and start date instead of always showing Oct 3-10. Cheap enough
+  // (loops over a handful of days) that memoizing it isn't worth a hook
+  // call after the early "pin not found" return above.
+  const tripDays = getTripDays(state.trip.startDate, state.trip.endDate);
   const who = state.contributors.find((c) => c.id === pin.who);
   const lockedCandidateSet =
     state.day5Block?.status === "locked"
@@ -68,10 +80,11 @@ export default function EditVisit() {
   }
 
   function goBack() {
-    if (from === "compare") navigate("/compare");
-    else if (from === "board") navigate("/board");
-    else if (from === "itinerary") navigate("/itinerary");
-    else navigate("/schedule/5");
+    const base = `/trips/${state.trip.id}`;
+    if (from === "compare") navigate(`${base}/compare`);
+    else if (from === "board") navigate(`${base}/board`);
+    else if (from === "itinerary") navigate(`${base}/itinerary`);
+    else navigate(`${base}/schedule/5`);
   }
 
   const commentLabel = commentCount ? `${commentCount} comment${commentCount === 1 ? "" : "s"}` : "Comment";
@@ -136,6 +149,7 @@ export default function EditVisit() {
               rule={rule.days ? rule : null}
               overrides={state.overrides}
               placedDayBand={placedDayBand}
+              days={tripDays}
               onToggle={(day, band) => dispatch({ type: "TOGGLE_OVERRIDE", pinId, day, band })}
             />
           </div>

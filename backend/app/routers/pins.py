@@ -17,18 +17,18 @@ from ..schemas import (
 router = APIRouter(tags=["pins"])
 
 
-def _contributor_for(trip_id: str, principal: Principal, db: Session) -> Contributor | None:
+def _contributor_for(trip_id: int, principal: Principal, db: Session) -> Contributor | None:
     return db.scalar(select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == principal.email))
 
 
 @router.get("/api/trips/{trip_id}/pins", response_model=list[PinOut])
-def list_pins(trip_id: str, db: Session = Depends(get_db)):
+def list_pins(trip_id: int, db: Session = Depends(get_db)):
     return db.scalars(select(Pin).where(Pin.trip_id == trip_id)).all()
 
 
 @router.post("/api/trips/{trip_id}/pins", response_model=PinOut, status_code=201)
 def create_pin(
-    trip_id: str,
+    trip_id: int,
     payload: PinCreate,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
@@ -43,7 +43,7 @@ def create_pin(
 
 
 @router.get("/api/pins/{pin_id}", response_model=PinOut)
-def get_pin(pin_id: str, db: Session = Depends(get_db)):
+def get_pin(pin_id: int, db: Session = Depends(get_db)):
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
@@ -51,7 +51,7 @@ def get_pin(pin_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/api/pins/{pin_id}", response_model=PinOut)
-def update_pin(pin_id: str, payload: PinUpdate, db: Session = Depends(get_db)):
+def update_pin(pin_id: int, payload: PinUpdate, db: Session = Depends(get_db)):
     """Edits are immediate — no local draft, matching the handoff README's
     "Editing" behaviour. Every change is visible to the whole group via the
     trip's SSE stream."""
@@ -67,7 +67,7 @@ def update_pin(pin_id: str, payload: PinUpdate, db: Session = Depends(get_db)):
 
 
 @router.put("/api/pins/{pin_id}/availability-rule")
-def set_availability_rule(pin_id: str, payload: AvailabilityRuleIn, db: Session = Depends(get_db)):
+def set_availability_rule(pin_id: int, payload: AvailabilityRuleIn, db: Session = Depends(get_db)):
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
@@ -84,7 +84,7 @@ def set_availability_rule(pin_id: str, payload: AvailabilityRuleIn, db: Session 
 
 @router.post("/api/pins/{pin_id}/availability-overrides/toggle")
 def toggle_availability_override(
-    pin_id: str,
+    pin_id: int,
     payload: AvailabilityOverrideToggle,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),

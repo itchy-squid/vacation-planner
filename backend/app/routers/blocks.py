@@ -12,7 +12,7 @@ from ..schemas import BlockOut, CandidateSetOut, CandidateSetStopOut, LockReques
 router = APIRouter(tags=["blocks"])
 
 
-def _my_vote_candidate_set_id(block: Block, request: Request | None, db: Session) -> str | None:
+def _my_vote_candidate_set_id(block: Block, request: Request | None, db: Session) -> int | None:
     """Best-effort: only set when the request carries an identifiable
     principal (Easy Auth headers in prod, DEV_USER_EMAIL locally) who is
     already a contributor on this trip. Never raises — an anonymous or
@@ -77,13 +77,13 @@ def _block_to_schema(block: Block, db: Session, request: Request | None = None) 
 
 
 @router.get("/api/trips/{trip_id}/blocks", response_model=list[BlockOut])
-def list_blocks(trip_id: str, request: Request, db: Session = Depends(get_db)):
+def list_blocks(trip_id: int, request: Request, db: Session = Depends(get_db)):
     blocks = db.scalars(select(Block).where(Block.trip_id == trip_id)).all()
     return [_block_to_schema(b, db, request) for b in blocks]
 
 
 @router.get("/api/blocks/{block_id}", response_model=BlockOut)
-def get_block(block_id: str, request: Request, db: Session = Depends(get_db)):
+def get_block(block_id: int, request: Request, db: Session = Depends(get_db)):
     block = db.get(Block, block_id)
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")
@@ -92,7 +92,7 @@ def get_block(block_id: str, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/api/blocks/{block_id}/vote", response_model=BlockOut)
 def toggle_vote(
-    block_id: str,
+    block_id: int,
     payload: VoteToggle,
     request: Request,
     db: Session = Depends(get_db),
@@ -122,7 +122,7 @@ def toggle_vote(
 
 @router.post("/api/blocks/{block_id}/lock", response_model=BlockOut)
 def lock_block(
-    block_id: str,
+    block_id: int,
     payload: LockRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -146,7 +146,7 @@ def lock_block(
 
 
 @router.post("/api/blocks/{block_id}/reopen", response_model=BlockOut)
-def reopen_block(block_id: str, request: Request, db: Session = Depends(get_db)):
+def reopen_block(block_id: int, request: Request, db: Session = Depends(get_db)):
     block = db.get(Block, block_id)
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")

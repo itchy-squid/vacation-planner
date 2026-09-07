@@ -6,15 +6,16 @@ it needs to support real multi-user data: candidate sets are rows a group
 can create at will (not just fixed keys "A"/"B"), votes are per-contributor
 records, and availability is derived from a rule plus explicit overrides.
 
-Nothing here is wired to the frontend yet (this pass ships the UI against
-mock data — see root README "Next steps"); this is the schema the next pass
-connects to.
+Every id is a plain autoincrementing integer, not a UUID — the app builds
+shareable URLs straight out of these ids (see the frontend's
+state/PlannerContext.jsx and App.jsx), and short integers keep those links
+readable. Nothing here is exposed in a way that depends on ids being
+unguessable, so there's no security tradeoff in dropping UUIDs.
 """
 
 from __future__ import annotations
 
 import enum
-import uuid
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (
@@ -32,10 +33,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
-
-
-def _uuid() -> str:
-    return str(uuid.uuid4())
 
 
 def _now() -> datetime:
@@ -59,7 +56,7 @@ class BlockStatus(str, enum.Enum):
 class Trip(Base):
     __tablename__ = "trips"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     region_line: Mapped[str] = mapped_column(String(300), default="")
     # Structured so schedule/availability screens could eventually compute
@@ -85,8 +82,8 @@ class Contributor(Base):
     __tablename__ = "contributors"
     __table_args__ = (UniqueConstraint("trip_id", "email", name="uq_contributor_trip_email"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
     email: Mapped[str] = mapped_column(String(320))
     display_name: Mapped[str] = mapped_column(String(120))
     initial: Mapped[str] = mapped_column(String(4))
@@ -100,8 +97,8 @@ class Contributor(Base):
 class Pin(Base):
     __tablename__ = "pins"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(200))
     short: Mapped[str] = mapped_column(String(60))
     place: Mapped[str] = mapped_column(String(200))
@@ -124,7 +121,7 @@ class Pin(Base):
     photo_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     photo_source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
-    added_by_id: Mapped[str | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
+    added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     trip: Mapped[Trip] = relationship(back_populates="pins")
@@ -141,8 +138,8 @@ class AvailabilityRule(Base):
 
     __tablename__ = "availability_rules"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    pin_id: Mapped[str] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"), unique=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pin_id: Mapped[int] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"), unique=True)
     days: Mapped[list[int]] = mapped_column(JSON, default=list)
     bands: Mapped[list[str]] = mapped_column(JSON, default=list)
     reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -154,11 +151,11 @@ class AvailabilityOverride(Base):
     __tablename__ = "availability_overrides"
     __table_args__ = (UniqueConstraint("pin_id", "day", "band", name="uq_override_pin_day_band"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    pin_id: Mapped[str] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pin_id: Mapped[int] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
     day: Mapped[int] = mapped_column(Integer)
     band: Mapped[str] = mapped_column(String(8))
-    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     pin: Mapped[Pin] = relationship(back_populates="availability_overrides")
@@ -171,14 +168,14 @@ class Block(Base):
 
     __tablename__ = "blocks"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
     day_index: Mapped[int] = mapped_column(Integer)
     start_minute: Mapped[int] = mapped_column(Integer)
     end_minute: Mapped[int] = mapped_column(Integer)
     region: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[BlockStatus] = mapped_column(Enum(BlockStatus), default=BlockStatus.empty)
-    locked_set_id: Mapped[str | None] = mapped_column(ForeignKey("candidate_sets.id", use_alter=True), nullable=True)
+    locked_set_id: Mapped[int | None] = mapped_column(ForeignKey("candidate_sets.id", use_alter=True), nullable=True)
 
     trip: Mapped[Trip] = relationship(back_populates="blocks")
     candidate_sets: Mapped[list["CandidateSet"]] = relationship(
@@ -194,13 +191,13 @@ class CandidateSet(Base):
 
     __tablename__ = "candidate_sets"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    block_id: Mapped[str] = mapped_column(ForeignKey("blocks.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    block_id: Mapped[int] = mapped_column(ForeignKey("blocks.id", ondelete="CASCADE"))
     key: Mapped[str] = mapped_column(String(8))
     label: Mapped[str] = mapped_column(String(120), default="")
     color: Mapped[str] = mapped_column(String(32), default="var(--accent)")
     is_draft: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     block: Mapped[Block] = relationship(back_populates="candidate_sets", foreign_keys=[block_id])
@@ -214,9 +211,9 @@ class CandidateSetStop(Base):
     __tablename__ = "candidate_set_stops"
     __table_args__ = (UniqueConstraint("candidate_set_id", "pin_id", name="uq_set_stop_pin"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    candidate_set_id: Mapped[str] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"))
-    pin_id: Mapped[str] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    candidate_set_id: Mapped[int] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"))
+    pin_id: Mapped[int] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     candidate_set: Mapped[CandidateSet] = relationship(back_populates="stops")
@@ -231,10 +228,10 @@ class Vote(Base):
     __tablename__ = "votes"
     __table_args__ = (UniqueConstraint("block_id", "contributor_id", name="uq_vote_block_contributor"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    block_id: Mapped[str] = mapped_column(ForeignKey("blocks.id", ondelete="CASCADE"))
-    candidate_set_id: Mapped[str] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"))
-    contributor_id: Mapped[str] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    block_id: Mapped[int] = mapped_column(ForeignKey("blocks.id", ondelete="CASCADE"))
+    candidate_set_id: Mapped[int] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"))
+    contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     candidate_set: Mapped[CandidateSet] = relationship(back_populates="votes")
@@ -247,9 +244,9 @@ class Comment(Base):
 
     __tablename__ = "comments"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    pin_id: Mapped[str | None] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"), nullable=True)
-    candidate_set_id: Mapped[str | None] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"), nullable=True)
-    contributor_id: Mapped[str] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pin_id: Mapped[int | None] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"), nullable=True)
+    candidate_set_id: Mapped[int | None] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"), nullable=True)
+    contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

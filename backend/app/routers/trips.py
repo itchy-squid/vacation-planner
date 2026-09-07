@@ -48,7 +48,7 @@ def create_trip(
 
 
 @router.get("/{trip_id}", response_model=TripOut)
-def get_trip(trip_id: str, db: Session = Depends(get_db)):
+def get_trip(trip_id: int, db: Session = Depends(get_db)):
     trip = db.get(Trip, trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -56,7 +56,7 @@ def get_trip(trip_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{trip_id}", response_model=TripOut)
-def update_trip(trip_id: str, payload: TripUpdate, db: Session = Depends(get_db)):
+def update_trip(trip_id: int, payload: TripUpdate, db: Session = Depends(get_db)):
     """Trip settings (name, regions, dates) — see the frontend's
     pages/TripSettings.jsx. Same immediate-edit, exclude_unset pattern as
     update_pin in app/routers/pins.py."""
@@ -71,5 +71,5 @@ def update_trip(trip_id: str, payload: TripUpdate, db: Session = Depends(get_db)
 
 
 @router.get("/{trip_id}/contributors", response_model=list[ContributorOut])
-def list_contributors(trip_id: str, db: Session = Depends(get_db)):
+def list_contributors(trip_id: int, db: Session = Depends(get_db)):
     return db.scalars(select(Contributor).where(Contributor.trip_id == trip_id)).all()
