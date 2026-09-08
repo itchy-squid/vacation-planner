@@ -4,8 +4,7 @@ import MapPlaceholder from "../components/planner/MapPlaceholder";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import Button from "../components/core/Button";
 import { usePlannerState } from "../state/PlannerContext";
-import HomeButton from "../components/core/HomeButton";
-import SettingsButton from "../components/core/SettingsButton";
+import NavMenu from "../components/core/NavMenu";
 
 // Screen 3 — "group pins by geography and seed day groups." Handoff README
 // screen 3. Cluster positions here are a schematic layout for the
@@ -32,8 +31,7 @@ export default function LassoMap() {
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
         <MapPlaceholder height="100%">
           <div style={{ position: "absolute", top: 58, left: 16, right: 16, display: "flex", gap: 8, zIndex: 5 }}>
-            <HomeButton size={48} style={{ borderRadius: "var(--radius-lg)", background: "var(--surface-card)", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-select)" }} />
-            <SettingsButton size={48} style={{ borderRadius: "var(--radius-lg)", background: "var(--surface-card)", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-select)" }} />
+            <NavMenu size={48} style={{ borderRadius: "var(--radius-lg)", background: "var(--surface-card)", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-select)" }} />
             <div style={{ flex: 1, height: 48, borderRadius: "var(--radius-lg)", background: "var(--surface-card)", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-select)", display: "flex", alignItems: "center", padding: "0 14px", font: "400 16px var(--font-sans)", color: "var(--text-secondary)" }}>
               Search a place to pin…
             </div>

@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PinCard from "../components/planner/PinCard";
 import { usePlannerState } from "../state/PlannerContext";
-import HomeButton from "../components/core/HomeButton";
-import SettingsButton from "../components/core/SettingsButton";
+import NavMenu from "../components/core/NavMenu";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
 // Board/Map segment switch navigates to the lasso map (see
@@ -45,8 +44,7 @@ export default function PinBoard() {
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
         <div style={{ padding: "20px var(--gutter-text) 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <HomeButton />
-            <SettingsButton />
+            <NavMenu />
             <div>
               <div className="mono-caption">Ideation · {PINS.length} pins</div>
               <div className="serif-place" style={{ fontSize: 28, marginTop: 2, color: "var(--text-primary)" }}>{TRIP.name}</div>

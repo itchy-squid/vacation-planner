@@ -6,8 +6,9 @@ import HomeButton from "../components/core/HomeButton";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 
 // Not one of the handoff README's numbered screens. Reachable from any of
-// the trip's main screens via components/core/SettingsButton.jsx (Board,
-// Map, Schedule). Only edits the currently-active trip — there's no flow
+// the trip's main screens via components/core/NavMenu.jsx's "Trip
+// settings" item (Board, Map, Schedule). Only edits the currently-active
+// trip — there's no flow
 // yet for editing a trip you haven't opened (see PlannerContext's
 // OPEN_TRIP for what "active" means). Mirrors NewTrip.jsx's fields since
 // this is the same data, just after creation instead of before.

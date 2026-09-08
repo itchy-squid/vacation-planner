@@ -7,8 +7,7 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
-import HomeButton from "../components/core/HomeButton";
-import SettingsButton from "../components/core/SettingsButton";
+import NavMenu from "../components/core/NavMenu";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
 // against the spec's Plan/PlanItem/Contest model (see docs/features/
@@ -453,8 +452,7 @@ export default function DaySchedule() {
     <div className="screen">
       <div style={{ flex: "none", background: "var(--surface-page)", borderBottom: "1px solid var(--hairline)" }}>
         <div style={{ padding: "20px var(--gutter-text) 12px", display: "flex", alignItems: "flex-end", gap: 10 }}>
-          <HomeButton />
-          <SettingsButton />
+          <NavMenu />
           <div>
             <div className="mono-caption">Scheduling · {region}</div>
             <div className="serif-place" style={{ fontSize: 24, marginTop: 2, color: "var(--text-primary)" }}>
