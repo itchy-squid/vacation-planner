@@ -11,6 +11,14 @@ shareable URLs straight out of these ids (see the frontend's
 state/PlannerContext.jsx and App.jsx), and short integers keep those links
 readable. Nothing here is exposed in a way that depends on ids being
 unguessable, so there's no security tradeoff in dropping UUIDs.
+
+Scheduling model (Plan/PlanItem/Contest/Vote/TravelItem — see
+docs/features/scheduling-feature-spec.md) replaces an earlier
+Block/CandidateSet design: instead of pre-carved fixed-length "blocks" on a
+day with pre-seeded candidate groupings, contributors place pins and
+TravelItems directly onto a real starts_at/ends_at range; a conflict is
+resolved by proposing competing Plans against each other (a Contest) rather
+than always having exactly two pre-existing options.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -45,14 +54,6 @@ class TripPhase(str, enum.Enum):
     locked = "locked"
 
 
-class BlockStatus(str, enum.Enum):
-    empty = "empty"
-    pencilled = "pencilled"
-    placed = "placed"
-    contested = "contested"
-    locked = "locked"
-
-
 class Trip(Base):
     __tablename__ = "trips"
 
@@ -71,7 +72,9 @@ class Trip(Base):
 
     contributors: Mapped[list["Contributor"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
     pins: Mapped[list["Pin"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
-    blocks: Mapped[list["Block"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    travel_items: Mapped[list["TravelItem"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    plans: Mapped[list["Plan"]] = relationship(back_populates="trip", cascade="all, delete-orphan", foreign_keys="Plan.trip_id")
+    contests: Mapped[list["Contest"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
 
 
 class Contributor(Base):
@@ -161,92 +164,148 @@ class AvailabilityOverride(Base):
     pin: Mapped[Pin] = relationship(back_populates="availability_overrides")
 
 
-class Block(Base):
-    """A free-length slot on a day's timeline. When more than one
-    CandidateSet exists for a block, status is "contested" and the compare
-    screen is how the group resolves it (handoff README screen 4/5)."""
+class TravelItem(Base):
+    """A logistics leg — a flight, train, drive, lodging stay, or other
+    travel-related item — as distinct from a Pin (a place to visit). Not
+    tied to any particular day until it's placed into a Plan; `kind` is a
+    free string (not a DB enum) since the spec's own set of suggested
+    values ("flight"/"train"/"drive"/"lodging"/"other") is a UI affordance,
+    not a hard constraint — see schemas.py TravelItemCreate for where that
+    suggested set is actually validated."""
 
-    __tablename__ = "blocks"
+    __tablename__ = "travel_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
-    day_index: Mapped[int] = mapped_column(Integer)
-    start_minute: Mapped[int] = mapped_column(Integer)
-    end_minute: Mapped[int] = mapped_column(Integer)
-    region: Mapped[str] = mapped_column(String(120), default="")
-    status: Mapped[BlockStatus] = mapped_column(Enum(BlockStatus), default=BlockStatus.empty)
-    locked_set_id: Mapped[int | None] = mapped_column(ForeignKey("candidate_sets.id", use_alter=True), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(20), default="other")
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    cost_cents: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str] = mapped_column(String(500), default="")
+    added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    trip: Mapped[Trip] = relationship(back_populates="blocks")
-    candidate_sets: Mapped[list["CandidateSet"]] = relationship(
-        back_populates="block", cascade="all, delete-orphan", foreign_keys="CandidateSet.block_id"
-    )
+    trip: Mapped[Trip] = relationship(back_populates="travel_items")
+    added_by: Mapped[Contributor | None] = relationship()
 
 
-class CandidateSet(Base):
-    """One candidate grouping of stops for a block. `is_draft` marks a
-    single contributor's in-progress set (the prototype's "Set C" pattern);
-    non-draft sets are pre-seeded/curated candidates any contributor can
-    vote on."""
+class PlanStatus(str, enum.Enum):
+    placed = "placed"
+    pencilled = "pencilled"
+    contested = "contested"
+    locked = "locked"
 
-    __tablename__ = "candidate_sets"
+
+class ContestStatus(str, enum.Enum):
+    open = "open"
+    resolved = "resolved"
+
+
+class Plan(Base):
+    """One scheduled placement of one or more pins/travel items onto a
+    real starts_at/ends_at range. `contest_id` is set only once this plan
+    is competing against at least one alternative (see Contest below);
+    a plan with no contest_id is either freely placed/pencilled, or is a
+    `locked` plan that "won" its contest (locking clears its siblings —
+    see routers/contests.py lock_contest — but the winning plan itself
+    keeps contest_id pointing at the now-resolved Contest, since
+    Contest.winning_plan_id needs the reverse lookup too)."""
+
+    __tablename__ = "plans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    block_id: Mapped[int] = mapped_column(ForeignKey("blocks.id", ondelete="CASCADE"))
-    key: Mapped[str] = mapped_column(String(8))
-    label: Mapped[str] = mapped_column(String(120), default="")
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    label: Mapped[str] = mapped_column(String(200), default="")
     color: Mapped[str] = mapped_column(String(32), default="var(--accent)")
-    is_draft: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus), default=PlanStatus.placed)
+    # Circular with Contest.winning_plan_id (a Contest is created only after
+    # a Plan already exists to contest against) — use_alter, same pattern as
+    # the old Block.locked_set_id -> CandidateSet.id FK it replaces.
+    contest_id: Mapped[int | None] = mapped_column(ForeignKey("contests.id", use_alter=True, ondelete="CASCADE"), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    block: Mapped[Block] = relationship(back_populates="candidate_sets", foreign_keys=[block_id])
-    stops: Mapped[list["CandidateSetStop"]] = relationship(
-        back_populates="candidate_set", cascade="all, delete-orphan", order_by="CandidateSetStop.position"
+    trip: Mapped[Trip] = relationship(back_populates="plans", foreign_keys=[trip_id])
+    items: Mapped[list["PlanItem"]] = relationship(back_populates="plan", cascade="all, delete-orphan", order_by="PlanItem.position")
+    contest: Mapped["Contest | None"] = relationship(back_populates="plans", foreign_keys=[contest_id])
+    created_by: Mapped[Contributor | None] = relationship()
+    votes: Mapped[list["Vote"]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+
+
+class PlanItem(Base):
+    """One pin or travel item within a plan. Deleting a PlanItem never
+    deletes the Pin/TravelItem it points to — only the placement row."""
+
+    __tablename__ = "plan_items"
+    __table_args__ = (
+        CheckConstraint(
+            "(pin_id IS NOT NULL) != (travel_item_id IS NOT NULL)",
+            name="ck_plan_item_exactly_one_target",
+        ),
     )
-    votes: Mapped[list["Vote"]] = relationship(back_populates="candidate_set", cascade="all, delete-orphan")
-
-
-class CandidateSetStop(Base):
-    __tablename__ = "candidate_set_stops"
-    __table_args__ = (UniqueConstraint("candidate_set_id", "pin_id", name="uq_set_stop_pin"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    candidate_set_id: Mapped[int] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"))
-    pin_id: Mapped[int] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"))
+    pin_id: Mapped[int | None] = mapped_column(ForeignKey("pins.id"), nullable=True)
+    travel_item_id: Mapped[int | None] = mapped_column(ForeignKey("travel_items.id"), nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
-    candidate_set: Mapped[CandidateSet] = relationship(back_populates="stops")
-    pin: Mapped[Pin] = relationship()
+    plan: Mapped[Plan] = relationship(back_populates="items")
+    pin: Mapped[Pin | None] = relationship()
+    travel_item: Mapped[TravelItem | None] = relationship()
+
+
+class Contest(Base):
+    """Created on demand when an alternative is proposed against an
+    already-placed plan. `winning_plan_id` is set only on resolution
+    (locking) — see routers/contests.py."""
+
+    __tablename__ = "contests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
+    status: Mapped[ContestStatus] = mapped_column(Enum(ContestStatus), default=ContestStatus.open)
+    winning_plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", use_alter=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    trip: Mapped[Trip] = relationship(back_populates="contests")
+    plans: Mapped[list[Plan]] = relationship(back_populates="contest", cascade="all, delete-orphan", foreign_keys="Plan.contest_id")
+    votes: Mapped[list["Vote"]] = relationship(back_populates="contest", cascade="all, delete-orphan")
 
 
 class Vote(Base):
-    """One vote per contributor per block — toggleable, and switching sets
-    within a block replaces the row rather than adding a second one (see
-    handoff README "Interactions & behaviour → Voting")."""
+    """One vote per contributor per contest — toggleable, and switching
+    plans within a contest replaces the row rather than adding a second
+    one (see docs/features/scheduling-feature-spec.md "Voting")."""
 
     __tablename__ = "votes"
-    __table_args__ = (UniqueConstraint("block_id", "contributor_id", name="uq_vote_block_contributor"),)
+    __table_args__ = (UniqueConstraint("contest_id", "contributor_id", name="uq_vote_contest_contributor"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    block_id: Mapped[int] = mapped_column(ForeignKey("blocks.id", ondelete="CASCADE"))
-    candidate_set_id: Mapped[int] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"))
+    contest_id: Mapped[int] = mapped_column(ForeignKey("contests.id", ondelete="CASCADE"))
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"))
     contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    candidate_set: Mapped[CandidateSet] = relationship(back_populates="votes")
+    contest: Mapped[Contest] = relationship(back_populates="votes")
+    plan: Mapped[Plan] = relationship(back_populates="votes")
 
 
 class Comment(Base):
     """Attributed to a person, per design_system readme ("Group software
     works when you can see who said what"). Threading is not designed yet
-    (handoff README "Not yet designed") — comments are a flat list."""
+    (handoff README "Not yet designed") — comments are a flat list.
+    Attaches to either a pin or a plan, via pin_id / plan_id."""
 
     __tablename__ = "comments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pin_id: Mapped[int | None] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"), nullable=True)
-    candidate_set_id: Mapped[int | None] = mapped_column(ForeignKey("candidate_sets.id", ondelete="CASCADE"), nullable=True)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), nullable=True)
     contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

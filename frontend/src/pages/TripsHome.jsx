@@ -13,8 +13,7 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 // user chooses "Open board" or "Start schedule"/"Open schedule" (label
 // reflects TRIP.phase — "Start schedule" pre-ideation-exit, "Open
 // schedule" once the trip has moved into scheduling/locked) — it does not
-// navigate away from this screen. Search is still not wired beyond
-// navigation in this mock-data pass.
+// navigate away from this screen.
 export default function TripsHome() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
@@ -49,7 +48,6 @@ export default function TripsHome() {
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "20px var(--gutter-text) 14px" }}>
           <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
           <div style={{ display: "flex", gap: 8 }}>
-            <CircleGlyph glyph="⌕" label="Search trips" />
             <CircleGlyph glyph="+" label="Add trip" onClick={() => navigate("/new-trip")} />
           </div>
         </div>
@@ -71,7 +69,10 @@ export default function TripsHome() {
             </PhotoPlaceholder>
             <div style={{ padding: "16px 18px 18px" }}>
               <div className="serif-place" style={{ fontSize: 27, lineHeight: 1.15, color: "var(--text-primary)" }}>{TRIP.name}</div>
-              <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>{TRIP.dateLine} · {TRIP.regionLine}</div>
+              <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>
+                {TRIP.dateLine}
+                {TRIP.locationsLine ? ` · ${TRIP.locationsLine}` : ""}
+              </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
                 <AvatarStack contributors={CONTRIBUTORS} overflowCount={CONTRIBUTOR_OVERFLOW_COUNT} />

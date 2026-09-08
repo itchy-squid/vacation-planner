@@ -1,126 +1,137 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AvatarStack from "../components/planner/AvatarStack";
 import { usePlannerState } from "../state/PlannerContext";
-import { clock, fmtMin, sequenceStops, draftSetTotals } from "../data/derive";
-import HomeButton from "../components/core/HomeButton";
+import { fmtMin } from "../data/derive";
+import { getTripDays, tripDayLabel } from "../data/trip";
+import { dayIndexForDate, clockLabel } from "../lib/planTime";
 
-const DRAFT_COLOR = "#6f7f3c";
+// Backend's derive.py moving_minutes formula: max(0, (item_count-1)*12) —
+// mirrored here purely for display pacing between a locked plan's stops,
+// same as pages/CompareSets.jsx's STOP_GAP_MIN.
+const MOVE_GAP_MIN = 12;
 
-// Screen 7 — "read the locked plan." Handoff README screen 7. Day 5 reads
-// straight from shared state, so locking a set on the compare screen shows
-// up here immediately; the surrounding days are static sample content for
-// this mock-data pass.
-const FINISHED_DAYS = [
-  {
-    day: 1,
-    place: "Taipei",
-    dateLabel: "FRI OCT 3",
-    stops: [
-      { time: "14:00", title: "Arrive · check in, Da'an", detail: "Hotel", notable: false },
-      { time: "18:00", title: "Raohe Night Market", detail: "$15 · Jae's pick", notable: true },
-    ],
-  },
-  {
-    day: 2,
-    place: "Taipei",
-    dateLabel: "SAT OCT 4",
-    stops: [
-      { time: "15:50", title: "Elephant Mountain lookout", detail: "free · sunset", notable: true },
-      { time: "19:00", title: "Din Tai Fung, Xinyi", detail: "$25 · reservation", notable: false },
-    ],
-  },
-];
-
+// Screen 7 — "read the locked plan," now data-driven across every day of
+// the trip instead of a fixed FINISHED_DAYS mock with Day 5 special-
+// cased. A day reads as settled once it has at least one placed/
+// pencilled/locked plan and no open contest; a day with an open contest
+// or nothing scheduled yet shows as unfinished with a resume link. See
+// docs/features/scheduling-feature-spec.md "Locking".
 export default function FinalItinerary() {
   const navigate = useNavigate();
   const state = usePlannerState();
-  const { trip: TRIP, day5Block, pins, draft, lockedSetKey, contributors } = state;
+  const { trip: TRIP, plans, contributors } = state;
 
-  const day5Locked = Boolean(lockedSetKey) && Boolean(day5Block);
-  const lockedRealSet = day5Locked && lockedSetKey !== "C" ? day5Block.candidateSets.find((cs) => cs.key === lockedSetKey) : null;
-  const blockMinutes = day5Block ? day5Block.end - day5Block.start : 0;
-  const day5Totals = day5Locked
-    ? lockedRealSet
-      ? { cost: Math.round(lockedRealSet.totalCostCents / 100), slack: lockedRealSet.slackMinutes }
-      : draftSetTotals(pins, draft, blockMinutes)
-    : null;
-  const day5StopPins = day5Locked
-    ? lockedRealSet
-      ? lockedRealSet.stopPinIds.map((id) => pins[id]).filter(Boolean)
-      : draft.map((id) => pins[id]).filter(Boolean)
-    : [];
-  const day5Stops = day5Block ? sequenceStops(day5StopPins, day5Block.start, 10) : [];
-  const day5Color = lockedRealSet?.color ?? DRAFT_COLOR;
+  const tripDays = useMemo(() => getTripDays(TRIP.startDate, TRIP.endDate), [TRIP.startDate, TRIP.endDate]);
 
-  const finishedCount = FINISHED_DAYS.length + (day5Locked ? 1 : 0);
+  const dayViews = useMemo(() => {
+    return tripDays.map((_, i) => {
+      const dayIndex = i + 1;
+      const dayPlans = plans
+        .filter((p) => p.startDt && dayIndexForDate(p.startDt, TRIP.startDate) === dayIndex)
+        .sort((a, b) => a.startDt.minuteOfDay - b.startDt.minuteOfDay);
+      const hasOpenContest = dayPlans.some((p) => p.status === "contested");
+      const settledPlans = dayPlans.filter((p) => p.status === "placed" || p.status === "pencilled" || p.status === "locked");
+
+      const stops = [];
+      settledPlans.forEach((p) => {
+        let t = p.startDt.minuteOfDay;
+        p.items.forEach((item, idx) => {
+          if (idx > 0) t += MOVE_GAP_MIN;
+          stops.push({
+            time: clockLabel(t),
+            title: item.title,
+            detail: item.costCents === 0 ? "free" : `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}`,
+            notable: p.status === "pencilled",
+          });
+          t += item.durationMinutes;
+        });
+      });
+
+      return {
+        dayIndex,
+        label: tripDayLabel(dayIndex, TRIP.startDate, TRIP.endDate),
+        stops,
+        settled: !hasOpenContest && settledPlans.length > 0,
+        hasOpenContest,
+        firstContestId: dayPlans.find((p) => p.status === "contested")?.contestId ?? null,
+      };
+    });
+  }, [tripDays, plans, TRIP.startDate, TRIP.endDate]);
+
+  const finishedCount = dayViews.filter((d) => d.settled).length;
 
   return (
     <div className="screen">
       <div className="screen-scroll" style={{ paddingBottom: 32 }}>
         <div style={{ padding: "20px var(--gutter-text) 0" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div className="mono-caption">Locked Oct 2 · {finishedCount} of 8 days set</div>
-            <HomeButton />
+            <div className="mono-caption">{finishedCount} of {dayViews.length || 1} days set</div>
+            <HomeButtonInline />
           </div>
           <div className="serif-place" style={{ fontSize: 30, marginTop: 4, color: "var(--text-primary)" }}>{TRIP.name}</div>
           <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>{TRIP.regionLine}</div>
           <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: "var(--surface-sunken)", overflow: "hidden" }}>
-            <div style={{ width: `${(finishedCount / 8) * 100}%`, height: "100%", background: "var(--geo)" }} />
+            <div style={{ width: `${dayViews.length ? (finishedCount / dayViews.length) * 100 : 0}%`, height: "100%", background: "var(--geo)" }} />
           </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "18px var(--gutter-screen) 0" }}>
-          {FINISHED_DAYS.map((d) => (
-            <DayCard key={d.day} day={d.day} place={d.place} dateLabel={d.dateLabel} stops={d.stops} contributors={contributors} />
-          ))}
-
-          {day5Locked ? (
-            <DayCard
-              day={5}
-              place="Xiaoliuqiu"
-              dateLabel="TUE OCT 7"
-              contributors={contributors}
-              stops={day5Stops.map((x, i) => ({
-                time: clock(x.start),
-                title: x.pin.title,
-                detail: `${fmtMin(x.pin.dur)} · $${x.pin.cost}`,
-                notable: i === 0,
-              }))}
-              accentColor={day5Color}
-              footerNote={`Set ${lockedSetKey} · ${day5Totals.cost === 0 ? "free" : `$${day5Totals.cost} each`} · ${fmtMin(day5Totals.slack)} slack`}
-            />
-          ) : (
-            <UnfinishedCard label="Day 5" place="Xiaoliuqiu · block still contested" onResume={() => navigate(`/trips/${TRIP.id}/schedule/5`)} />
+          {dayViews.map((d) =>
+            d.settled ? (
+              <DayCard key={d.dayIndex} label={d.label} stops={d.stops} contributors={contributors} />
+            ) : (
+              <UnfinishedCard
+                key={d.dayIndex}
+                label={d.label}
+                place={d.hasOpenContest ? "Still being decided by the group" : "Nothing scheduled yet"}
+                onResume={() =>
+                  d.hasOpenContest && d.firstContestId
+                    ? navigate(`/trips/${TRIP.id}/contests/${d.firstContestId}`)
+                    : navigate(`/trips/${TRIP.id}/schedule/${d.dayIndex}`)
+                }
+              />
+            )
           )}
-
-          <UnfinishedCard label="Days 6–8" place="Hualien · Tainan · 3 blocks still open" onResume={() => navigate(`/trips/${TRIP.id}/schedule/6`)} />
         </div>
       </div>
     </div>
   );
 }
 
-function DayCard({ day, place, dateLabel, stops, accentColor, footerNote, contributors }) {
+function HomeButtonInline() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      aria-label="Back to Trips home"
+      className="tap"
+      onClick={() => navigate("/")}
+      style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--surface-card)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", font: "400 16px var(--font-sans)", color: "var(--text-primary)", flex: "none" }}
+    >
+      ⌂
+    </button>
+  );
+}
+
+function DayCard({ label, stops, contributors }) {
   return (
     <div style={{ borderRadius: "var(--radius-2xl)", background: "var(--surface-card)", border: "1px solid var(--hairline)", boxShadow: "var(--shadow-card)", padding: "15px 16px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>Day {day} · {place}</div>
-        <div className="mono-data-sm" style={{ color: "var(--text-muted)" }}>{dateLabel}</div>
-      </div>
+      <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>{label}</div>
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
         {stops.map((s, i) => (
           <div key={i} style={{ display: "flex", gap: 10 }}>
             <div className="mono-data-sm" style={{ width: 44, flex: "none", color: "var(--text-muted)", paddingTop: 2 }}>{s.time}</div>
-            <div style={{ flex: 1, borderLeft: `2px solid ${s.notable ? accentColor ?? "var(--accent)" : "var(--stone-200)"}`, paddingLeft: 10 }}>
+            <div style={{ flex: 1, borderLeft: `2px solid ${s.notable ? "var(--stone-250)" : "var(--geo)"}`, paddingLeft: 10 }}>
               <div style={{ font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>{s.title}</div>
-              <div style={{ font: "400 11px var(--font-sans)", color: "var(--text-secondary)", marginTop: 1 }}>{s.detail}</div>
+              <div style={{ font: "400 11px var(--font-sans)", color: "var(--text-secondary)", marginTop: 1 }}>{s.detail}{s.notable ? " · unconfirmed" : ""}</div>
             </div>
           </div>
         ))}
+        {stops.length === 0 && <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-muted)" }}>Nothing placed yet.</div>}
       </div>
-      <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
         <AvatarStack contributors={contributors.slice(0, 3)} size={22} />
-        <span style={{ font: "400 11px var(--font-sans)", color: "var(--accent)" }}>{footerNote ?? "2 comments"}</span>
       </div>
     </div>
   );

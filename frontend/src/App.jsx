@@ -19,7 +19,7 @@ import DevNav from "./dev/DevNav";
 // Only Trips Home and the new-trip form are trip-agnostic.
 function ScheduleIndexRedirect() {
   const { tripId } = useParams();
-  return <Navigate to={`/trips/${tripId}/schedule/5`} replace />;
+  return <Navigate to={`/trips/${tripId}/schedule/1`} replace />;
 }
 
 export default function App() {
@@ -36,7 +36,7 @@ export default function App() {
             <Route path="/trips/:tripId/map" element={<LassoMap />} />
             <Route path="/trips/:tripId/schedule" element={<ScheduleIndexRedirect />} />
             <Route path="/trips/:tripId/schedule/:day" element={<DaySchedule />} />
-            <Route path="/trips/:tripId/compare" element={<CompareSets />} />
+            <Route path="/trips/:tripId/contests/:contestId" element={<CompareSets />} />
             <Route path="/trips/:tripId/edit/:pinId" element={<EditVisit />} />
             <Route path="/trips/:tripId/itinerary" element={<FinalItinerary />} />
             <Route path="*" element={<Navigate to="/" replace />} />

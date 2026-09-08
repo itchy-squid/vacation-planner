@@ -13,7 +13,7 @@ real use; see infra/README.md.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,12 +21,14 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import (
     AvailabilityRule,
-    Block,
-    BlockStatus,
-    CandidateSet,
-    CandidateSetStop,
+    Contest,
+    ContestStatus,
     Contributor,
     Pin,
+    Plan,
+    PlanItem,
+    PlanStatus,
+    TravelItem,
     Trip,
     TripPhase,
     Vote,
@@ -34,11 +36,28 @@ from .models import (
 
 SEEDED_TRIP_NAMES = ["Taiwan", "Japan, spring", "Iceland ring road"]
 
+# The Taiwan trip's day 1 is Oct 3, 2026 — see seed_taiwan's Trip row below.
+# Plan.starts_at/ends_at are tz-aware DateTime columns, but nothing in this
+# schema stores a trip's real timezone (see models.py Plan docstring), so a
+# fixed tzinfo=UTC is used purely as a bookkeeping convention for
+# "trip-local wall-clock time" — the same sidestep the frontend's own
+# parseISODate already makes. It should never be read as a real UTC instant.
+TAIWAN_TRIP_START = date(2026, 10, 3)
+
 
 def _wipe_seeded_trips(db: Session) -> None:
     for trip in db.scalars(select(Trip).where(Trip.name.in_(SEEDED_TRIP_NAMES))).all():
         db.delete(trip)
     db.commit()
+
+
+def _taiwan_dt(day_index: int, minute_of_day: int) -> datetime:
+    """day_index is 1-based, matching the old Block model's day_index and
+    the AvailabilityRule "days" values below (e.g. day_index=5 is Oct 7,
+    matching those rules' "Oct 7-8")."""
+    d = TAIWAN_TRIP_START + timedelta(days=day_index - 1)
+    hour, minute = divmod(minute_of_day, 60)
+    return datetime(d.year, d.month, d.day, hour, minute, tzinfo=timezone.utc)
 
 
 def _add_pin(db: Session, trip: Trip, contributors: dict[str, Contributor], **kw) -> Pin:
@@ -49,11 +68,40 @@ def _add_pin(db: Session, trip: Trip, contributors: dict[str, Contributor], **kw
     return pin
 
 
+def _placed_plan(
+    db: Session,
+    trip: Trip,
+    day_index: int,
+    start_minute: int,
+    end_minute: int,
+    status: PlanStatus,
+    *,
+    pin: Pin | None = None,
+    travel_item: TravelItem | None = None,
+    created_by: Contributor | None = None,
+) -> Plan:
+    """A single-item Plan — the new-model equivalent of the old model's
+    "simple block" (a one-stop CandidateSet). DaySchedule.jsx reads the
+    item's title/cost straight off the placed pin/travel item, so there's
+    nothing schedule-specific to store beyond the Plan + its one PlanItem."""
+    plan = Plan(
+        trip_id=trip.id,
+        starts_at=_taiwan_dt(day_index, start_minute),
+        ends_at=_taiwan_dt(day_index, end_minute),
+        status=status,
+        created_by_id=created_by.id if created_by else None,
+    )
+    db.add(plan)
+    db.flush()
+    db.add(PlanItem(plan_id=plan.id, pin_id=pin.id if pin else None, travel_item_id=travel_item.id if travel_item else None, position=0))
+    return plan
+
+
 def seed_taiwan(db: Session) -> None:
     trip = Trip(
         name="Taiwan",
         region_line="Taipei · Xiaoliuqiu · Hualien · Tainan",
-        start_date=date(2026, 10, 3),
+        start_date=TAIWAN_TRIP_START,
         end_date=date(2026, 10, 10),
         phase=TripPhase.scheduling,
     )
@@ -79,7 +127,10 @@ def seed_taiwan(db: Session) -> None:
         db.flush()
         contributors[key] = c
 
-    # ---- Pins — verbatim content from frontend/src/data/pins.js ----
+    # ---- Pins — verbatim content from frontend/src/data/pins.js, minus
+    # the two logistics legs (arrival, ferry) that are now TravelItems
+    # (see travel_item_specs below) rather than Pins — see
+    # docs/features/scheduling-feature-spec.md's Pin/TravelItem split. ----
     xiaoliuqiu = [
         dict(id_="p1", title="Vase Rock", short="Vase Rock", place="Xiaoliuqiu, Pingtung", region="Xiaoliuqiu", lat=22.3487, lng=120.3712, duration_minutes=50, cost_cents=0, who="mei", notes="Best at low tide — 14:10 that day.", link="maps.app/vase-rock", tags=["outdoors", "swim"]),
         dict(id_="p2", title="Meirendong tide pools", short="Tide pools", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=70, cost_cents=500, who="jae", notes="Reef shoes needed. Jae has two spare pairs.", link="maps.app/meirendong", tags=["swim", "outdoors"]),
@@ -112,25 +163,28 @@ def seed_taiwan(db: Session) -> None:
         dict(id_="p23", title="Garden Night Market", short="Garden Market", place="North, Tainan", region="Tainan", lat=23.0129, lng=120.1993, duration_minutes=100, cost_cents=1000, who="mei", notes="Weekends only.", link="maps.app/garden-night-market", tags=["food"]),
         dict(id_="p24", title="Sicao Green Tunnel", short="Green Tunnel", place="Annan, Tainan", region="Tainan", lat=23.0447, lng=120.1289, duration_minutes=50, cost_cents=900, who="jae", notes="", link="maps.app/sicao-green-tunnel", tags=["outdoors", "kid-ok"]),
     ]
-
-    # Logistics/activity items backing the schedule's non-contested blocks
-    # below (Day 1 arrival, Day 5's ferry + snorkel) — real pins like any
-    # other, just tagged "logistics" so they read as travel legs rather
-    # than optional attractions.
-    logistics = [
-        dict(id_="p25", title="Arrive Taipei · check in", short="Arrival", place="Taoyuan Airport / Da'an, Taipei", region="Taipei", lat=None, lng=None, duration_minutes=60, cost_cents=0, notes="", link="", tags=["logistics"]),
-        dict(id_="p26", title="Ferry to Xiaoliuqiu", short="Ferry", place="Donggang", region="Xiaoliuqiu", lat=None, lng=None, duration_minutes=75, cost_cents=0, notes="", link="", tags=["logistics"]),
+    # An activity, not a logistics leg — a real place with a cost and a
+    # photo-worthy identity — so it stays a Pin (see the TravelItem split
+    # note above).
+    logistics_pin = [
         dict(id_="p27", title="Turtle snorkel, Meirendong", short="Turtle snorkel", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=150, cost_cents=4500, who="jae", notes="", link="", tags=["swim", "outdoors"]),
     ]
 
     pins_by_local_id: dict[str, Pin] = {}
-    for spec in xiaoliuqiu + taipei + hualien + tainan + logistics:
+    for spec in xiaoliuqiu + taipei + hualien + tainan + logistics_pin:
         local_id = spec.pop("id_")
         pin = _add_pin(db, trip, contributors, **spec)
         pins_by_local_id[local_id] = pin
 
-    # Availability rules — the seven Xiaoliuqiu pins the Day 5 contested
-    # block is built around (frontend/src/data/pins.js AVAILABILITY_RULES).
+    # ---- Travel items — the trip's two logistics legs, as TravelItems
+    # rather than Pins (see docs/features/scheduling-feature-spec.md). ----
+    arrival = TravelItem(trip_id=trip.id, title="Arrive Taipei · check in", kind="flight", duration_minutes=60, cost_cents=0, added_by_id=None)
+    ferry = TravelItem(trip_id=trip.id, title="Ferry to Xiaoliuqiu", kind="other", duration_minutes=75, cost_cents=0, added_by_id=None)
+    db.add_all([arrival, ferry])
+    db.flush()
+
+    # Availability rules — the seven Xiaoliuqiu pins the day 5 contest is
+    # built around (frontend/src/data/pins.js AVAILABILITY_RULES).
     availability = {
         "p1": ([7, 8], ["PM"], ["On Xiaoliuqiu only: Oct 7–8", "Needs low tide — 13:00–16:00"]),
         "p2": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Snorkel boats stop at 16:00"]),
@@ -143,84 +197,74 @@ def seed_taiwan(db: Session) -> None:
     for local_id, (days, bands, reasons) in availability.items():
         db.add(AvailabilityRule(pin_id=pins_by_local_id[local_id].id, days=days, bands=bands, reasons=reasons))
 
-    # ---- Day 5's contested block: "the core screen" (handoff README
-    # screen 5) — two pre-seeded candidate sets, matching the exact pin
-    # groupings and base vote counts the frontend mock hardcoded. ----
-    block = Block(
-        trip_id=trip.id,
-        day_index=5,
-        start_minute=780,
-        end_minute=960,
-        region="Xiaoliuqiu",
-        status=BlockStatus.contested,
-    )
-    db.add(block)
+    # ---- Day 5's contest: "the core screen" (handoff README screen 5) —
+    # two competing Plans for the same 13:00-16:00 slot, matching the exact
+    # pin groupings and base vote counts the frontend mock hardcoded, now
+    # expressed as a real Contest instead of two pre-seeded CandidateSets
+    # on a fixed Block. ----
+    contest = Contest(trip_id=trip.id, status=ContestStatus.open)
+    db.add(contest)
     db.flush()
 
-    set_a = CandidateSet(block_id=block.id, key="A", label="Set A", color="#8f4478", is_draft=False)
-    set_b = CandidateSet(block_id=block.id, key="B", label="Set B", color="#3d8a9c", is_draft=False)
-    db.add_all([set_a, set_b])
+    plan_a = Plan(
+        trip_id=trip.id,
+        starts_at=_taiwan_dt(5, 780),
+        ends_at=_taiwan_dt(5, 960),
+        status=PlanStatus.contested,
+        contest_id=contest.id,
+        label="Set A",
+        color="#8f4478",
+    )
+    plan_b = Plan(
+        trip_id=trip.id,
+        starts_at=_taiwan_dt(5, 780),
+        ends_at=_taiwan_dt(5, 960),
+        status=PlanStatus.contested,
+        contest_id=contest.id,
+        label="Set B",
+        color="#3d8a9c",
+    )
+    db.add_all([plan_a, plan_b])
     db.flush()
 
     for position, local_id in enumerate(["p1", "p2", "p3"]):
-        db.add(CandidateSetStop(candidate_set_id=set_a.id, pin_id=pins_by_local_id[local_id].id, position=position))
+        db.add(PlanItem(plan_id=plan_a.id, pin_id=pins_by_local_id[local_id].id, position=position))
     for position, local_id in enumerate(["p4", "p5"]):
-        db.add(CandidateSetStop(candidate_set_id=set_b.id, pin_id=pins_by_local_id[local_id].id, position=position))
+        db.add(PlanItem(plan_id=plan_b.id, pin_id=pins_by_local_id[local_id].id, position=position))
+    db.flush()
 
     # Base votes — 3 for A, 2 for B (frontend derive.js BASE_VOTES),
     # deliberately excluding Mei (the dev user) so "cast your own vote" is
     # still there to try locally.
-    for key, voter_keys, target_set in [("A", ["jae", "ana", "theo"], set_a), ("B", ["lin", "priya"], set_b)]:
-        for voter_key in voter_keys:
-            db.add(Vote(block_id=block.id, candidate_set_id=target_set.id, contributor_id=contributors[voter_key].id))
+    for voter_key, target_plan in [("jae", plan_a), ("ana", plan_a), ("theo", plan_a), ("lin", plan_b), ("priya", plan_b)]:
+        db.add(Vote(contest_id=contest.id, plan_id=target_plan.id, contributor_id=contributors[voter_key].id))
     db.flush()
 
-    # ---- Every other block on the schedule: single-pin blocks with real
-    # placed/pencilled/empty status, replacing what used to be
-    # frontend/src/data/schedule.js's OTHER_DAY_BLOCKS/DAY5_FIXED_BLOCKS
-    # mock content. A "simple" block is just a one-stop CandidateSet (the
-    # same tables the contested block above uses) — DaySchedule.jsx reads
-    # its title/cost straight off that stop's pin, so there is nothing
-    # schedule-specific to store beyond the block itself. ----
-    def _simple_block(pin: Pin, day_index: int, start_minute: int, end_minute: int, status: BlockStatus) -> Block:
-        b = Block(trip_id=trip.id, day_index=day_index, start_minute=start_minute, end_minute=end_minute, region=pin.region, status=status)
-        db.add(b)
-        db.flush()
-        cs = CandidateSet(block_id=b.id, key="A", label=pin.title, color="var(--accent)", is_draft=False)
-        db.add(cs)
-        db.flush()
-        db.add(CandidateSetStop(candidate_set_id=cs.id, pin_id=pin.id, position=0))
-        return b
-
-    def _empty_block(day_index: int, start_minute: int, region: str) -> Block:
-        b = Block(trip_id=trip.id, day_index=day_index, start_minute=start_minute, end_minute=start_minute + 60, region=region, status=BlockStatus.empty)
-        db.add(b)
-        return b
-
+    # ---- Every other placement on the schedule: single-item Plans with
+    # real placed/pencilled status, replacing what used to be frontend/src/
+    # data/schedule.js's OTHER_DAY_BLOCKS/DAY5_FIXED_BLOCKS mock content.
+    # Slots that used to be "empty" blocks are simply left unrepresented —
+    # there's nothing to store for a time nobody has placed anything into;
+    # the calendar just renders that stretch as open. Every pin not placed
+    # below is left in the tray, unplaced, ready to be tap-to-placed. ----
     p = pins_by_local_id
-    _simple_block(p["p25"], day_index=1, start_minute=780, end_minute=840, status=BlockStatus.placed)
-    _simple_block(p["p9"], day_index=1, start_minute=1080, end_minute=1180, status=BlockStatus.placed)
+    _placed_plan(db, trip, day_index=1, start_minute=780, end_minute=840, status=PlanStatus.placed, travel_item=arrival)
+    _placed_plan(db, trip, day_index=1, start_minute=1080, end_minute=1180, status=PlanStatus.placed, pin=p["p9"])
 
-    _simple_block(p["p8"], day_index=2, start_minute=950, end_minute=1040, status=BlockStatus.placed)
-    _simple_block(p["p13"], day_index=2, start_minute=1140, end_minute=1215, status=BlockStatus.pencilled)
-    _empty_block(day_index=2, start_minute=1230, region="Taipei")
+    _placed_plan(db, trip, day_index=2, start_minute=950, end_minute=1040, status=PlanStatus.placed, pin=p["p8"])
+    _placed_plan(db, trip, day_index=2, start_minute=1140, end_minute=1215, status=PlanStatus.pencilled, pin=p["p13"])
 
-    _simple_block(p["p10"], day_index=3, start_minute=570, end_minute=720, status=BlockStatus.placed)
-    _simple_block(p["p11"], day_index=3, start_minute=900, end_minute=1020, status=BlockStatus.placed)
+    _placed_plan(db, trip, day_index=3, start_minute=570, end_minute=720, status=PlanStatus.placed, pin=p["p10"])
+    _placed_plan(db, trip, day_index=3, start_minute=900, end_minute=1020, status=PlanStatus.placed, pin=p["p11"])
 
-    _simple_block(p["p14"], day_index=4, start_minute=600, end_minute=690, status=BlockStatus.placed)
-    _empty_block(day_index=4, start_minute=780, region="Taipei")
+    _placed_plan(db, trip, day_index=4, start_minute=600, end_minute=690, status=PlanStatus.placed, pin=p["p14"])
 
-    _simple_block(p["p26"], day_index=5, start_minute=480, end_minute=555, status=BlockStatus.placed)
-    _simple_block(p["p27"], day_index=5, start_minute=570, end_minute=720, status=BlockStatus.placed)
+    _placed_plan(db, trip, day_index=5, start_minute=480, end_minute=555, status=PlanStatus.placed, travel_item=ferry)
+    _placed_plan(db, trip, day_index=5, start_minute=570, end_minute=720, status=PlanStatus.placed, pin=p["p27"])
 
-    _simple_block(p["p7"], day_index=6, start_minute=570, end_minute=615, status=BlockStatus.pencilled)
-    _empty_block(day_index=6, start_minute=720, region="Xiaoliuqiu")
+    _placed_plan(db, trip, day_index=6, start_minute=570, end_minute=615, status=PlanStatus.pencilled, pin=p["p7"])
 
-    _simple_block(p["p16"], day_index=7, start_minute=480, end_minute=660, status=BlockStatus.placed)
-    _empty_block(day_index=7, start_minute=780, region="Hualien")
-
-    _empty_block(day_index=8, start_minute=540, region="Hualien")
+    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"])
 
     db.commit()
 

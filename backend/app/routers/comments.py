@@ -26,7 +26,7 @@ def create_comment(trip_id: int, payload: CommentCreate, request: Request, db: S
     contributor = get_current_contributor(trip_id=trip_id, principal=get_current_principal(request), db=db)
     comment = Comment(
         pin_id=payload.pin_id,
-        candidate_set_id=payload.candidate_set_id,
+        plan_id=payload.plan_id,
         contributor_id=contributor.id,
         body=payload.body,
     )

@@ -10,18 +10,23 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
 import { getTripDays } from "../data/trip";
+import { dayIndexAndBandForPlan, isoForDayMinute } from "../lib/planTime";
 import HomeButton from "../components/core/HomeButton";
 
 // Screen 6 — "change one stop's details, and see when it can happen."
 // Handoff README screen 6. Edits are immediate (no local draft): every
 // field change dispatches straight into shared state, matching
-// "Interactions & behaviour → Editing" in the handoff.
+// "Interactions & behaviour → Editing" in the handoff. "Where this pin is
+// currently placed" used to read the old hardcoded day5Block/lockedSetKey;
+// now it's a plain scan over state.plans (any day, any status) via
+// lib/planTime.js dayIndexAndBandForPlan — see docs/features/scheduling-
+// feature-spec.md.
 export default function EditVisit() {
   const navigate = useNavigate();
   // Pin ids are plain integers now (see backend/app/models.py), but a URL
   // segment always comes back as a string — convert once here so every
-  // comparison/lookup below (state.pins[pinId], stopPinIds.includes(pinId),
-  // draft.includes(pinId)) is a real number-to-number match.
+  // comparison/lookup below (state.pins[pinId], plan item scans) is a
+  // real number-to-number match.
   const pinId = Number(useParams().pinId);
   const [searchParams] = useSearchParams();
   const from = searchParams.get("from") || "schedule";
@@ -30,6 +35,7 @@ export default function EditVisit() {
   const pin = state.pins[pinId];
 
   const [commentCount, setCommentCount] = useState(null);
+  const [durationSyncNote, setDurationSyncNote] = useState("");
   useEffect(() => {
     let cancelled = false;
     api
@@ -58,39 +64,63 @@ export default function EditVisit() {
   }
 
   const rule = pin.availabilityRule;
-  // Real trip dates (pages/TripSettings.jsx), not a fixed calendar — same
-  // source pages/DaySchedule.jsx already derives its day strip from, so
-  // the "when this one can happen" grid tracks the trip's actual length
-  // and start date instead of always showing Oct 3-10. Cheap enough
-  // (loops over a handful of days) that memoizing it isn't worth a hook
-  // call after the early "pin not found" return above.
+  // Real trip dates (pages/TripSettings.jsx), same source
+  // pages/DaySchedule.jsx already derives its day strip from, so the
+  // "when this one can happen" grid tracks the trip's actual length and
+  // start date instead of always showing a fixed calendar.
   const tripDays = getTripDays(state.trip.startDate, state.trip.endDate);
   const who = state.contributors.find((c) => c.id === pin.who);
-  const lockedCandidateSet =
-    state.day5Block?.status === "locked"
-      ? state.day5Block.candidateSets.find((cs) => cs.id === state.day5Block.lockedSetId)
-      : null;
-  const isPlacedInLockedSet = lockedCandidateSet
-    ? lockedCandidateSet.stopPinIds.includes(pinId)
-    : state.lockedSetKey === "C" && state.draft.includes(pinId);
-  const placedDayBand = isPlacedInLockedSet ? "7-PM" : null;
+
+  // Whichever Plan currently carries this pin, if any — a pin can only be
+  // in one active plan at a time. Drives both the "placed" dot on the
+  // availability grid and the contested-plan footnote below.
+  const placingPlan = state.plans.find((p) => p.items.some((it) => it.pinId === pinId));
+  const placedDayIndexAndBand = placingPlan ? dayIndexAndBandForPlan(placingPlan, state.trip.startDate) : null;
+  const placedDayBand = placedDayIndexAndBand ? `${placedDayIndexAndBand.dayIndex}-${placedDayIndexAndBand.band}` : null;
 
   function patch(fields) {
     dispatch({ type: "PATCH_PIN", id: pinId, fields });
   }
 
+  // Duration is the same field on both screens (see
+  // components/planner/PlanDetailsSheet.jsx's "Duration" stepper, which
+  // does this sync the other way around): changing it here also resizes
+  // this pin's calendar slot, if it currently has one, so the two never
+  // drift apart. Only possible while that plan is placed/pencilled — a
+  // contested/locked plan's window can't be resized (spec "Moving /
+  // unplacing"); its slack just changes instead once this pin's new
+  // duration is next fetched.
+  async function changeDuration(nextDur) {
+    const clamped = Math.max(15, nextDur);
+    patch({ dur: clamped });
+    setDurationSyncNote("");
+    if (
+      placingPlan &&
+      (placingPlan.status === "placed" || placingPlan.status === "pencilled") &&
+      placingPlan.items.length === 1 &&
+      placingPlan.startDt &&
+      placedDayIndexAndBand
+    ) {
+      const endsAt = isoForDayMinute(state.trip.startDate, placedDayIndexAndBand.dayIndex, placingPlan.startDt.minuteOfDay + clamped);
+      const result = await dispatch({ type: "MOVE_PLAN", planId: placingPlan.id, startsAt: placingPlan.startsAt, endsAt });
+      if (!result.ok) {
+        setDurationSyncNote("Its scheduled slot is already at capacity there — the calendar didn't grow to match.");
+      }
+    }
+  }
+
   function goBack() {
     const base = `/trips/${state.trip.id}`;
-    if (from === "compare") navigate(`${base}/compare`);
+    if (from === "compare" && placingPlan?.contestId) navigate(`${base}/contests/${placingPlan.contestId}`);
     else if (from === "board") navigate(`${base}/board`);
     else if (from === "itinerary") navigate(`${base}/itinerary`);
-    else navigate(`${base}/schedule/5`);
+    else navigate(`${base}/schedule/${placedDayIndexAndBand?.dayIndex ?? 1}`);
   }
 
   const commentLabel = commentCount ? `${commentCount} comment${commentCount === 1 ? "" : "s"}` : "Comment";
-  const inADay5Set = state.day5Block?.candidateSets.some((cs) => cs.stopPinIds.includes(pinId));
-  const footnote = inADay5Set
-    ? `Changes recompute this set's totals. All ${state.contributors.length} contributors see the edit.`
+  const inContestedPlan = placingPlan?.status === "contested";
+  const footnote = inContestedPlan
+    ? `Changes recompute this plan's totals. All ${state.contributors.length} contributors see the edit.`
     : `All ${state.contributors.length} contributors see the edit.`;
 
   return (
@@ -158,8 +188,8 @@ export default function EditVisit() {
             <Stepper
               label="Duration"
               valueLabel={fmtMin(pin.dur)}
-              onDown={() => patch({ dur: Math.max(15, pin.dur - 15) })}
-              onUp={() => patch({ dur: pin.dur + 15 })}
+              onDown={() => changeDuration(pin.dur - 15)}
+              onUp={() => changeDuration(pin.dur + 15)}
             />
             <div style={{ flex: 1 }}>
               <div className="mono-caption">Cost each</div>
@@ -177,6 +207,10 @@ export default function EditVisit() {
               </div>
             </div>
           </div>
+
+          {durationSyncNote && (
+            <div style={{ font: "500 11px var(--font-sans)", color: "var(--warn, #a15c1a)" }}>{durationSyncNote}</div>
+          )}
 
           <TextArea label="Notes for the group" value={pin.notes} onChange={(e) => patch({ notes: e.target.value })} />
 

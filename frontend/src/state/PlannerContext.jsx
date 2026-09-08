@@ -2,15 +2,51 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useRef } fro
 import { api } from "../lib/api";
 import { coordsForPin } from "../lib/mapLayout";
 import { formatDateRange, relativeTime } from "../lib/format";
+import { parseApiDateTime } from "../lib/planTime";
 
-// Client-side state, now sourced from the real FastAPI + Postgres backend
-// (see root README "Next steps" — this is that next pass). Trip,
-// contributors, pins, and every day's blocks (placed/pencilled/empty, plus
-// Day 5's contested block) all come from the API on mount; only one thing
-// stays purely local, because the backend has nothing to persist it to
-// yet: "Set C", the current user's in-progress draft grouping (the schema
-// supports draft CandidateSet rows, but no endpoint creates/edits one yet
-// — see backend/app/models.py CandidateSet.is_draft).
+// Remembers which trip was last active so a page refresh reopens it
+// instead of always falling back to the hardcoded "Taiwan" default (see
+// loadTripView's callers below). Deliberately a plain localStorage read/
+// write rather than a Trip field — this is a per-browser UI preference,
+// not trip data anyone else on the trip should see. Wrapped in try/catch
+// since localStorage can throw (private browsing, disabled storage) —
+// losing the "remember" behavior in that case is fine, breaking the app
+// isn't.
+const LAST_TRIP_ID_STORAGE_KEY = "vacationPlanner:lastTripId";
+
+function rememberLastTripId(tripId) {
+  try {
+    window.localStorage.setItem(LAST_TRIP_ID_STORAGE_KEY, String(tripId));
+  } catch {
+    // ignore — storage unavailable
+  }
+}
+
+function readLastTripId() {
+  try {
+    return window.localStorage.getItem(LAST_TRIP_ID_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// Client-side state, sourced from the real FastAPI + Postgres backend.
+// Trip, contributors, pins, and the trip's scheduling data (Plans,
+// TravelItems — see docs/features/scheduling-feature-spec.md) all come
+// from the API on mount. Scheduling used to be an earlier Block/
+// CandidateSet design with a single hardcoded "Day 5" contested block;
+// this replaces it with the spec's Plan/PlanItem/Contest/Vote model, where
+// any number of days can have any number of open contests at once, and
+// "propose an alternative" is a real user action rather than pre-seeded
+// content.
+//
+// This store deliberately keeps only what every screen needs to
+// position/list things (plans, travelItems). Full contest detail — the
+// vote tally and per-plan "did I vote for this" flag — is fetched fresh by
+// pages/CompareSets.jsx itself via api.getContest() rather than normalized
+// in here, since that data only matters while that one screen is open and
+// changes with every vote; see REFRESH_PLANS_AND_ITEMS below for how the
+// calendar picks up a lock/reopen's effect once the user navigates back.
 
 function normalizeContributor(c) {
   return { id: c.id, name: c.display_name, initial: c.initial, tint: c.tint, isOwner: c.is_owner, email: c.email };
@@ -42,32 +78,51 @@ function normalizePin(p, contributorsById) {
   };
 }
 
-function normalizeBlock(b) {
+function normalizeTravelItem(t, contributorsById) {
+  const addedBy = t.added_by_id ? contributorsById[t.added_by_id] : null;
   return {
-    id: b.id,
-    tripId: b.trip_id,
-    dayIndex: b.day_index,
-    start: b.start_minute,
-    end: b.end_minute,
-    region: b.region,
-    status: b.status,
-    lockedSetId: b.locked_set_id,
-    votedCount: b.voted_count,
-    contributorCount: b.contributor_count,
-    myVoteCandidateSetId: b.my_vote_candidate_set_id,
-    candidateSets: b.candidate_sets.map((cs) => ({
-      id: cs.id,
-      key: cs.key,
-      label: cs.label,
-      color: cs.color,
-      isDraft: cs.is_draft,
-      voteCount: cs.vote_count,
-      totalDurationMinutes: cs.total_duration_minutes,
-      totalCostCents: cs.total_cost_cents,
-      movingMinutes: cs.moving_minutes,
-      slackMinutes: cs.slack_minutes,
-      stopPinIds: cs.stops.map((s) => s.pin.id),
-    })),
+    id: t.id,
+    tripId: t.trip_id,
+    title: t.title,
+    kind: t.kind,
+    dur: t.duration_minutes,
+    cost: Math.round(t.cost_cents / 100),
+    notes: t.notes,
+    link: t.link,
+    who: addedBy?.id ?? null,
+    whoName: addedBy?.name ?? "Someone",
+    addedAgo: relativeTime(t.added_at),
+  };
+}
+
+function normalizePlanItem(it) {
+  return {
+    pinId: it.pin?.id ?? null,
+    travelItemId: it.travel_item?.id ?? null,
+    title: it.pin?.title ?? it.travel_item?.title ?? "Untitled",
+    durationMinutes: (it.pin ?? it.travel_item)?.duration_minutes ?? 0,
+    costCents: (it.pin ?? it.travel_item)?.cost_cents ?? 0,
+    position: it.position,
+  };
+}
+
+function normalizePlan(p) {
+  return {
+    id: p.id,
+    tripId: p.trip_id,
+    startsAt: p.starts_at,
+    endsAt: p.ends_at,
+    startDt: parseApiDateTime(p.starts_at),
+    endDt: parseApiDateTime(p.ends_at),
+    label: p.label,
+    color: p.color,
+    status: p.status, // "placed" | "pencilled" | "contested" | "locked"
+    contestId: p.contest_id,
+    items: (p.items ?? []).map(normalizePlanItem),
+    totalDurationMinutes: p.total_duration_minutes,
+    totalCostCents: p.total_cost_cents,
+    movingMinutes: p.moving_minutes,
+    slackMinutes: p.slack_minutes,
   };
 }
 
@@ -77,27 +132,35 @@ function phaseProgress(phase) {
   return 0.15;
 }
 
-// Fetches everything one trip's screens need (contributors, pins, blocks)
-// and shapes the "also planning" summaries for every other trip, exactly
-// as the mount-time load used to inline. Shared by the initial load and by
-// OPEN_TRIP (switching which trip is active — see TripsHome's "Also
-// planning" rows) so both produce an identical LOADED payload.
+// Fetches everything one trip's screens need (contributors, pins, plans,
+// travel items) and shapes the "also planning" summaries for every other
+// trip, exactly as the mount-time load used to inline. Shared by the
+// initial load and by OPEN_TRIP (switching which trip is active — see
+// TripsHome's "Also planning" rows) so both produce an identical LOADED
+// payload.
 async function loadTripView(tripId, trips) {
   const trip = trips.find((t) => t.id === tripId);
   if (!trip) throw new Error("Trip not found.");
+  // Every path that lands on a trip (initial load, a URL-linked trip, or
+  // OPEN_TRIP's "Also planning" switch) runs through here, so this is the
+  // one place that needs to record it for next time.
+  rememberLastTripId(trip.id);
   const otherTripRows = trips.filter((t) => t.id !== trip.id);
 
-  const [contributorsRaw, pinsRaw, blocksRaw] = await Promise.all([
+  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw] = await Promise.all([
     api.listContributors(trip.id),
     api.listPins(trip.id),
-    api.listBlocks(trip.id),
+    api.listPlans(trip.id),
+    api.listTravelItems(trip.id),
   ]);
 
   const contributors = contributorsRaw.map(normalizeContributor);
   const contributorsById = Object.fromEntries(contributors.map((c) => [c.id, c]));
   const pinsList = pinsRaw.map((p) => normalizePin(p, contributorsById));
   const pins = Object.fromEntries(pinsList.map((p) => [p.id, p]));
-  const blocks = blocksRaw.map(normalizeBlock);
+  const plans = plansRaw.map(normalizePlan);
+  const travelItemsList = travelItemsRaw.map((t) => normalizeTravelItem(t, contributorsById));
+  const travelItems = Object.fromEntries(travelItemsList.map((t) => [t.id, t]));
 
   const overrides = {};
   pinsRaw.forEach((p) => {
@@ -119,13 +182,49 @@ async function loadTripView(tripId, trips) {
     })
   );
 
-  const regionCount = new Set(pinsList.map((p) => p.region)).size;
-  const toDecideCount = blocks.filter((b) => b.status === "contested").length;
+  // Locations on Trips Home (the primary card's subtitle line and its
+  // "regions" tile) reflect what the group is actually doing, not just
+  // what's pinned or what someone once typed into Trip Settings: prefer
+  // the regions of pins that have made it onto the calendar (referenced
+  // by any Plan, regardless of status — see the Plan data model, "one
+  // scheduled placement"), and only fall back to every pinned region when
+  // nothing has been scheduled yet (e.g. a brand-new trip still in
+  // ideation). Order follows each pin's position in pinsList so the line
+  // reads in a stable, sensible order rather than Set-insertion order.
+  const distinctRegionsInOrder = (pinsSubset) => {
+    const seen = new Set();
+    const ordered = [];
+    pinsSubset.forEach((p) => {
+      if (p.region && !seen.has(p.region)) {
+        seen.add(p.region);
+        ordered.push(p.region);
+      }
+    });
+    return ordered;
+  };
+  const scheduledPinIds = new Set(
+    plans.flatMap((plan) => plan.items.map((item) => item.pinId)).filter(Boolean)
+  );
+  const scheduledRegionNames = distinctRegionsInOrder(pinsList.filter((p) => scheduledPinIds.has(p.id)));
+  const pinnedRegionNames = distinctRegionsInOrder(pinsList);
+  const locationNames = scheduledRegionNames.length > 0 ? scheduledRegionNames : pinnedRegionNames;
+  const regionCount = locationNames.length;
+  // "To decide" counts open contests, not contested plans — a contest
+  // with two competing plans is one decision the group owes, not two.
+  const toDecideCount = new Set(plans.filter((p) => p.status === "contested").map((p) => p.contestId)).size;
+
+  // Trips Home's primary-card subtitle shows this instead of the raw
+  // region_line field below: the derived list above when there's any pin
+  // data to derive it from, and the trip's own hand-typed region_line
+  // (set in Trip Settings / at creation — see NewTrip.jsx) only as a last
+  // resort for a brand-new trip that has no pins yet at all.
+  const locationsLine = locationNames.length > 0 ? locationNames.join(" · ") : trip.region_line;
 
   const tripView = {
     id: trip.id,
     name: trip.name,
     regionLine: trip.region_line,
+    locationsLine,
     dateLine: formatDateRange(trip.start_date, trip.end_date),
     startDate: trip.start_date,
     endDate: trip.end_date,
@@ -143,7 +242,8 @@ async function loadTripView(tripId, trips) {
     contributorOverflowCount: Math.max(0, contributors.length - 4),
     pins,
     overrides,
-    blocks,
+    plans,
+    travelItems,
     currentUserId,
   };
 }
@@ -157,19 +257,26 @@ const initialState = {
   contributorOverflowCount: 0,
   pins: {},
   overrides: {}, // "<pinId>|<day>-<band>": boolean
-  blocks: [],
-  selectedSet: "A", // "A" | "B" | "C" — for the (single, for now) contested block
-  myVoteC: false, // local-only: voted for your own not-yet-real Set C draft
-  lockedC: false, // local-only: "locked" Set C — never persists, nothing to send it to
-  draft: [], // pinId[] — the current user's Set C
+  plans: [], // Plan[], each carrying contestId (null unless contested/locked-from-a-contest)
+  travelItems: {}, // travelItemId -> TravelItem
   currentUserId: null,
   switchingTripId: null, // id of an "also planning" trip currently being opened, or null
+
+  // Placement UI (see pages/DaySchedule.jsx). "placing" is the armed
+  // tray item being tap-placed; "proposeSheet" is the propose-an-
+  // alternative confirmation opened when a tap lands on an occupied,
+  // non-locked slot. Moving an already-placed plan is a drag gesture
+  // (see MOVE_PLAN below) and doesn't go through "placing" at all. Both
+  // of these are transient/local — nothing here persists until PLACE_AT /
+  // CONFIRM_PROPOSE actually call the API.
+  placing: null, // { kind: "pin" | "travel", refId, durationMinutes, label }
+  proposeSheet: null, // { targetPlanId, targetLabel, dayIndex, startMinute, kind, refId, durationMinutes, label }
 };
 
 function reducer(state, action) {
   switch (action.type) {
     case "LOADED":
-      return { ...state, status: "ready", error: null, switchingTripId: null, ...action.payload };
+      return { ...state, status: "ready", error: null, switchingTripId: null, placing: null, proposeSheet: null, ...action.payload };
     case "LOAD_ERROR":
       return { ...state, status: "error", error: action.error, switchingTripId: null };
 
@@ -178,21 +285,18 @@ function reducer(state, action) {
     case "SWITCH_TRIP_FAILED":
       return { ...state, switchingTripId: null };
 
-    case "SELECT_SET":
-      return { ...state, selectedSet: action.key };
+    case "SET_PLANS_AND_ITEMS":
+      return { ...state, plans: action.plans, travelItems: action.travelItems };
 
-    case "TOGGLE_POOL_PIN": {
-      const has = state.draft.includes(action.id);
-      const draft = has ? state.draft.filter((id) => id !== action.id) : [...state.draft, action.id];
-      return { ...state, draft, selectedSet: draft.length ? "C" : state.selectedSet };
-    }
+    case "ARM_PLACEMENT":
+      return { ...state, placing: action.placing, proposeSheet: null };
+    case "CANCEL_PLACING":
+      return { ...state, placing: null };
 
-    case "TOGGLE_VOTE_C":
-      return { ...state, myVoteC: !state.myVoteC };
-    case "LOCK_C":
-      return { ...state, lockedC: true };
-    case "REOPEN_C":
-      return { ...state, lockedC: false };
+    case "OPEN_PROPOSE":
+      return { ...state, placing: null, proposeSheet: action.proposeSheet };
+    case "CLOSE_PROPOSE":
+      return { ...state, proposeSheet: null };
 
     case "ADD_TRIP":
       return { ...state, otherTrips: [...state.otherTrips, action.trip] };
@@ -200,11 +304,22 @@ function reducer(state, action) {
     case "APPLY_TRIP":
       return { ...state, trip: { ...state.trip, ...action.trip } };
 
-    case "APPLY_BLOCK":
-      return { ...state, blocks: state.blocks.map((b) => (b.id === action.block.id ? action.block : b)) };
-
     case "APPLY_PIN":
       return { ...state, pins: { ...state.pins, [action.pin.id]: action.pin } };
+
+    case "APPLY_TRAVEL_ITEM":
+      return { ...state, travelItems: { ...state.travelItems, [action.item.id]: action.item } };
+    case "REMOVE_TRAVEL_ITEM": {
+      const next = { ...state.travelItems };
+      delete next[action.id];
+      return { ...state, travelItems: next };
+    }
+
+    case "REMOVE_PIN": {
+      const next = { ...state.pins };
+      delete next[action.id];
+      return { ...state, pins: next };
+    }
 
     case "SET_OVERRIDE": {
       const key = `${action.pinId}|${action.day}-${action.band}`;
@@ -249,14 +364,22 @@ export function PlannerProvider({ children }) {
         // handles switching trips while the app is running).
         const urlMatch = window.location.pathname.match(/^\/trips\/([^/]+)/);
         const tripIdFromUrl = urlMatch ? urlMatch[1] : null;
-        // Trip ids are plain integers now (not UUID strings — see
+        // Trip ids are plain integers (not UUID strings — see
         // backend/app/models.py), but a URL segment is always a string, so
         // compare as strings rather than `t.id === tripIdFromUrl`.
         const linkedTrip = tripIdFromUrl ? trips.find((t) => String(t.id) === tripIdFromUrl) : null;
         if (tripIdFromUrl && !linkedTrip) {
           throw new Error("That link doesn't match a trip we have — it may have been deleted, or the link is wrong.");
         }
-        const initialTrip = linkedTrip ?? trips.find((t) => t.name === "Taiwan") ?? trips[0];
+        // No trip in the URL: fall back to whichever trip was last active
+        // (see rememberLastTripId/readLastTripId above) so a plain
+        // refresh — or reopening the tab later — comes back to the same
+        // trip instead of always resetting to "Taiwan". If that id no
+        // longer matches a real trip (deleted, or nothing cached yet),
+        // fall through to the original defaults.
+        const lastTripId = !linkedTrip ? readLastTripId() : null;
+        const lastTrip = lastTripId ? trips.find((t) => String(t.id) === lastTripId) : null;
+        const initialTrip = linkedTrip ?? lastTrip ?? trips.find((t) => t.name === "Taiwan") ?? trips[0];
         const payload = await loadTripView(initialTrip.id, trips);
         if (cancelled) return;
         dispatch({ type: "LOADED", payload });
@@ -271,32 +394,208 @@ export function PlannerProvider({ children }) {
     };
   }, []);
 
-  const day5Block = useMemo(() => state.blocks.find((b) => b.dayIndex === 5) ?? null, [state.blocks]);
-
-  const lockedSetKey = useMemo(() => {
-    if (day5Block?.status === "locked") {
-      return day5Block.candidateSets.find((cs) => cs.id === day5Block.lockedSetId)?.key ?? null;
-    }
-    return state.lockedC ? "C" : null;
-  }, [day5Block, state.lockedC]);
-
   const dispatchRef = useRef();
   dispatchRef.current = useMemo(
     () => async (action) => {
       switch (action.type) {
-        case "SELECT_SET":
-        case "TOGGLE_POOL_PIN":
+        case "ARM_PLACEMENT":
+        case "CANCEL_PLACING":
+        case "OPEN_PROPOSE":
+        case "CLOSE_PROPOSE":
         case "SET_CURRENT_USER":
           dispatch(action);
           return;
 
+        case "ARM_PLACE_PIN": {
+          const pin = state.pins[action.pinId];
+          if (!pin) return;
+          dispatch({
+            type: "ARM_PLACEMENT",
+            placing: { kind: "pin", refId: pin.id, durationMinutes: pin.dur, label: pin.short || pin.title },
+          });
+          return;
+        }
+
+        case "ARM_PLACE_TRAVEL": {
+          const item = state.travelItems[action.travelItemId];
+          if (!item) return;
+          dispatch({
+            type: "ARM_PLACEMENT",
+            placing: { kind: "travel", refId: item.id, durationMinutes: item.dur, label: item.title },
+          });
+          return;
+        }
+
+        case "REFRESH_PLANS_AND_ITEMS": {
+          if (!state.trip) return;
+          const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
+          const [plansRaw, travelItemsRaw] = await Promise.all([
+            api.listPlans(state.trip.id),
+            api.listTravelItems(state.trip.id),
+          ]);
+          dispatch({
+            type: "SET_PLANS_AND_ITEMS",
+            plans: plansRaw.map(normalizePlan),
+            travelItems: Object.fromEntries(travelItemsRaw.map((t) => [t.id, normalizeTravelItem(t, contributorsById)])),
+          });
+          return;
+        }
+
+        // Direct placement of the currently-armed tray item — see spec
+        // "Direct placement". A 409 (slot already occupied) is not
+        // treated as a failure: it's converted into OPEN_PROPOSE so the
+        // caller can fall into the propose-alternative flow instead, per
+        // spec "A caller who receives this should use the propose-
+        // alternative flow instead of retrying direct placement."
+        case "PLACE_AT": {
+          const placing = state.placing;
+          if (!placing || !state.trip) return { ok: false };
+          try {
+            await api.createPlan(state.trip.id, {
+              starts_at: action.startsAt,
+              ends_at: action.endsAt,
+              status: "placed",
+              items: [placing.kind === "pin" ? { pin_id: placing.refId } : { travel_item_id: placing.refId }],
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            dispatch({ type: "CANCEL_PLACING" });
+            return { ok: true };
+          } catch (err) {
+            if (err.status === 409 && err.body?.detail?.occupying_plan_id) {
+              dispatch({
+                type: "OPEN_PROPOSE",
+                proposeSheet: {
+                  targetPlanId: err.body.detail.occupying_plan_id,
+                  dayIndex: action.dayIndex,
+                  startMinute: action.startMinute,
+                  kind: placing.kind,
+                  refId: placing.refId,
+                  durationMinutes: placing.durationMinutes,
+                  label: placing.label,
+                },
+              });
+              return { ok: false, opened: "propose" };
+            }
+            console.error("place failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        // Drag-to-reschedule (pages/DaySchedule.jsx's pointer-drag handling
+        // on a placed/pencilled block) — keeps the plan's duration fixed
+        // and only changes starts_at/ends_at, per spec "Moving / unplacing".
+        // Unlike PLACE_AT, this has no tray item or "placing" state behind
+        // it, so a 409 (someone else placed something there first) is just
+        // reported back as an occupied error for the caller to show and
+        // revert, rather than opening the propose-alternative sheet.
+        case "MOVE_PLAN": {
+          try {
+            await api.movePlan(action.planId, { starts_at: action.startsAt, ends_at: action.endsAt });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            if (err.status === 409) {
+              return { ok: false, occupied: true };
+            }
+            console.error("move failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "OPEN_PROPOSE_FOR": {
+          // Direct route to the sheet when the caller already knows the
+          // tap landed on an occupied slot (see pages/DaySchedule.jsx's
+          // client-side overlap check, which skips the round trip to the
+          // server for the common case and only relies on the server's
+          // own 409 as a backstop for races).
+          dispatch({ type: "OPEN_PROPOSE", proposeSheet: action.proposeSheet });
+          return;
+        }
+
+        case "CONFIRM_PROPOSE": {
+          const sheet = state.proposeSheet;
+          if (!sheet || !state.trip) return { ok: false };
+          try {
+            const contest = await api.proposeAlternative(state.trip.id, {
+              against_plan_id: sheet.targetPlanId,
+              starts_at: action.startsAt,
+              ends_at: action.endsAt,
+              items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            dispatch({ type: "CLOSE_PROPOSE" });
+            return { ok: true, contestId: contest.id };
+          } catch (err) {
+            console.error("propose alternative failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "UNPLACE_PLAN": {
+          try {
+            await api.deletePlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("unplace failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "CREATE_TRAVEL_ITEM": {
+          const created = await api.createTravelItem(state.trip.id, action.payload);
+          const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
+          const item = normalizeTravelItem(created, contributorsById);
+          dispatch({ type: "APPLY_TRAVEL_ITEM", item });
+          return item;
+        }
+
+        case "PATCH_TRAVEL_ITEM": {
+          const updated = await api.patchTravelItem(action.id, action.fields);
+          const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
+          const item = normalizeTravelItem(updated, contributorsById);
+          dispatch({ type: "APPLY_TRAVEL_ITEM", item });
+          return item;
+        }
+
+        case "DELETE_TRAVEL_ITEM": {
+          try {
+            await api.deleteTravelItem(action.id);
+            dispatch({ type: "REMOVE_TRAVEL_ITEM", id: action.id });
+            return { ok: true };
+          } catch (err) {
+            console.error("delete travel item failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        // Permanently deletes the pin itself (backend/app/routers/pins.py) —
+        // distinct from UNPLACE_PLAN above, which only removes the Plan/
+        // PlanItem and leaves the pin sitting unscheduled in the tray. The
+        // backend rejects this with 409 while any PlanItem still points at
+        // the pin, so callers (components/planner/PlanDetailsSheet.jsx)
+        // unplace first when deleting something currently on the calendar.
+        case "DELETE_PIN": {
+          try {
+            await api.deletePin(action.id);
+            dispatch({ type: "REMOVE_PIN", id: action.id });
+            return { ok: true };
+          } catch (err) {
+            if (err.status === 409) {
+              return { ok: false, scheduled: true };
+            }
+            console.error("delete pin failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
         case "CREATE_TRIP": {
           // Trip creation always goes through the API (there's no local
-          // fallback the way Set C has one) — the new trip needs a real id
-          // before anything else can reference it. On success, fold it
-          // into "otherTrips" the same shape load() builds them in; a full
-          // trip-switching flow (making the new trip the active TRIP) is
-          // out of scope here, same as the rest of "Also planning".
+          // fallback) — the new trip needs a real id before anything else
+          // can reference it. On success, fold it into "otherTrips" the
+          // same shape load() builds them in; a full trip-switching flow
+          // (making the new trip the active TRIP) is out of scope here,
+          // same as the rest of "Also planning".
           const trip = await api.createTrip(action.payload);
           dispatch({
             type: "ADD_TRIP",
@@ -334,7 +633,7 @@ export function PlannerProvider({ children }) {
 
         case "OPEN_TRIP": {
           // Makes another "also planning" trip the active TRIP (see
-          // TripsHome), so its own pins/contributors/blocks back
+          // TripsHome), so its own pins/contributors/plans back
           // /board, /map, /schedule, etc. Keeps the router mounted the
           // whole time (no "loading" full-screen swap) — the caller
           // awaits this and navigates itself once it resolves, so a
@@ -362,55 +661,6 @@ export function PlannerProvider({ children }) {
           const pin = normalizePin(created, contributorsById);
           dispatch({ type: "APPLY_PIN", pin });
           return pin;
-        }
-
-        case "TOGGLE_VOTE": {
-          if (action.key === "C") {
-            dispatch({ type: "TOGGLE_VOTE_C" });
-            return;
-          }
-          if (!day5Block) return;
-          const set = day5Block.candidateSets.find((s) => s.key === action.key);
-          if (!set) return;
-          try {
-            const updated = await api.toggleVote(day5Block.id, set.id);
-            dispatch({ type: "APPLY_BLOCK", block: normalizeBlock(updated) });
-          } catch (err) {
-            console.error("toggle vote failed", err);
-          }
-          return;
-        }
-
-        case "LOCK_SET": {
-          if (action.key === "C") {
-            dispatch({ type: "LOCK_C" });
-            return;
-          }
-          if (!day5Block) return;
-          const set = day5Block.candidateSets.find((s) => s.key === action.key);
-          if (!set) return;
-          try {
-            const updated = await api.lockBlock(day5Block.id, set.id);
-            dispatch({ type: "APPLY_BLOCK", block: normalizeBlock(updated) });
-          } catch (err) {
-            console.error("lock failed", err);
-          }
-          return;
-        }
-
-        case "REOPEN_LOCK": {
-          if (lockedSetKey === "C") {
-            dispatch({ type: "REOPEN_C" });
-            return;
-          }
-          if (!day5Block) return;
-          try {
-            const updated = await api.reopenBlock(day5Block.id);
-            dispatch({ type: "APPLY_BLOCK", block: normalizeBlock(updated) });
-          } catch (err) {
-            console.error("reopen failed", err);
-          }
-          return;
         }
 
         case "PATCH_PIN": {
@@ -452,13 +702,13 @@ export function PlannerProvider({ children }) {
           return;
       }
     },
-    [day5Block, lockedSetKey, state.contributors, state.trip?.id]
+    [state.pins, state.travelItems, state.plans, state.placing, state.proposeSheet, state.contributors, state.trip]
   );
   // Stable function identity across renders (children never need to
   // re-subscribe just because a background fetch resolved).
   const stableDispatch = useMemo(() => (action) => dispatchRef.current(action), []);
 
-  const value = useMemo(() => ({ ...state, day5Block, lockedSetKey }), [state, day5Block, lockedSetKey]);
+  const value = useMemo(() => state, [state]);
 
   if (state.status === "loading") {
     return (

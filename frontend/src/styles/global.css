@@ -74,7 +74,7 @@ h1, h2, h3, h4, p {
    responsive app — this is a mobile-web product. */
 .app-viewport {
   max-width: 430px;
-  min-height: 100%;
+  height: 100%;
   margin: 0 auto;
   background: var(--surface-page);
   position: relative;
@@ -84,7 +84,7 @@ h1, h2, h3, h4, p {
 
 @media (min-width: 431px) {
   .app-viewport {
-    min-height: 100vh;
+    height: 100vh;
     box-shadow: 0 0 0 1px var(--hairline), var(--shadow-raised);
   }
 }

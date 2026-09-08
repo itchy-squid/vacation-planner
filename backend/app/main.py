@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import blocks, comments, events, health, pins, trips
+from .routers import comments, contests, events, health, pins, plans, travel_items, trips
 
 settings = get_settings()
 
@@ -28,6 +28,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(trips.router)
 app.include_router(pins.router)
-app.include_router(blocks.router)
+app.include_router(plans.router)
+app.include_router(contests.router)
+app.include_router(travel_items.router)
 app.include_router(comments.router)
 app.include_router(events.router)

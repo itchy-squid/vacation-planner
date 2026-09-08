@@ -18,8 +18,21 @@ async function request(path, { method = "GET", body } = {}) {
     throw new Error(`Could not reach the API at ${API_BASE} (${method} ${path}). Is the backend running? — ${err.message}`);
   }
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${method} ${path} → ${res.status}${text ? `: ${text}` : ""}`);
+    let detail = "";
+    try {
+      const data = await res.json();
+      detail = typeof data.detail === "string" ? data.detail : data.detail?.message || JSON.stringify(data.detail ?? data);
+    } catch {
+      detail = await res.text().catch(() => "");
+    }
+    const err = new Error(`${method} ${path} → ${res.status}${detail ? `: ${detail}` : ""}`);
+    err.status = res.status;
+    try {
+      err.body = await res.clone().json();
+    } catch {
+      err.body = null;
+    }
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -36,16 +49,28 @@ export const api = {
   createPin: (tripId, payload) => request(`/api/trips/${tripId}/pins`, { method: "POST", body: payload }),
   getPin: (pinId) => request(`/api/pins/${pinId}`),
   patchPin: (pinId, fields) => request(`/api/pins/${pinId}`, { method: "PATCH", body: fields }),
+  deletePin: (pinId) => request(`/api/pins/${pinId}`, { method: "DELETE" }),
   toggleAvailabilityOverride: (pinId, day, band) =>
     request(`/api/pins/${pinId}/availability-overrides/toggle`, { method: "POST", body: { day, band } }),
 
-  listBlocks: (tripId) => request(`/api/trips/${tripId}/blocks`),
-  getBlock: (blockId) => request(`/api/blocks/${blockId}`),
-  toggleVote: (blockId, candidateSetId) =>
-    request(`/api/blocks/${blockId}/vote`, { method: "POST", body: { candidate_set_id: candidateSetId } }),
-  lockBlock: (blockId, candidateSetId) =>
-    request(`/api/blocks/${blockId}/lock`, { method: "POST", body: { candidate_set_id: candidateSetId } }),
-  reopenBlock: (blockId) => request(`/api/blocks/${blockId}/reopen`, { method: "POST" }),
+  // Scheduling — see docs/features/scheduling-feature-spec.md "API".
+  listPlans: (tripId) => request(`/api/trips/${tripId}/plans`),
+  createPlan: (tripId, payload) => request(`/api/trips/${tripId}/plans`, { method: "POST", body: payload }),
+  movePlan: (planId, fields) => request(`/api/plans/${planId}`, { method: "PATCH", body: fields }),
+  deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
+
+  proposeAlternative: (tripId, payload) => request(`/api/trips/${tripId}/contests`, { method: "POST", body: payload }),
+  getContest: (contestId) => request(`/api/contests/${contestId}`),
+  toggleContestVote: (contestId, planId) =>
+    request(`/api/contests/${contestId}/vote`, { method: "POST", body: { plan_id: planId } }),
+  lockContest: (contestId, planId) =>
+    request(`/api/contests/${contestId}/lock`, { method: "POST", body: { plan_id: planId } }),
+  reopenPlan: (planId) => request(`/api/plans/${planId}/reopen`, { method: "POST" }),
+
+  listTravelItems: (tripId) => request(`/api/trips/${tripId}/travel-items`),
+  createTravelItem: (tripId, payload) => request(`/api/trips/${tripId}/travel-items`, { method: "POST", body: payload }),
+  patchTravelItem: (id, fields) => request(`/api/travel-items/${id}`, { method: "PATCH", body: fields }),
+  deleteTravelItem: (id) => request(`/api/travel-items/${id}`, { method: "DELETE" }),
 
   listPinComments: (pinId) => request(`/api/pins/${pinId}/comments`),
   createComment: (tripId, payload) => request(`/api/trips/${tripId}/comments`, { method: "POST", body: payload }),
