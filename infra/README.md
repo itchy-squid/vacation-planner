@@ -39,10 +39,18 @@ entirely separate resource groups) so nothing dev does can touch prod.
 |---|---|---|
 | Parameters file | `infra/main.parameters.json` | `infra/main.parameters.prod.json` |
 | Resource group | `rg-vacationplanner-dev` | `rg-vacationplanner` |
-| Example resource name (Postgres) | `pg-vacationplanner-dev` | `pg-vacationplanner` |
+| Log Analytics, Postgres, Container Apps env, backend Container App, Static Web App | `vacationplanner-dev` | `vacationplanner` |
+| Container Registry (alphanumeric only) | `vacationplannerdevacr` | `vacationplanneracr` |
+| Managed identity | `id-vacationplanner-dev` | `id-vacationplanner` |
+
+Different resource *types* sharing the exact same base name is fine in
+Azure — names are only unique within a resource type/scope, not across
+types — so this is deliberate, not an oversight.
 
 Deploy either one with the same command, just swapping the resource group
-and parameters file — see "Deploy the infrastructure" below.
+and parameters file — see "Deploy the infrastructure" below. CI
+(`.github/workflows/deploy.yml`) picks the same two environments — see
+"Continuous deployment" below.
 
 ## Managed identity database auth
 
@@ -169,6 +177,36 @@ identity is the admin).
    password auth is disabled on the server). Every table this creates will
    be owned by `db_owner` and immediately readable/writable by the app,
    thanks to the default privileges `provision_roles.sql` already set up.
+
+## Continuous deployment
+
+`.github/workflows/deploy.yml` runs this same Bicep deployment (plus the
+backend image build/push and the frontend build/deploy) automatically, but
+it needs one-time setup per environment before its first run:
+
+1. **Create two GitHub Environments** named exactly `dev` and `prod`
+   (repo Settings → Environments → New environment). Each one holds its
+   own copies of every secret listed at the top of `deploy.yml`
+   (`AZURE_CREDENTIALS`, `AZURE_RESOURCE_GROUP`, `ACR_NAME`,
+   `CONTAINER_APP_NAME`, `POSTGRES_AAD_ADMIN_OBJECT_ID`,
+   `POSTGRES_AAD_ADMIN_PRINCIPAL_NAME`, the optional `ENTRA_*` ones, and
+   `AZURE_STATIC_WEB_APPS_API_TOKEN`) — set as *environment* secrets, not
+   repo-level secrets, so dev and prod never share a value. Point dev's
+   copies at the `rg-vacationplanner-dev` resources and prod's at the
+   `rg-vacationplanner` ones from the steps above.
+2. **Optionally add a required reviewer** on the `prod` environment
+   (same Settings page) if you want a person to approve every prod
+   deployment before it runs.
+
+Once that's set up:
+
+- **Every push to `main` deploys dev automatically** — no approval
+  needed, matching how the workflow behaved before dev/prod existed.
+- **Prod only deploys when you trigger it by hand**: Actions tab →
+  "Deploy" → "Run workflow" → pick `prod` from the environment dropdown.
+  There's no branch that deploys prod on its own, so a prod release is
+  always a deliberate action (and will pause for approval first, if you
+  added a required reviewer above).
 
 ## Adding a maintainer
 

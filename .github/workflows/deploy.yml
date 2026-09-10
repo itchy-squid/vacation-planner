@@ -2,20 +2,37 @@ name: Deploy
 
 # Builds the backend image, pushes it to ACR, deploys/updates the Azure
 # infrastructure via Bicep, points the Container App at the new image, and
-# deploys the built frontend to Azure Static Web Apps.
+# deploys the built frontend to Azure Static Web Apps — against one of two
+# environments, "dev" or "prod" (see infra/README.md "Environments").
+#
+# Which environment a run targets:
+#   - Push to `main` deploys "dev" automatically.
+#   - Manually running this workflow (Actions tab -> Deploy -> Run
+#     workflow) lets you pick "dev" or "prod" from a dropdown. This is the
+#     only way to reach prod — there's no branch that auto-deploys it, so
+#     a prod release is always a deliberate, one-off action.
 #
 # One-time setup this workflow assumes (see infra/README.md for the manual
-# steps and infra/main.bicep for what gets provisioned):
-#   - Resource group already exists.
+# steps and infra/main.bicep for what gets provisioned), per environment:
+#   - A GitHub Environment named exactly "dev" and one named "prod"
+#     (Settings -> Environments) — each holds its OWN copies of the
+#     secrets below, so dev and prod never share a resource group,
+#     registry, Postgres server, or Static Web App. Add a required
+#     reviewer on the "prod" environment if you want a manual approval
+#     gate before anything deploys there.
+#   - Resource group already exists for that environment
+#     (rg-vacationplanner-dev / rg-vacationplanner).
 #   - The database uses Microsoft Entra ID auth only (no Postgres
 #     passwords) — see infra/README.md "Managed identity database auth".
 #     The one-time role provisioning (infra/sql/provision_roles.sql) is a
 #     database-level operation this workflow does not run; it's a manual
 #     step in infra/README.md, done once per environment before the first
 #     deploy.
-#   - Repo secrets: AZURE_CREDENTIALS (a service principal with Contributor
-#     on the resource group — `az ad sp create-for-rbac --sdk-auth`),
-#     AZURE_RESOURCE_GROUP, POSTGRES_AAD_ADMIN_OBJECT_ID,
+#   - Per-environment secrets (set on the "dev" / "prod" GitHub
+#     Environments, NOT repo-level secrets): AZURE_CREDENTIALS (a service
+#     principal with Contributor on that environment's resource group —
+#     `az ad sp create-for-rbac --sdk-auth`), AZURE_RESOURCE_GROUP,
+#     ACR_NAME, CONTAINER_APP_NAME, POSTGRES_AAD_ADMIN_OBJECT_ID,
 #     POSTGRES_AAD_ADMIN_PRINCIPAL_NAME (your Entra object ID / UPN — not
 #     secret values, just kept out of source control same as the others),
 #     ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_TENANT_ID (optional —
@@ -26,17 +43,42 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        type: choice
+        required: true
+        default: dev
+        options:
+          - dev
+          - prod
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
-  ACR_NAME: ${{ secrets.ACR_NAME }}
-
 jobs:
+  resolve-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      params-file: ${{ steps.resolve.outputs.params-file }}
+    steps:
+      - id: resolve
+        run: |
+          ENVIRONMENT="${{ inputs.environment || 'dev' }}"
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            PARAMS_FILE="infra/main.parameters.prod.json"
+          else
+            PARAMS_FILE="infra/main.parameters.json"
+          fi
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "params-file=$PARAMS_FILE" >> "$GITHUB_OUTPUT"
+
   infra:
+    needs: resolve-environment
+    environment: ${{ needs.resolve-environment.outputs.environment }}
     runs-on: ubuntu-latest
     outputs:
       backend-fqdn: ${{ steps.deploy.outputs.backendUrl }}
@@ -55,7 +97,7 @@ jobs:
           resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
           template: infra/main.bicep
           parameters: >
-            infra/main.parameters.json
+            ${{ needs.resolve-environment.outputs.params-file }}
             postgresAadAdminObjectId=${{ secrets.POSTGRES_AAD_ADMIN_OBJECT_ID }}
             postgresAadAdminPrincipalName=${{ secrets.POSTGRES_AAD_ADMIN_PRINCIPAL_NAME }}
             entraClientId=${{ secrets.ENTRA_CLIENT_ID }}
@@ -63,7 +105,8 @@ jobs:
             entraTenantId=${{ secrets.ENTRA_TENANT_ID }}
 
   backend:
-    needs: infra
+    needs: [resolve-environment, infra]
+    environment: ${{ needs.resolve-environment.outputs.environment }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +131,8 @@ jobs:
             --image "${{ secrets.ACR_NAME }}.azurecr.io/vacation-planner-backend:${{ github.sha }}"
 
   frontend:
-    needs: infra
+    needs: [resolve-environment, infra]
+    environment: ${{ needs.resolve-environment.outputs.environment }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
