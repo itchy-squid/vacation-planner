@@ -46,6 +46,9 @@ connect as — must match the roleName given to pgaadauth_create_principal_with_
 in infra/sql/provision_roles.sql for that identity.''')
 param postgresAppRole string = 'app-backend'
 
+@description('Postgres Flexible Server compute SKU — kept fixed at Standard_B1ms (Burstable) for both dev and prod.')
+param postgresSkuName string = 'Standard_B1ms'
+
 @description('''Base name every resource is derived from. Prod deliberately
 gets no environment suffix (just "vacationplanner"), while every other
 environment is suffixed (e.g. "vacationplanner-dev") so it can never
@@ -57,7 +60,7 @@ module logAnalytics 'modules/log-analytics.bicep' = {
   name: 'log-analytics'
   params: {
     location: location
-    name: '${suffix}'
+    name: suffix
   }
 }
 
@@ -73,7 +76,8 @@ module postgres 'modules/postgres.bicep' = {
   name: 'postgres'
   params: {
     location: location
-    name: '${suffix}'
+    name: suffix
+    skuName: postgresSkuName
     entraTenantId: entraTenantId
     aadAdminObjectId: postgresAadAdminObjectId
     aadAdminPrincipalName: postgresAadAdminPrincipalName
@@ -85,7 +89,7 @@ module containerAppsEnv 'modules/container-apps-env.bicep' = {
   name: 'container-apps-env'
   params: {
     location: location
-    name: '${suffix}'
+    name: suffix
     logAnalyticsCustomerId: logAnalytics.outputs.customerId
     logAnalyticsSharedKey: logAnalytics.outputs.sharedKey
   }
@@ -103,7 +107,7 @@ module backend 'modules/container-app-backend.bicep' = {
   name: 'backend'
   params: {
     location: location
-    name: '${suffix}'
+    name: suffix
     containerAppsEnvironmentId: containerAppsEnv.outputs.id
     containerImage: backendContainerImage
     registryLoginServer: registry.outputs.loginServer
@@ -125,7 +129,7 @@ module frontend 'modules/static-web-app.bicep' = {
   name: 'frontend'
   params: {
     location: location
-    name: '${suffix}'
+    name: suffix
   }
 }
 
