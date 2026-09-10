@@ -7,9 +7,17 @@ name: Deploy
 # One-time setup this workflow assumes (see infra/README.md for the manual
 # steps and infra/main.bicep for what gets provisioned):
 #   - Resource group already exists.
+#   - The database uses Microsoft Entra ID auth only (no Postgres
+#     passwords) — see infra/README.md "Managed identity database auth".
+#     The one-time role provisioning (infra/sql/provision_roles.sql) is a
+#     database-level operation this workflow does not run; it's a manual
+#     step in infra/README.md, done once per environment before the first
+#     deploy.
 #   - Repo secrets: AZURE_CREDENTIALS (a service principal with Contributor
 #     on the resource group — `az ad sp create-for-rbac --sdk-auth`),
-#     AZURE_RESOURCE_GROUP, POSTGRES_ADMIN_PASSWORD,
+#     AZURE_RESOURCE_GROUP, POSTGRES_AAD_ADMIN_OBJECT_ID,
+#     POSTGRES_AAD_ADMIN_PRINCIPAL_NAME (your Entra object ID / UPN — not
+#     secret values, just kept out of source control same as the others),
 #     ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_TENANT_ID (optional —
 #     leave the Entra ones unset until Easy Auth is set up),
 #     AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App resource,
@@ -48,7 +56,8 @@ jobs:
           template: infra/main.bicep
           parameters: >
             infra/main.parameters.json
-            postgresAdminPassword=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+            postgresAadAdminObjectId=${{ secrets.POSTGRES_AAD_ADMIN_OBJECT_ID }}
+            postgresAadAdminPrincipalName=${{ secrets.POSTGRES_AAD_ADMIN_PRINCIPAL_NAME }}
             entraClientId=${{ secrets.ENTRA_CLIENT_ID }}
             entraClientSecret=${{ secrets.ENTRA_CLIENT_SECRET }}
             entraTenantId=${{ secrets.ENTRA_TENANT_ID }}

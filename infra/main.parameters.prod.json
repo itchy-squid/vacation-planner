@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "appName": { "value": "vacationplanner" },
-    "envName": { "value": "dev" },
+    "envName": { "value": "prod" },
     "postgresAadAdminObjectId": { "value": "REPLACE_ME_AAD_OBJECT_ID" },
     "postgresAadAdminPrincipalName": { "value": "REPLACE_ME_AAD_UPN_OR_EMAIL" },
     "corsOrigins": { "value": "*" }

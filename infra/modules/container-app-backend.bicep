@@ -1,4 +1,11 @@
-@description('The FastAPI/uvicorn backend as an Azure Container App, with Easy Auth (Entra ID) in front of it.')
+@description('''The FastAPI/uvicorn backend as an Azure Container App, with
+Easy Auth (Entra ID) in front of it for user sign-in, and a user-assigned
+managed identity for passwordless database access (see
+infra/README.md "Managed identity database auth" and app/db.py
+install_azure_ad_token_provider). These are two independent uses of Entra
+ID — Easy Auth authenticates the human hitting the API; the managed
+identity authenticates the container to Postgres — and neither depends on
+the other.''')
 param location string
 param name string
 param containerAppsEnvironmentId string
@@ -7,9 +14,22 @@ param registryLoginServer string
 param registryUsername string
 @secure()
 param registryPassword string
-@secure()
-param databaseUrl string
 param corsOrigins string
+
+@description('Resource ID of the user-assigned managed identity (infra/modules/managed-identity.bicep) to attach to this Container App.')
+param managedIdentityId string
+@description('Client ID of that same managed identity — read back by the app as AZURE_CLIENT_ID so DefaultAzureCredential targets this identity specifically.')
+param managedIdentityClientId string
+
+@description('Fully qualified domain name of the Postgres Flexible Server.')
+param postgresHost string
+param postgresDatabase string = 'vacation_planner'
+@description('''The Postgres role name mapped to this Container App's
+managed identity (see infra/sql/provision_roles.sql) — used as the
+connection username. Not a secret: on an AAD-auth-only server, knowing this
+name grants nothing without also being (or impersonating) the identity
+itself.''')
+param postgresAppRole string = 'app-backend'
 
 @description('Set to enable Azure Easy Auth with Entra ID. Leave clientId empty to deploy without auth turned on yet (see infra/README.md).')
 param entraTenantId string = ''
@@ -22,6 +42,12 @@ var authEnabled = !empty(entraClientId)
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  }
   properties: {
     managedEnvironmentId: containerAppsEnvironmentId
     configuration: {
@@ -40,7 +66,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: concat(
         [
           { name: 'registry-password', value: registryPassword }
-          { name: 'database-url', value: databaseUrl }
         ],
         authEnabled ? [{ name: 'entra-client-secret', value: entraClientSecret }] : []
       )
@@ -55,7 +80,15 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             memory: '1Gi'
           }
           env: [
-            { name: 'DATABASE_URL', secretRef: 'database-url' }
+            // No password anywhere: DATABASE_URL carries only host/db/role/
+            // sslmode, USE_AZURE_AD_AUTH tells app/db.py to fetch a fresh
+            // Entra token per connection instead, and AZURE_CLIENT_ID tells
+            // DefaultAzureCredential which of this Container App's
+            // (potentially several) identities to use — see
+            // app/db.py and app/config.py.
+            { name: 'DATABASE_URL', value: 'postgresql+psycopg://${postgresAppRole}@${postgresHost}:5432/${postgresDatabase}?sslmode=require' }
+            { name: 'USE_AZURE_AD_AUTH', value: 'true' }
+            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'ENVIRONMENT', value: 'production' }
             { name: 'CORS_ORIGINS', value: corsOrigins }
           ]
