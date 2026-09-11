@@ -194,6 +194,34 @@ it needs one-time setup per environment before its first run:
    stored credential at all (not a client secret, not a service principal
    password — the trust is the federated credential itself, verified
    directly against the GitHub Actions OIDC token):
+
+   **A prerequisite that changed recently:** GitHub has rolled out
+   ["immutable subject claims"](https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/)
+   for Actions OIDC tokens. The token's `sub` claim can now embed the
+   *numeric* owner and repository IDs —
+   `repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:<env>` — instead
+   of just the owner/repo *names*, so a federated credential can't be
+   silently inherited by someone else's repo after a rename or transfer.
+   This repo's IDs, for when you need them below:
+   - Owner (`itchy-squid`) ID: `86495347`
+   - Repository (`vacation-planner`) ID: `1358795740`
+
+   Whether GitHub actually mints tokens in the new format depends on
+   whether this repo (or its org) has opted in — **existing repos don't
+   get switched over automatically**; only repos *created* on or after
+   July 15, 2026 do. Opt-in today is per-repo or per-org, via the OIDC
+   settings UI (repo or org Settings → Actions → General, in the OIDC
+   section) or the REST API — GitHub hasn't pinned down an exact toggle
+   label in its docs, but there's also a preview endpoint that shows you
+   the *exact* subject string a token would carry, which is worth using
+   here: a mismatch between what you configure in Azure and what GitHub
+   actually issues fails silently, with Azure just rejecting the token
+   and no hint that the subject *format* (not just the value) is the
+   problem. **Until you've confirmed the opt-in is on, use the old
+   name-based subject below
+   (`repo:itchy-squid/vacation-planner:environment:$ENV`) instead of the
+   ID-based one** — it still works for any repo that hasn't opted in,
+   including this one today.
    ```
    ENV=dev   # then repeat the whole block with ENV=prod
    RG=rg-vacationplanner-dev   # rg-vacationplanner for the prod pass
@@ -211,13 +239,18 @@ it needs one-time setup per environment before its first run:
      --scope "/subscriptions/<subscription-id>/resourceGroups/$RG"
 
    # Trust GitHub Actions runs against this repo's "$ENV" GitHub
-   # Environment specifically (not just any run on any branch).
+   # Environment specifically (not just any run on any branch). Pick
+   # whichever "subject" line below matches whether this repo has opted
+   # into immutable subject claims (see above) — not both at once.
    az ad app federated-credential create --id "$APP_ID" --parameters '{
      "name": "github-actions-'"$ENV"'",
      "issuer": "https://token.actions.githubusercontent.com",
      "subject": "repo:itchy-squid/vacation-planner:environment:'"$ENV"'",
      "audiences": ["api://AzureADTokenExchange"]
    }'
+   # — once immutable subject claims are confirmed opted-in for this
+   #   repo, use this "subject" instead of the name-based one above:
+   #   "subject": "repo:itchy-squid@86495347/vacation-planner@1358795740:environment:'"$ENV"'",
 
    echo "DEPLOY_CLIENT_ID ($ENV) = $APP_ID"
    ```
@@ -228,7 +261,13 @@ it needs one-time setup per environment before its first run:
 
    **Doing this by hand instead, via the Microsoft Entra admin center**
    (no CLI) — repeat this whole sequence once for `dev` and once for
-   `prod`:
+   `prod`. The same immutable-subject caveat above still applies, with one
+   extra wrinkle: **the portal wizard only ever produces the old
+   name-based subject** — there's no field in it for the ID-based one. If
+   this repo has opted into immutable subject claims, use the CLI block
+   above instead of this walkthrough for the federated-credential step
+   (the ID-based `subject` is only settable through the CLI/API JSON
+   payload today, not the portal UI):
    1. [entra.microsoft.com](https://entra.microsoft.com) → **Identity** →
       **Applications** → **App registrations** → **+ New registration**.
       Name it `gh-vacationplanner-dev-deploy` (or `...-prod-deploy`),
@@ -254,9 +293,11 @@ it needs one-time setup per environment before its first run:
       Issuer and audience auto-fill to
       `https://token.actions.githubusercontent.com` and
       `api://AzureADTokenExchange` — leave those as they are. Select
-      **Add**. The subject this produces is the same
-      `repo:itchy-squid/vacation-planner:environment:dev` string the CLI
-      version sets explicitly.
+      **Add**. The subject this produces is the old name-based
+      `repo:itchy-squid/vacation-planner:environment:dev` string — fine
+      as long as this repo hasn't opted into immutable subject claims
+      (see above); if it has, skip this step and add the credential via
+      the CLI block instead.
    4. Switch to the [Azure portal](https://portal.azure.com) →
       **Resource groups** → `rg-vacationplanner-dev` (or
       `rg-vacationplanner`) → **Access control (IAM)** → **+ Add** →
@@ -279,7 +320,7 @@ it needs one-time setup per environment before its first run:
      covers GitHub's federated login, Postgres's AAD admin, and Easy Auth
      alike, rather than needing a separate tenant ID per consumer —
      `AZURE_RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APP_NAME`,
-     `POSTGRES_ADMIN_OBJECT_ID`, `POSTGRES_ADMIN_PRINCIPAL_NAME`,
+     `POSTGRES_AAD_ADMIN_OBJECT_ID`, `POSTGRES_AAD_ADMIN_PRINCIPAL_NAME`,
      and the optional `EASY_AUTH_CLIENT_ID` (a distinct Entra app from the
      `DEPLOY_CLIENT_ID` one above — different client IDs, same tenant).
    - **Secrets** (that environment's "Secrets" tab — these genuinely are

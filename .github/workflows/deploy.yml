@@ -44,18 +44,18 @@ name: Deploy
 #     That app registration has its own distinct client ID
 #     (DEPLOY_CLIENT_ID below) from the one Easy Auth uses
 #     (EASY_AUTH_CLIENT_ID) — two different Entra apps for two different
-#     purposes. The tenant, though, is just ENTRA_TENANT_ID — the same
+#     purposes. The tenant, though, is just AZURE_TENANT_ID — the same
 #     Entra tenant backs GitHub's login, Postgres's AAD auth, and Easy
 #     Auth alike, so there's only ever one tenant ID to set, not one per
 #     consumer.
 #   - Per-environment VARIABLES (set on the "dev" / "prod" GitHub
 #     Environments' "Variables" tab — none of these are secret, they're
 #     just per-environment config): DEPLOY_CLIENT_ID / AZURE_SUBSCRIPTION_ID
-#     (the federated app registration above), ENTRA_TENANT_ID (shared by
+#     (the federated app registration above), AZURE_TENANT_ID (shared by
 #     GitHub's login, Postgres's AAD admin, and Easy Auth),
 #     AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME,
-#     POSTGRES_ADMIN_OBJECT_ID (your Entra object ID),
-#     POSTGRES_ADMIN_PRINCIPAL_NAME (your Entra UPN/email), and
+#     POSTGRES_AAD_ADMIN_OBJECT_ID (your Entra object ID),
+#     POSTGRES_AAD_ADMIN_PRINCIPAL_NAME (your Entra UPN/email), and
 #     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up).
 #   - Per-environment SECRETS (same Environments' "Secrets" tab — these
 #     ARE sensitive): EASY_AUTH_CLIENT_SECRET (leave unset until Easy Auth
@@ -111,7 +111,7 @@ jobs:
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.DEPLOY_CLIENT_ID }}
-          tenant-id: ${{ vars.ENTRA_TENANT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy infrastructure (Bicep)
@@ -123,11 +123,11 @@ jobs:
           template: infra/main.bicep
           parameters: >
             ${{ needs.resolve-environment.outputs.params-file }}
-            postgresAadAdminObjectId=${{ vars.POSTGRES_ADMIN_OBJECT_ID }}
-            postgresAadAdminPrincipalName=${{ vars.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+            postgresAadAdminObjectId=${{ vars.POSTGRES_AAD_ADMIN_OBJECT_ID }}
+            postgresAadAdminPrincipalName=${{ vars.POSTGRES_AAD_ADMIN_PRINCIPAL_NAME }}
             entraClientId=${{ vars.EASY_AUTH_CLIENT_ID }}
             entraClientSecret=${{ secrets.EASY_AUTH_CLIENT_SECRET }}
-            entraTenantId=${{ vars.ENTRA_TENANT_ID }}
+            entraTenantId=${{ vars.AZURE_TENANT_ID }}
 
   backend:
     needs: [resolve-environment, infra]
@@ -139,7 +139,7 @@ jobs:
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.DEPLOY_CLIENT_ID }}
-          tenant-id: ${{ vars.ENTRA_TENANT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build and push backend image
