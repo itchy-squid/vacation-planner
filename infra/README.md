@@ -6,9 +6,9 @@ Static Web App (frontend).
 
 ```
 infra/
-  main.bicep                  # orchestrates the modules below (resource-group scope)
-  main.parameters.json        # dev defaults; pass secrets via CLI/CI
-  main.parameters.prod.json   # prod defaults; pass secrets via CLI/CI
+  main.bicep                          # orchestrates the modules below (resource-group scope)
+  main.parameters.dev.bicepparam      # dev defaults; pass secrets via env vars/CLI/CI
+  main.parameters.prod.bicepparam     # prod defaults; pass secrets via env vars/CLI/CI
   modules/
     log-analytics.bicep
     container-registry.bicep
@@ -31,7 +31,7 @@ keeps the environments in separate resources/resource groups.
 
 | | dev | prod |
 |---|---|---|
-| Parameters file | `infra/main.parameters.json` | `infra/main.parameters.prod.json` |
+| Parameters file | `infra/main.parameters.dev.bicepparam` | `infra/main.parameters.prod.bicepparam` |
 | Resource group | `rg-vacationplanner-dev` | `rg-vacationplanner` |
 | Log Analytics, Postgres, Container Apps env, backend Container App, Static Web App | `vacationplanner-dev` | `vacationplanner` |
 | Container Registry (alphanumeric only) | `vacationplannerdev` | `vacationplanner` |
@@ -99,26 +99,39 @@ operation, no Bicep/ARM resource type for it).
    `.github/workflows/deploy.yml` do it) — `main.bicep`'s default image is
    a placeholder.
 
-5. **Deploy the infrastructure** — dev:
+5. **Deploy the infrastructure** — a `.bicepparam` file's own `using`
+   statement already points at `main.bicep`, so `-f`/`--template-file`
+   isn't needed, but the CLI only accepts one `--parameters`/`-p` when
+   it's a `.bicepparam` file (unlike the old ARM-JSON files, you can't
+   also tack on `-p key=value` overrides) — so `entraClientId`/
+   `entraClientSecret` are read from environment variables inside
+   `main.parameters.dev.bicepparam`/`main.parameters.prod.bicepparam`
+   instead (see that file's comment). Leave them unset for the first
+   pass:
    ```
+   unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET
    az deployment group create \
      -g rg-vacationplanner-dev \
-     -f infra/main.bicep \
-     -p infra/main.parameters.json \
-     -p entraClientId='' # first pass: leave empty, note the backend fqdn
+     -p infra/main.parameters.dev.bicepparam
    ```
-   prod:
+   note the backend fqdn. prod:
    ```
+   unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET
    az deployment group create \
      -g rg-vacationplanner \
-     -f infra/main.bicep \
-     -p infra/main.parameters.prod.json \
-     -p entraClientId=''
+     -p infra/main.parameters.prod.bicepparam
    ```
-   Re-run with `entraClientId`, `entraClientSecret`, `entraTenantId` once
-   the app registration exists. Note the `backendIdentityObjectId` and
-   `postgresFqdn` outputs. Repeat steps 2, 3, 6, 7, 8 independently per
-   environment.
+   Re-run once the app registration exists, this time with those two env
+   vars set (and `entraTenantId` left to its `main.bicep` default of
+   `subscription().tenantId`, unless you actually need a different
+   tenant):
+   ```
+   export ENTRA_CLIENT_ID='...'
+   export ENTRA_CLIENT_SECRET='...'
+   az deployment group create -g rg-vacationplanner-dev -p infra/main.parameters.dev.bicepparam
+   ```
+   Note the `backendIdentityObjectId` and `postgresFqdn` outputs. Repeat
+   steps 2, 3, 6, 7, 8 independently per environment.
 
 6. **Create the Postgres Entra Administrator manually** — Bicep's
    `Microsoft.DBforPostgreSQL/flexibleServers/administrators` resource
@@ -314,7 +327,7 @@ For dev: `vacations.dev.amandasanti.com` (frontend),
    `deploy.yml` builds the frontend against that value automatically, no
    further changes needed.
 
-`corsOrigins` in `infra/main.parameters.json` is already set to
+`corsOrigins` in `infra/main.parameters.dev.bicepparam` is already set to
 `https://vacations.dev.amandasanti.com` for dev, ahead of the custom
 domain being bound — testing against whichever origin you're actually
 serving from partway through this rollout may fail CORS until step 6

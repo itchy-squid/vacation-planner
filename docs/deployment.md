@@ -19,7 +19,7 @@ Two fully separate environments (no shared resources):
 |---|---|---|
 | GitHub Environment | `dev` | `prod` |
 | Resource group | `rg-vacationplanner-dev` | `rg-vacationplanner` |
-| Parameters file | `infra/main.parameters.json` | `infra/main.parameters.prod.json` |
+| Parameters file | `infra/main.parameters.dev.bicepparam` | `infra/main.parameters.prod.bicepparam` |
 | Triggers on | every push to `main` | manual only |
 
 Add a required reviewer on the `prod` GitHub Environment for a manual

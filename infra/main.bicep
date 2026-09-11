@@ -1,7 +1,10 @@
 // Resource-group-scoped deployment for the vacation planner. Run with:
-//   az deployment group create -g <resource-group> -f infra/main.bicep -p infra/main.parameters.json
-// (or let .github/workflows/deploy.yml do it on push to main — see that
-// file and infra/README.md for the one-time setup this needs first.)
+//   az deployment group create -g <resource-group> -p infra/main.parameters.dev.bicepparam
+// (main.parameters.prod.bicepparam for prod; -f/--template-file isn't
+// needed since each .bicepparam file's own `using` statement already
+// points at this file. Or let .github/workflows/deploy.yml do it on push
+// to main — see that file and infra/README.md for the one-time setup
+// this needs first.)
 targetScope = 'resourceGroup'
 
 @description('Short, unique-ish name segment used to build resource names, e.g. "vacationplanner".')

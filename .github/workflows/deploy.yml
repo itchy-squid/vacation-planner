@@ -93,9 +93,9 @@ jobs:
         run: |
           ENVIRONMENT="${{ inputs.environment || 'dev' }}"
           if [ "$ENVIRONMENT" = "prod" ]; then
-            PARAMS_FILE="infra/main.parameters.prod.json"
+            PARAMS_FILE="infra/main.parameters.prod.bicepparam"
           else
-            PARAMS_FILE="infra/main.parameters.json"
+            PARAMS_FILE="infra/main.parameters.dev.bicepparam"
           fi
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "params-file=$PARAMS_FILE" >> "$GITHUB_OUTPUT"
@@ -115,18 +115,31 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # azure/arm-deploy only accepts ARM-JSON parameter files, not
+      # .bicepparam, so infra/main.parameters.*.bicepparam needs
+      # azure/bicep-deploy instead -- it takes parameters-file and an
+      # inline `parameters` override side by side. That combination is
+      # documented as supported but untested here yet, so watch this
+      # step's first real run closely (does entraClientId/Secret/TenantId
+      # actually reach the deployment alongside the file's own params).
       - name: Deploy infrastructure (Bicep)
         id: deploy
-        uses: azure/arm-deploy@v2
+        uses: azure/bicep-deploy@v2
         with:
-          scope: resourcegroup
-          resourceGroupName: ${{ vars.AZURE_RESOURCE_GROUP }}
-          template: infra/main.bicep
-          parameters: >
-            ${{ needs.resolve-environment.outputs.params-file }}
-            entraClientId=${{ vars.EASY_AUTH_CLIENT_ID }}
-            entraClientSecret=${{ secrets.EASY_AUTH_CLIENT_SECRET }}
-            entraTenantId=${{ vars.AZURE_TENANT_ID }}
+          type: deployment
+          operation: create
+          scope: resourceGroup
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          name: vacationplanner-${{ needs.resolve-environment.outputs.environment }}
+          template-file: infra/main.bicep
+          parameters-file: ${{ needs.resolve-environment.outputs.params-file }}
+          parameters: |
+            {
+              "entraClientId": "${{ vars.EASY_AUTH_CLIENT_ID }}",
+              "entraClientSecret": "${{ secrets.EASY_AUTH_CLIENT_SECRET }}",
+              "entraTenantId": "${{ vars.AZURE_TENANT_ID }}"
+            }
 
   backend:
     needs: [resolve-environment, infra]
