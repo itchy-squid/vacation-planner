@@ -29,6 +29,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PORT=8000
 EXPOSE 8000
 
-# Run pending migrations, then start the app. Safe to run on every
-# revision start — Alembic no-ops when there's nothing new to apply.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# Migrations run in CI (.github/workflows/deploy.yml's "migrate" job,
+# using the "gh-deploy" Postgres role), not here -- the app's own identity
+# (app-backend) only ever has db_rw, so it has no DDL privileges to run
+# `alembic upgrade head` itself. See claude/db-privilege-provisioning.md.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

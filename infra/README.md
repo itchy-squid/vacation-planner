@@ -149,8 +149,13 @@ operation, no Bicep/ARM resource type for it).
 
 7. **Provision the database roles** — connect as yourself (already the
    Entra Administrator from step 6) and run
-   `infra/sql/provision_roles.sql`, filling in your object ID and the
-   `backendIdentityObjectId` output:
+   `infra/sql/provision_roles.sql`, filling in your object ID, the
+   `backendIdentityObjectId` output, AND the deploy service principal's
+   object ID (do "Continuous deployment"'s step 2 first if you haven't —
+   `az ad sp show --id "$DEPLOY_CLIENT_ID" --query id -o tsv` — this is
+   what maps CI's identity to the "gh-deploy" Postgres role that runs
+   migrations; skip it for now and come back to add just that one
+   statement later if you're not setting up CI yet):
    ```
    PGPASSWORD="$(az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv)" \
      psql "host=<postgresFqdn output> dbname=vacation_planner user=<your-email> sslmode=require" \
@@ -159,17 +164,18 @@ operation, no Bicep/ARM resource type for it).
    (Tokens are short-lived — re-run `az account get-access-token` and
    retry on an auth failure.)
 
-8. **Run the migration**:
-   ```
-   cd backend
-   DATABASE_URL="postgresql+psycopg://<your-email>@<postgresFqdn output>:5432/vacation_planner?sslmode=require" \
-     USE_AZURE_AD_AUTH=true \
-     uv run alembic upgrade head
-   ```
-   `USE_AZURE_AD_AUTH=true` makes `alembic/env.py` fetch your `az login`
-   token instead of a password (there is none). Tables created are owned
-   by `db_owner` and immediately usable by the app via
-   `provision_roles.sql`'s default privileges.
+8. **Run the migration** — no manual command anymore. Nothing (not the
+   app, not a maintainer) runs `alembic upgrade head` by hand; it runs in
+   CI, connected as `gh-deploy`, in `.github/workflows/deploy.yml`'s
+   `migrate` job — see "Continuous deployment" below. Once step 7 above
+   has mapped `gh-deploy` and CI is set up, trigger a deploy (push to
+   `main` for dev; run the "Deploy" workflow manually for prod) and the
+   schema gets created for you, before the backend image ever goes live.
+   Tables it creates are owned by `db_owner` and immediately
+   usable by the app via `provision_roles.sql`'s default privileges. See
+   `claude/db-privilege-provisioning.md` for why this replaced both
+   the app migrating itself at container startup and a maintainer running
+   it by hand.
 
 ## Continuous deployment
 
@@ -220,7 +226,19 @@ one-time setup per environment first:
    #   "subject": "repo:itchy-squid@86495347/vacation-planner@1358795740:environment:'"$ENV"'",
 
    echo "DEPLOY_CLIENT_ID ($ENV) = $APP_ID"
+
+   # Also needed for infra/sql/provision_roles.sql's "gh-deploy" mapping
+   # (the Deploy workflow's migrate job connects to Postgres as this
+   # identity) -- note this is the SERVICE PRINCIPAL's object ID, not
+   # $APP_ID (the application/client ID) and not the app registration's
+   # own object ID:
+   az ad sp show --id "$APP_ID" --query id -o tsv
    ```
+   If `provision_roles.sql` was already run for this environment without
+   the `gh-deploy` mapping (e.g. you set up CI after following "One-time
+   manual setup"), go back and run just its `gh-deploy` `pgaadauth_create_
+   principal_with_oid` and `GRANT db_owner TO "gh-deploy"` statements —
+   connected the same way, as the Entra Administrator.
 
    **Via the Entra admin center instead (no CLI)** — repeat for `dev` and
    `prod`. The portal wizard only ever produces the name-based subject; if

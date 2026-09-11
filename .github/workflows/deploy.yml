@@ -1,9 +1,12 @@
 name: Deploy
 
-# Builds the backend image, pushes it to ACR, deploys/updates the Azure
-# infrastructure via Bicep, points the Container App at the new image, and
-# deploys the built frontend to Azure Static Web Apps — against one of two
-# environments, "dev" or "prod" (see infra/README.md "Environments").
+# Deploys/updates the Azure infrastructure via Bicep, runs pending Alembic
+# migrations, builds the backend image and points the Container App at it,
+# and deploys the built frontend to Azure Static Web Apps — against one of
+# two environments, "dev" or "prod" (see infra/README.md "Environments").
+# Migrations (the "migrate" job) always run before the backend image is
+# swapped in, connected as the "gh-deploy" Postgres role -- see
+# infra/sql/provision_roles.sql and claude/db-privilege-provisioning.md.
 #
 # Which environment a run targets:
 #   - Push to `main` deploys "dev" automatically.
@@ -27,7 +30,10 @@ name: Deploy
 #     The one-time role provisioning (infra/sql/provision_roles.sql) is a
 #     database-level operation this workflow does not run; it's a manual
 #     step in infra/README.md, done once per environment before the first
-#     deploy.
+#     deploy -- and it MUST include mapping this environment's
+#     DEPLOY_CLIENT_ID service principal to the "gh-deploy" Postgres role
+#     (granted db_owner there), or every run of this workflow's "migrate"
+#     job fails to connect.
 #   - GitHub's own authentication to Azure (`azure/login@v2` below) is
 #     federated (OIDC) — no Azure credential is stored in GitHub at all.
 #     Each environment needs its own Entra app registration with a
@@ -106,6 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend-fqdn: ${{ steps.deploy.outputs.backendUrl }}
+      postgres-fqdn: ${{ steps.deploy.outputs.postgresFqdn }}
     steps:
       - uses: actions/checkout@v4
 
@@ -141,8 +148,55 @@ jobs:
               "entraTenantId": "${{ vars.AZURE_TENANT_ID }}"
             }
 
-  backend:
+  migrate:
+    # Runs `alembic upgrade head` against the environment's Postgres
+    # database, connected as the "gh-deploy" Postgres role -- mapped once
+    # per environment to THIS job's own DEPLOY_CLIENT_ID service principal
+    # via infra/sql/provision_roles.sql, and granted db_owner there (never
+    # granted to the app itself). This replaces both "the app migrates
+    # itself at container startup" (would need the app to hold db_owner
+    # at all times just for this) and "a maintainer runs it by hand" (see
+    # claude/db-privilege-provisioning.md for the full history). `backend`
+    # below depends on this job so a new image is never pointed at by the
+    # Container App before its schema exists.
     needs: [resolve-environment, infra]
+    environment: ${{ needs.resolve-environment.outputs.environment }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --no-dev
+
+      - name: Run migrations
+        env:
+          # No stored password: DefaultAzureCredential (backend/app/db.py)
+          # falls back to AzureCliCredential when no managed identity is
+          # configured, which picks up the `az login` azure/login@v2 just
+          # performed as DEPLOY_CLIENT_ID -- same passwordless pattern as
+          # a maintainer's own `az login`, just running here instead of on
+          # someone's laptop.
+          DATABASE_URL: postgresql+psycopg://gh-deploy@${{ needs.infra.outputs.postgres-fqdn }}:5432/vacation_planner?sslmode=require
+          USE_AZURE_AD_AUTH: "true"
+        run: uv run alembic upgrade head
+
+  backend:
+    needs: [resolve-environment, infra, migrate]
     environment: ${{ needs.resolve-environment.outputs.environment }}
     runs-on: ubuntu-latest
     steps:

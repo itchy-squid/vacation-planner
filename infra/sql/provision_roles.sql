@@ -20,6 +20,17 @@
 --     db_rw — read/write, no DDL, no ownership. It cannot alter its own
 --     schema or escalate itself into db_owner. See the very bottom of
 --     this file for the "prove it" queries.
+--   - Migrations run neither as the app nor by hand as a maintainer --
+--     they run in CI (.github/workflows/deploy.yml's "migrate" job),
+--     connected as a THIRD identity ("gh-deploy", mapped below) that gets
+--     db_owner membership for exactly that purpose. This keeps the app's
+--     runtime privileges unchanged (still just db_rw, always) while still
+--     meaning no human has to run `alembic upgrade head` by hand, ever,
+--     including for the very first migration. See
+--     claude/db-privilege-provisioning.md for why this replaced both
+--     "the app runs its own migrations at startup" (app would need
+--     db_owner at all times to do that) and "a maintainer runs it by
+--     hand" (doesn't scale, and isn't automatic).
 --   - ALTER DEFAULT PRIVILEGES is set for the db_owner role *before* any
 --     tables exist, so every table the first migration (or any later one)
 --     creates automatically grants db_rw the right privileges — no
@@ -29,33 +40,53 @@
 --     exactly the case once this script has run.
 
 -- ============================================================================
--- 1. Map the two AAD principals this deployment already knows about to
---    Postgres roles. Both functions are callable only by an azure_pg_admin
---    member (i.e. by whoever is connected as the Entra Administrator right
---    now, running this script).
+-- 1. Map the three AAD principals this deployment already knows about to
+--    Postgres roles. pgaadauth_create_principal_with_oid is callable only
+--    by an azure_pg_admin member (i.e. by whoever is connected as the
+--    Entra Administrator right now, running this script). Fill in the two
+--    <...> placeholders below before running (see infra/README.md step 7).
 -- ============================================================================
 
--- Your own login. (Prefer the "AAD group" alternative near the bottom of
--- this file if you'd rather not touch SQL again the next time someone
--- joins as a maintainer.)
-SELECT pgaadauth_create_principal_with_oid(
-  'maintainers',                    -- Postgres role name
-  '<MAINTAINERS_AAD_OBJECT_ID>',    -- your own Microsoft Entra object ID
-  'user',                           -- 'user' | 'group' | 'service'
-  false,                            -- isAdmin — false: a normal role, not another azure_pg_admin
-  false                             -- isMfa
+-- Your own login -- role name matches "Connecting as a maintainer"'s
+-- user=<your-email> convention, so use your actual email here too, not a
+-- short name. (Prefer the "AAD group" alternative near the bottom of this
+-- file if you'd rather not touch SQL again the next time someone joins as
+-- a maintainer.)
+select * from pgaadauth_create_principal_with_oid(
+  'postgres-admins', '<your Microsoft Entra object ID>', 'user', false, false
 );
 
--- The backend Container App's user-assigned managed identity — its object
--- ID is the `backendIdentityObjectId` output from the main.bicep
--- deployment (`az deployment group show ... --query properties.outputs`,
--- or read straight off the deploy command's own terminal output).
-SELECT pgaadauth_create_principal_with_oid(
-  'app-backend',
-  '<BACKEND_IDENTITY_AAD_OBJECT_ID>',
-  'service',
-  false,
-  false
+-- The backend Container App's user-assigned managed identity. The role
+-- name here MUST be 'app-backend' (infra/main.bicep's postgresAppRole
+-- default) -- that's the literal username the app's DATABASE_URL connects
+-- as (infra/modules/container-app-backend.bicep), NOT the managed
+-- identity's Azure resource name ('id-vacationplanner-dev' -- an earlier
+-- version of this script actually made that mistake: right function-call
+-- shape, wrong role name, which is also why the plain
+-- pgaadauth_create_principal(name) call it used errored -- that overload
+-- doesn't exist; _with_oid, taking the object ID explicitly, is the one
+-- Azure Postgres actually provides). The object ID below IS specific to
+-- that identity -- it's the `backendIdentityObjectId` output from the
+-- main.bicep deployment (`az deployment group show ...
+-- --query properties.outputs`, or read straight off the deploy command's
+-- own terminal output).
+select * from pgaadauth_create_principal_with_oid(
+  'app-backend', '<BACKEND_IDENTITY_AAD_OBJECT_ID>', 'service', false, false
+);
+
+-- The GitHub Actions deploy workflow's own service principal (per
+-- environment -- this is the SAME app registration as DEPLOY_CLIENT_ID in
+-- infra/README.md "Continuous deployment", NOT a new one). The role name
+-- here MUST be 'gh-deploy' -- that's the literal username
+-- .github/workflows/deploy.yml's "migrate" job connects as. The object ID
+-- is that service principal's OWN object ID (NOT the app registration's
+-- object ID, and NOT DEPLOY_CLIENT_ID itself, which is the *application*
+-- (client) ID) -- get it with:
+--   az ad sp show --id "$DEPLOY_CLIENT_ID" --query id -o tsv
+-- (same "wrong ID" trap as the app-backend mapping above -- see its
+-- comment.)
+select * from pgaadauth_create_principal_with_oid(
+  'gh-deploy', '048a58fd-d1c2-45bd-8cf1-1b84cac3ff5f', 'service', false, false
 );
 
 -- ============================================================================
@@ -68,10 +99,19 @@ CREATE ROLE db_rw NOLOGIN;
 -- Maintainers get full ownership-equivalent privileges, AND the ability to
 -- grant that same membership to someone else later — that's the WITH
 -- ADMIN OPTION (see "Adding a maintainer later" below).
-GRANT db_owner TO maintainers WITH ADMIN OPTION;
+GRANT db_owner TO "postgres-admins" WITH ADMIN OPTION;
 
--- The app gets read/write only.
+-- The app gets read/write only -- never db_owner, so it can't alter its
+-- own schema or escalate itself into ownership (see
+-- claude/db-privilege-provisioning.md and the "prove it" queries at the
+-- bottom of this file). This GRANT was missing entirely before -- the app
+-- role existed (once created above) but had no privileges at all.
 GRANT db_rw TO "app-backend";
+
+-- The CI deploy identity gets db_owner -- unlike a maintainer's grant
+-- above, it does NOT need WITH ADMIN OPTION (it only ever runs migrations
+-- itself; it never needs to grant db_owner to anyone else).
+GRANT db_owner TO "gh-deploy";
 
 -- ============================================================================
 -- 3. Lock down PUBLIC. Postgres grants some privileges to everyone by
@@ -108,9 +148,12 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO db_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO db_rw;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO db_rw;
 
--- Done. Now run `alembic upgrade head` (see infra/README.md) — every table
--- it creates will be owned by db_owner and instantly readable/writable by
--- db_rw, thanks to the default privileges above.
+-- Done. `alembic upgrade head` now runs automatically, connected as
+-- gh-deploy, the next time .github/workflows/deploy.yml's "migrate" job
+-- runs (push to main for dev, or the manual "Deploy" workflow run for
+-- prod) — see infra/README.md. Every table it creates will be owned by
+-- db_owner and instantly readable/writable by db_rw, thanks to the
+-- default privileges above.
 
 
 -- ============================================================================
@@ -178,3 +221,7 @@ GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO db_rw;
 -- ...and these should both fail with a permission error:
 --   CREATE TABLE hax (id int);
 --   ALTER TABLE trips ADD COLUMN hax int;
+--
+-- Connected as "gh-deploy", this should succeed (it's the one identity
+-- meant to be able to do it, from CI only):
+--   CREATE TABLE hax (id int); DROP TABLE hax;
