@@ -147,13 +147,34 @@ identity is the admin).
    Then re-run the same command with `entraClientId`, `entraClientSecret`,
    and `entraTenantId` set once the app registration exists. Note the
    `backendIdentityObjectId` and `postgresFqdn` outputs — you need both
-   for the next step. Repeat steps 2, 3, 6, and 7 independently for each
+   for later steps. Repeat steps 2, 3, 6, 7, and 8 independently for each
    environment — dev and prod each get their own Entra app registration,
    Postgres roles, and migration run, since they're entirely separate
    resources.
 
-6. **Provision the database roles** — connect to the new server as
-   yourself (you're already its Entra Administrator, from step 2) and run
+6. **Create the Postgres Microsoft Entra Administrator manually** —
+   Bicep's own `Microsoft.DBforPostgreSQL/flexibleServers/administrators`
+   resource reliably fails with an opaque `InternalServerError` (no
+   further detail) when created as part of this deployment. This is a
+   known, unresolved issue on Azure's side — see Microsoft's own Q&A
+   threads on this exact resource type — not something wrong in this
+   template, so `infra/main.bicep` no longer tries to provision it.
+   Create it by hand instead, against the server the previous step just
+   created, using the object ID / display name from step 2:
+   ```
+   az postgres flexible-server ad-admin create \
+     -g rg-vacationplanner-dev \
+     -s vacationplanner-dev \
+     -i <postgresAadAdminObjectId from step 2> \
+     -u <postgresAadAdminPrincipalName from step 2> \
+     -t User
+   ```
+   (for prod: `-g rg-vacationplanner -s vacationplanner` instead). This is
+   the one Postgres role Azure provisions for you with no SQL required —
+   see "Managed identity database auth" above for what it's for.
+
+7. **Provision the database roles** — connect to the new server as
+   yourself (you're already its Entra Administrator, from step 6) and run
    `infra/sql/provision_roles.sql`, filling in your own object ID and the
    `backendIdentityObjectId` output where the script asks for them:
    ```
@@ -164,8 +185,8 @@ identity is the admin).
    (Access tokens are short-lived — if `psql` reports an auth failure,
    just re-run the `az account get-access-token` part and retry.)
 
-7. **Run the migration** against the now-provisioned database — same
-   connection approach as step 6, but pointed at the backend:
+8. **Run the migration** against the now-provisioned database — same
+   connection approach as step 7, but pointed at the backend:
    ```
    cd backend
    DATABASE_URL="postgresql+psycopg://<your-email>@<postgresFqdn output>:5432/vacation_planner?sslmode=require" \

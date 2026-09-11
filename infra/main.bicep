@@ -18,14 +18,21 @@ param location string = resourceGroup().location
 
 @description('''Object ID of the Microsoft Entra principal (typically you)
 to designate as the Postgres server's Microsoft Entra Administrator — the
-one role Azure provisions for you with no SQL required. See infra/README.md
-"Managed identity database auth" for what to do with it once the server
-exists (running infra/sql/provision_roles.sql to set up the app/maintainer
-roles this admin identity can then grant).''')
+one role Azure provisions for you with no SQL required.
+
+NOT forwarded into any resource by this template: Bicep's own
+flexibleServers/administrators resource reliably fails with an opaque
+InternalServerError on creation (see infra/modules/postgres.bicep's doc
+comment) — a known, unresolved issue on Azure's side. The AAD admin is
+created by hand instead with `az postgres flexible-server ad-admin create`
+(infra/README.md "One-time manual setup", step 6), using this same value.
+Kept as a parameter here so deploy.yml's existing variable wiring
+(POSTGRES_ADMIN_OBJECT_ID) doesn't need to change, and so this stays the
+one place that value is documented.''')
 param postgresAadAdminObjectId string
-@description('Display name / UPN of that principal, e.g. amanda.burch@gmail.com.')
+@description('Display name / UPN of that principal, e.g. amanda.burch@gmail.com. Same "not forwarded — used for the manual step" note as above.')
 param postgresAadAdminPrincipalName string
-@description('"User" | "Group" | "ServicePrincipal" — what kind of principal postgresAadAdminObjectId is.')
+@description('"User" | "Group" | "ServicePrincipal" — what kind of principal postgresAadAdminObjectId is. Same "not forwarded — used for the manual step" note as above.')
 @allowed(['User', 'Group', 'ServicePrincipal'])
 param postgresAadAdminPrincipalType string = 'User'
 
@@ -79,9 +86,6 @@ module postgres 'modules/postgres.bicep' = {
     name: suffix
     skuName: postgresSkuName
     entraTenantId: entraTenantId
-    aadAdminObjectId: postgresAadAdminObjectId
-    aadAdminPrincipalName: postgresAadAdminPrincipalName
-    aadAdminPrincipalType: postgresAadAdminPrincipalType
   }
 }
 
