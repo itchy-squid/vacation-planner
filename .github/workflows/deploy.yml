@@ -54,8 +54,8 @@ name: Deploy
 #     (the federated app registration above), AZURE_TENANT_ID (shared by
 #     GitHub's login, Postgres's AAD admin, and Easy Auth),
 #     AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME,
-#     POSTGRES_AAD_ADMIN_OBJECT_ID (your Entra object ID),
-#     POSTGRES_AAD_ADMIN_PRINCIPAL_NAME (your Entra UPN/email), and
+#     POSTGRES_ADMIN_OBJECT_ID (your Entra object ID),
+#     POSTGRES_ADMIN_PRINCIPAL_NAME (your Entra UPN/email), and
 #     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up).
 #   - Per-environment SECRETS (same Environments' "Secrets" tab — these
 #     ARE sensitive): EASY_AUTH_CLIENT_SECRET (leave unset until Easy Auth
@@ -123,8 +123,8 @@ jobs:
           template: infra/main.bicep
           parameters: >
             ${{ needs.resolve-environment.outputs.params-file }}
-            postgresAadAdminObjectId=${{ vars.POSTGRES_AAD_ADMIN_OBJECT_ID }}
-            postgresAadAdminPrincipalName=${{ vars.POSTGRES_AAD_ADMIN_PRINCIPAL_NAME }}
+            postgresAadAdminObjectId=${{ vars.POSTGRES_ADMIN_OBJECT_ID }}
+            postgresAadAdminPrincipalName=${{ vars.POSTGRES_ADMIN_PRINCIPAL_NAME }}
             entraClientId=${{ vars.EASY_AUTH_CLIENT_ID }}
             entraClientSecret=${{ secrets.EASY_AUTH_CLIENT_SECRET }}
             entraTenantId=${{ vars.AZURE_TENANT_ID }}

@@ -320,7 +320,7 @@ it needs one-time setup per environment before its first run:
      covers GitHub's federated login, Postgres's AAD admin, and Easy Auth
      alike, rather than needing a separate tenant ID per consumer —
      `AZURE_RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APP_NAME`,
-     `POSTGRES_AAD_ADMIN_OBJECT_ID`, `POSTGRES_AAD_ADMIN_PRINCIPAL_NAME`,
+     `POSTGRES_ADMIN_OBJECT_ID`, `POSTGRES_ADMIN_PRINCIPAL_NAME`,
      and the optional `EASY_AUTH_CLIENT_ID` (a distinct Entra app from the
      `DEPLOY_CLIENT_ID` one above — different client IDs, same tenant).
    - **Secrets** (that environment's "Secrets" tab — these genuinely are
