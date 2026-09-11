@@ -105,10 +105,11 @@ identity is the admin).
    ```
    az ad signed-in-user show --query id -o tsv
    ```
-   Put that value, and your email/UPN, into `infra/main.parameters.json`'s
-   `postgresAadAdminObjectId` / `postgresAadAdminPrincipalName` (or pass
-   them via `--parameters` / CI secrets instead — they aren't secret
-   values, just not worth committing a real one to source control).
+   Hang onto that value and your email/UPN — you'll pass them directly to
+   `az postgres flexible-server ad-admin create` in step 6 below. They
+   aren't Bicep parameters and don't go in `main.parameters.json` or any
+   GitHub variable; the Postgres Entra admin is a manual step now (step 6),
+   not something the template provisions.
 
 3. **Register an Entra ID app for Easy Auth** (App registrations → New
    registration in the Azure portal, or `az ad app create`). This is what
@@ -341,9 +342,11 @@ it needs one-time setup per environment before its first run:
      covers GitHub's federated login, Postgres's AAD admin, and Easy Auth
      alike, rather than needing a separate tenant ID per consumer —
      `AZURE_RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APP_NAME`,
-     `POSTGRES_ADMIN_OBJECT_ID`, `POSTGRES_ADMIN_PRINCIPAL_NAME`,
      and the optional `EASY_AUTH_CLIENT_ID` (a distinct Entra app from the
      `DEPLOY_CLIENT_ID` one above — different client IDs, same tenant).
+     (No `POSTGRES_ADMIN_*` variable is needed — the Postgres Entra admin
+     is a manual, one-time step per environment; see "One-time manual
+     setup" step 6.)
    - **Secrets** (that environment's "Secrets" tab — these genuinely are
      sensitive, and are the *only* things that belong there now that
      Azure login is federated): the optional `EASY_AUTH_CLIENT_SECRET`, and

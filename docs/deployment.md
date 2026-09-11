@@ -63,9 +63,11 @@ once on `prod` — pointing at that environment's own Azure resources.
 | `AZURE_RESOURCE_GROUP` | `rg-vacationplanner-dev` (dev) / `rg-vacationplanner` (prod) |
 | `ACR_NAME` | `vacationplannerdev` (dev) / `vacationplanner` (prod) |
 | `CONTAINER_APP_NAME` | `vacationplanner-dev` (dev) / `vacationplanner` (prod) |
-| `POSTGRES_ADMIN_OBJECT_ID` | Your Entra object ID: `az ad signed-in-user show --query id -o tsv` |
-| `POSTGRES_ADMIN_PRINCIPAL_NAME` | Your Entra UPN/email |
 | `EASY_AUTH_CLIENT_ID` | Application (client) ID of the **separate** Easy Auth Entra app registration (`infra/README.md` step 3). Leave unset until Easy Auth is set up — the deploy still works without it. |
+
+(No `POSTGRES_ADMIN_*` variable — the Postgres Entra admin is a manual,
+one-time step per environment now, not something the pipeline sets up; see
+`infra/README.md` "One-time manual setup" step 6.)
 
 ### Secrets (sensitive)
 

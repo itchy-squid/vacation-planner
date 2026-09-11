@@ -4,8 +4,6 @@
   "parameters": {
     "appName": { "value": "vacationplanner" },
     "envName": { "value": "dev" },
-    "postgresAadAdminObjectId": { "value": "REPLACE_ME_AAD_OBJECT_ID" },
-    "postgresAadAdminPrincipalName": { "value": "REPLACE_ME_AAD_UPN_OR_EMAIL" },
     "postgresSkuName": { "value": "Standard_B1ms" },
     "corsOrigins": { "value": "*" }
   }

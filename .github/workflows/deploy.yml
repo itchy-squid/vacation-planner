@@ -53,10 +53,11 @@ name: Deploy
 #     just per-environment config): DEPLOY_CLIENT_ID / AZURE_SUBSCRIPTION_ID
 #     (the federated app registration above), AZURE_TENANT_ID (shared by
 #     GitHub's login, Postgres's AAD admin, and Easy Auth),
-#     AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME,
-#     POSTGRES_ADMIN_OBJECT_ID (your Entra object ID),
-#     POSTGRES_ADMIN_PRINCIPAL_NAME (your Entra UPN/email), and
-#     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up).
+#     AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME, and
+#     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up). (The
+#     Postgres Entra admin is a manual, one-time step now, not something
+#     this workflow provisions — see infra/README.md "One-time manual
+#     setup", step 6 — so there's no POSTGRES_ADMIN_* variable to set.)
 #   - Per-environment SECRETS (same Environments' "Secrets" tab — these
 #     ARE sensitive): EASY_AUTH_CLIENT_SECRET (leave unset until Easy Auth
 #     is set up), AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App
@@ -123,8 +124,6 @@ jobs:
           template: infra/main.bicep
           parameters: >
             ${{ needs.resolve-environment.outputs.params-file }}
-            postgresAadAdminObjectId=${{ vars.POSTGRES_ADMIN_OBJECT_ID }}
-            postgresAadAdminPrincipalName=${{ vars.POSTGRES_ADMIN_PRINCIPAL_NAME }}
             entraClientId=${{ vars.EASY_AUTH_CLIENT_ID }}
             entraClientSecret=${{ secrets.EASY_AUTH_CLIENT_SECRET }}
             entraTenantId=${{ vars.AZURE_TENANT_ID }}
