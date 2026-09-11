@@ -259,11 +259,37 @@ auto-generated hostname until `frontendCustomDomainName`/
 shape as Easy Auth: deploy with the param empty to learn the hostname,
 point DNS at it, redeploy with the param set.
 
+The backend needs a third param, `backendBindCustomDomain`
+(`bindCustomDomain` in `modules/container-app-backend.bicep`), left
+`false` until the managed certificate has actually finished issuing —
+Container Apps issues them asynchronously, and moving the ingress onto a
+certificate before Azure finishes issuing it is a known source of
+non-deterministic failures
+([microsoft/azure-container-apps#796](https://github.com/microsoft/azure-container-apps/issues/796),
+[#1652](https://github.com/microsoft/azure-container-apps/issues/1652) —
+open upstream issues, not specific to this template). Static Web Apps has
+no equivalent problem, so `frontendCustomDomainName` binds in one step.
+
+(An earlier revision referenced the certificate via `managedCertificate.id`
+directly in the ingress, which fails template validation —
+`InvalidTemplate: The resource 'Microsoft.App/managedEnvironments/<name>'
+is not defined in the template` — even with `customDomainName` left empty,
+i.e. on every fresh environment's first-ever deploy. Cause: Bicep adds an
+*unconditional* `dependsOn` the moment a resource is referenced by symbol
+anywhere in another resource's body, regardless of what conditional
+guards that reference — and the certificate only exists once
+`customDomainName` is set. Fixed by building `certificateId` with a plain
+`resourceId(...)` call instead of the symbolic `.id` accessor, which
+carries no such side effect — see the comment in
+`modules/container-app-backend.bicep`.)
+
 For dev: `vacations.dev.amandasanti.com` (frontend),
 `vacations-api.dev.amandasanti.com` (backend).
 
-1. Deploy with both params empty (default). Note `frontendUrl`,
-   `backendUrl`, and `backendCustomDomainVerificationId` outputs.
+1. Deploy with all three params at their defaults (`frontendCustomDomainName`
+   / `backendCustomDomainName` empty, `backendBindCustomDomain` false).
+   Note `frontendUrl`, `backendUrl`, and `backendCustomDomainVerificationId`
+   outputs.
 2. DNS records at whichever provider hosts `amandasanti.com`:
 
    | Record | Host | Value |
@@ -276,17 +302,23 @@ For dev: `vacations.dev.amandasanti.com` (frontend),
    backend always needs the TXT record.)
 3. Wait for DNS to resolve (`dig CNAME vacations-api.dev.amandasanti.com`,
    `dig TXT asuid.vacations-api.dev.amandasanti.com`).
-4. Redeploy with both params set:
-   `-p frontendCustomDomainName=vacations.dev.amandasanti.com -p backendCustomDomainName=vacations-api.dev.amandasanti.com`
-   (or add to `infra/main.parameters.json`). Free TLS certs issue
-   automatically once validation succeeds; `deploy.yml` then builds the
-   frontend against the new `backendUrl` with no further changes needed.
+4. Redeploy with `frontendCustomDomainName` and `backendCustomDomainName`
+   set, `backendBindCustomDomain` still false. Binds the frontend's
+   domain immediately; on the backend, creates + validates the managed
+   certificate only — ingress doesn't move yet.
+5. Confirm the certificate issued before touching `backendBindCustomDomain`:
+   `az containerapp env certificate list -g rg-vacationplanner-dev -n vacationplanner-dev -o table`
+   — wait for `Succeeded` on `vacations-api.dev.amandasanti.com`.
+6. Redeploy once more with `backendBindCustomDomain=true`. This moves the
+   ingress onto the custom domain; `backendUrl` now resolves to it, and
+   `deploy.yml` builds the frontend against that value automatically, no
+   further changes needed.
 
 `corsOrigins` in `infra/main.parameters.json` is already set to
 `https://vacations.dev.amandasanti.com` for dev, ahead of the custom
-domain being bound — testing against the auto-generated hostname will
-fail CORS until step 4 completes, or until `corsOrigins` temporarily
-includes both hostnames.
+domain being bound — testing against whichever origin you're actually
+serving from partway through this rollout may fail CORS until step 6
+completes, or until `corsOrigins` temporarily includes both hostnames.
 
 ## Adding a maintainer
 

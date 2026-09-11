@@ -25,8 +25,15 @@ param corsOrigins string = '*'
 @description('''Optional custom domain for the backend Container App, e.g.
 vacations-api.dev.amandasanti.com. Leave empty on the first deploy of a new
 environment -- see modules/container-app-backend.bicep and
-infra/README.md "Custom domains" for the two-pass rollout this needs.''')
+infra/README.md "Custom domains" for the rollout this needs.''')
 param backendCustomDomainName string = ''
+
+@description('''Set to true only once backendCustomDomainName's managed
+certificate (created by a prior deploy with this still false) shows status
+"Succeeded" in Azure. See modules/container-app-backend.bicep's
+bindCustomDomain parameter and infra/README.md "Custom domains" for why
+this is a separate step from setting backendCustomDomainName.''')
+param backendBindCustomDomain bool = true
 
 @description('''Optional custom domain for the frontend Static Web App, e.g.
 vacations.dev.amandasanti.com. Leave empty on the first deploy of a new
@@ -116,6 +123,7 @@ module backend 'modules/container-app-backend.bicep' = {
     postgresAppRole: postgresAppRole
     corsOrigins: corsOrigins
     customDomainName: backendCustomDomainName
+    bindCustomDomain: backendBindCustomDomain
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret

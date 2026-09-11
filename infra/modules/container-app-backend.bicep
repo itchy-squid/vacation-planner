@@ -21,8 +21,24 @@ vacations-api.dev.amandasanti.com. Leave empty on the first deploy of a new
 environment -- see the matching parameter in modules/static-web-app.bicep
 for the same two-pass rollout reasoning, and infra/README.md "Custom
 domains" for the exact DNS records this needs (a CNAME plus an asuid TXT
-record, using the customDomainVerificationId output below).''')
+record, using the customDomainVerificationId output below). Setting this
+alone only creates+validates the managed certificate -- it does NOT yet
+move the Container App's ingress onto the custom domain; see
+bindCustomDomain below for why that's a separate step.''')
 param customDomainName string = ''
+
+@description('''Set to true only once customDomainName's managed
+certificate, created by a prior deploy with this still false, shows status
+"Succeeded" (`az containerapp env certificate list -g <rg> -n <env-name>`).
+This then moves the Container App's ingress onto customDomainName. Kept as
+its own step, deliberately not auto-sequenced by Bicep even though it
+could be: Container Apps issues managed certificates asynchronously, and
+referencing a certificate's resource ID in the ingress before Azure has
+actually finished issuing it is a known source of non-deterministic
+deployment failures (see infra/README.md "Custom domains" for the exact
+rollout and links to the open upstream issues about this). Ignored while
+customDomainName is empty.''')
+param bindCustomDomain bool = false
 
 @description('Resource ID of the user-assigned managed identity (infra/modules/managed-identity.bicep) to attach to this Container App.')
 param managedIdentityId string
@@ -83,10 +99,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         external: true
         targetPort: 8000
         transport: 'auto'
-        customDomains: !empty(customDomainName) ? [
+        // Built with resourceId(...) rather than managedCertificate.id on
+        // purpose -- referencing the resource symbol here would make Bicep
+        // add an unconditional dependsOn on it even while it doesn't exist
+        // (customDomainName empty), which fails template validation with
+        // "resource ... is not defined in the template". A plain
+        // resourceId() has no such side effect.
+        customDomains: bindCustomDomain ? [
           {
             name: customDomainName
-            certificateId: managedCertificate.id
+            certificateId: resourceId('Microsoft.App/managedEnvironments/managedCertificates', last(split(containerAppsEnvironmentId, '/')), replace(customDomainName, '.', '-'))
             bindingType: 'SniEnabled'
           }
         ] : []
@@ -189,5 +211,5 @@ output name string = containerApp.name
 prove ownership before Azure will bind that hostname -- see
 infra/README.md "Custom domains".''')
 output customDomainVerificationId string = containerApp.properties.customDomainVerificationId
-@description('The public URL to reach this API at: the custom domain once bound, otherwise the auto-generated fqdn.')
-output url string = 'https://${!empty(customDomainName) ? customDomainName : containerApp.properties.configuration.ingress.fqdn}'
+@description('The public URL to reach this API at: the custom domain once bindCustomDomain has actually moved the ingress onto it, otherwise the auto-generated fqdn.')
+output url string = 'https://${bindCustomDomain ? customDomainName : containerApp.properties.configuration.ingress.fqdn}'
