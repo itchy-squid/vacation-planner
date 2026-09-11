@@ -22,6 +22,18 @@ param backendContainerImage string = 'mcr.microsoft.com/k8se/quickstart:latest' 
 @description('Comma-separated allowed CORS origins for the backend, typically the Static Web App URL.')
 param corsOrigins string = '*'
 
+@description('''Optional custom domain for the backend Container App, e.g.
+vacations-api.dev.amandasanti.com. Leave empty on the first deploy of a new
+environment -- see modules/container-app-backend.bicep and
+infra/README.md "Custom domains" for the two-pass rollout this needs.''')
+param backendCustomDomainName string = ''
+
+@description('''Optional custom domain for the frontend Static Web App, e.g.
+vacations.dev.amandasanti.com. Leave empty on the first deploy of a new
+environment -- see modules/static-web-app.bicep and infra/README.md
+"Custom domains" for the two-pass rollout this needs.''')
+param frontendCustomDomainName string = ''
+
 @description('Entra ID app registration client ID for Easy Auth. Leave empty to deploy without auth turned on yet — see infra/README.md.')
 param entraClientId string = ''
 param entraTenantId string = subscription().tenantId
@@ -103,6 +115,7 @@ module backend 'modules/container-app-backend.bicep' = {
     postgresDatabase: postgres.outputs.databaseName
     postgresAppRole: postgresAppRole
     corsOrigins: corsOrigins
+    customDomainName: backendCustomDomainName
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
@@ -114,11 +127,14 @@ module frontend 'modules/static-web-app.bicep' = {
   params: {
     location: location
     name: suffix
+    customDomainName: frontendCustomDomainName
   }
 }
 
-output backendUrl string = 'https://${backend.outputs.fqdn}'
-output frontendUrl string = 'https://${frontend.outputs.defaultHostname}'
+output backendUrl string = backend.outputs.url
+output frontendUrl string = frontend.outputs.url
+@description('Put this as the value of a TXT record at asuid.<backendCustomDomainName> before setting backendCustomDomainName -- see infra/README.md "Custom domains".')
+output backendCustomDomainVerificationId string = backend.outputs.customDomainVerificationId
 output registryLoginServer string = registry.outputs.loginServer
 output postgresFqdn string = postgres.outputs.fqdn
 output postgresServerName string = postgres.outputs.serverName

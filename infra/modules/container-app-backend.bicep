@@ -16,6 +16,14 @@ param registryUsername string
 param registryPassword string
 param corsOrigins string
 
+@description('''Optional custom domain to bind to this Container App, e.g.
+vacations-api.dev.amandasanti.com. Leave empty on the first deploy of a new
+environment -- see the matching parameter in modules/static-web-app.bicep
+for the same two-pass rollout reasoning, and infra/README.md "Custom
+domains" for the exact DNS records this needs (a CNAME plus an asuid TXT
+record, using the customDomainVerificationId output below).''')
+param customDomainName string = ''
+
 @description('Resource ID of the user-assigned managed identity (infra/modules/managed-identity.bicep) to attach to this Container App.')
 param managedIdentityId string
 @description('Client ID of that same managed identity — read back by the app as AZURE_CLIENT_ID so DefaultAzureCredential targets this identity specifically.')
@@ -39,6 +47,26 @@ param entraClientSecret string = ''
 
 var authEnabled = !empty(entraClientId)
 
+// Needed only to parent the managed certificate below -- the container app
+// itself is still pointed at the environment via containerAppsEnvironmentId.
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
+  name: last(split(containerAppsEnvironmentId, '/'))
+}
+
+// Free, Azure-managed TLS certificate for customDomainName. Validated via
+// CNAME + the asuid TXT record (see customDomainVerificationId output)
+// at deploy time -- this resource's creation fails outright if those DNS
+// records aren't in place and resolving yet.
+resource managedCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(customDomainName)) {
+  parent: containerAppsEnvironment
+  name: replace(customDomainName, '.', '-')
+  location: location
+  properties: {
+    subjectName: customDomainName
+    domainControlValidation: 'CNAME'
+  }
+}
+
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
@@ -55,6 +83,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         external: true
         targetPort: 8000
         transport: 'auto'
+        customDomains: !empty(customDomainName) ? [
+          {
+            name: customDomainName
+            certificateId: managedCertificate.id
+            bindingType: 'SniEnabled'
+          }
+        ] : []
       }
       registries: [
         {
@@ -150,3 +185,9 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (a
 
 output fqdn string = containerApp.properties.configuration.ingress.fqdn
 output name string = containerApp.name
+@description('''Value to put in a TXT record at asuid.<customDomainName> to
+prove ownership before Azure will bind that hostname -- see
+infra/README.md "Custom domains".''')
+output customDomainVerificationId string = containerApp.properties.customDomainVerificationId
+@description('The public URL to reach this API at: the custom domain once bound, otherwise the auto-generated fqdn.')
+output url string = 'https://${!empty(customDomainName) ? customDomainName : containerApp.properties.configuration.ingress.fqdn}'

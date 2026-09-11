@@ -171,6 +171,14 @@ jobs:
 
       - name: Install and build
         working-directory: frontend
+        env:
+          # Baked into the built JS at build time (Vite env vars are not
+          # read at runtime) -- see frontend/src/lib/api.js. Sourced from
+          # the infra job's backendUrl output so it always matches
+          # whatever main.bicep actually deployed: the backend's custom
+          # domain once backendCustomDomainName is set, otherwise its
+          # auto-generated *.azurecontainerapps.io hostname.
+          VITE_API_BASE_URL: ${{ needs.infra.outputs.backend-fqdn }}
         run: |
           npm ci
           npm run build
