@@ -61,6 +61,22 @@ param entraClientId string = ''
 @secure()
 param entraClientSecret string = ''
 
+@description('''Full resource ID of an already-existing managed
+certificate for customDomainName, when one was created outside this
+template's naming scheme -- e.g. via `az containerapp hostname bind`,
+which auto-generates its own certificate name/suffix rather than the
+replace(customDomainName, '.', '-') name this template uses. Azure
+allows only one managed certificate per subject name per environment, so
+deploying this template unchanged against an environment that already has
+such a stray certificate fails with DuplicateManagedCertificateInEnvironment
+(create) / CertificateNotFound (ingress, since it looks for the name this
+template expects instead). Set this to point ingress at the certificate
+that already exists instead of creating a new one -- see infra/README.md
+"Custom domains". Leave empty for a fresh environment with no certificate
+yet; this template will create+own one under its own deterministic
+name.''')
+param existingCertificateResourceId string = ''
+
 var authEnabled = !empty(entraClientId)
 
 // Needed only to parent the managed certificate below -- the container app
@@ -73,7 +89,7 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
 // CNAME + the asuid TXT record (see customDomainVerificationId output)
 // at deploy time -- this resource's creation fails outright if those DNS
 // records aren't in place and resolving yet.
-resource managedCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(customDomainName)) {
+resource managedCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(customDomainName) && empty(existingCertificateResourceId)) {
   parent: containerAppsEnvironment
   name: replace(customDomainName, '.', '-')
   location: location
@@ -104,11 +120,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         // add an unconditional dependsOn on it even while it doesn't exist
         // (customDomainName empty), which fails template validation with
         // "resource ... is not defined in the template". A plain
-        // resourceId() has no such side effect.
+        // resourceId() has no such side effect. existingCertificateResourceId
+        // (see its param description) takes priority when set, pointing at
+        // a certificate this template didn't create.
         customDomains: bindCustomDomain ? [
           {
             name: customDomainName
-            certificateId: resourceId('Microsoft.App/managedEnvironments/managedCertificates', last(split(containerAppsEnvironmentId, '/')), replace(customDomainName, '.', '-'))
+            certificateId: !empty(existingCertificateResourceId) ? existingCertificateResourceId : resourceId('Microsoft.App/managedEnvironments/managedCertificates', last(split(containerAppsEnvironmentId, '/')), replace(customDomainName, '.', '-'))
             bindingType: 'SniEnabled'
           }
         ] : []

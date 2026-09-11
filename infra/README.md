@@ -32,7 +32,7 @@ keeps the environments in separate resources/resource groups.
 | | dev | prod |
 |---|---|---|
 | Parameters file | `infra/main.parameters.dev.bicepparam` | `infra/main.parameters.prod.bicepparam` |
-| Resource group | `rg-vacationplanner-dev` | `rg-vacationplanner` |
+| Resource group | `vacationplanner-dev` | `vacationplanner` |
 | Log Analytics, Postgres, Container Apps env, backend Container App, Static Web App | `vacationplanner-dev` | `vacationplanner` |
 | Container Registry (alphanumeric only) | `vacationplannerdev` | `vacationplanner` |
 | Managed identity | `id-vacationplanner-dev` | `id-vacationplanner` |
@@ -73,8 +73,8 @@ operation, no Bicep/ARM resource type for it).
 
 1. **Create a resource group**:
    ```
-   az group create -n rg-vacationplanner-dev -l <region>   # dev
-   az group create -n rg-vacationplanner -l <region>        # prod
+   az group create -n vacationplanner-dev -l <region>   # dev
+   az group create -n vacationplanner -l <region>        # prod
    ```
 
 2. **Find your own Entra object ID** (you'll be the Postgres AAD
@@ -111,14 +111,14 @@ operation, no Bicep/ARM resource type for it).
    ```
    unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET
    az deployment group create \
-     -g rg-vacationplanner-dev \
+     -g vacationplanner-dev \
      -p infra/main.parameters.dev.bicepparam
    ```
    note the backend fqdn. prod:
    ```
    unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET
    az deployment group create \
-     -g rg-vacationplanner \
+     -g vacationplanner \
      -p infra/main.parameters.prod.bicepparam
    ```
    Re-run once the app registration exists, this time with those two env
@@ -128,7 +128,7 @@ operation, no Bicep/ARM resource type for it).
    ```
    export ENTRA_CLIENT_ID='...'
    export ENTRA_CLIENT_SECRET='...'
-   az deployment group create -g rg-vacationplanner-dev -p infra/main.parameters.dev.bicepparam
+   az deployment group create -g vacationplanner-dev -p infra/main.parameters.dev.bicepparam
    ```
    Note the `backendIdentityObjectId` and `postgresFqdn` outputs. Repeat
    steps 2, 3, 6, 7, 8 independently per environment.
@@ -139,13 +139,13 @@ operation, no Bicep/ARM resource type for it).
    unresolved Azure-side issue), so `main.bicep` doesn't provision it:
    ```
    az postgres flexible-server ad-admin create \
-     -g rg-vacationplanner-dev \
+     -g vacationplanner-dev \
      -s vacationplanner-dev \
      -i <postgresAadAdminObjectId from step 2> \
      -u <postgresAadAdminPrincipalName from step 2> \
      -t User
    ```
-   (prod: `-g rg-vacationplanner -s vacationplanner`.)
+   (prod: `-g vacationplanner -s vacationplanner`.)
 
 7. **Provision the database roles** — connect as yourself (already the
    Entra Administrator from step 6) and run
@@ -200,7 +200,7 @@ one-time setup per environment first:
 
    ```
    ENV=dev   # then repeat with ENV=prod
-   RG=rg-vacationplanner-dev   # rg-vacationplanner for prod
+   RG=vacationplanner-dev   # vacationplanner for prod
 
    APP_ID=$(az ad app create --display-name "gh-vacationplanner-$ENV-deploy" --query appId -o tsv)
    az ad sp create --id "$APP_ID"
@@ -243,8 +243,8 @@ one-time setup per environment first:
       Leave issuer/audience as auto-filled. This produces the name-based
       subject — fine unless immutable subject claims are opted in (then
       use the CLI block instead).
-   4. Azure portal → Resource groups → `rg-vacationplanner-dev` (or
-      `rg-vacationplanner`) → Access control (IAM) → Add role assignment
+   4. Azure portal → Resource groups → `vacationplanner-dev` (or
+      `vacationplanner`) → Access control (IAM) → Add role assignment
       → **Contributor** → select `gh-vacationplanner-dev-deploy` (or
       `-prod-deploy`) → Review + assign.
    5. `AZURE_SUBSCRIPTION_ID`: Azure portal → Subscriptions.
@@ -320,12 +320,26 @@ For dev: `vacations.dev.amandasanti.com` (frontend),
    domain immediately; on the backend, creates + validates the managed
    certificate only — ingress doesn't move yet.
 5. Confirm the certificate issued before touching `backendBindCustomDomain`:
-   `az containerapp env certificate list -g rg-vacationplanner-dev -n vacationplanner-dev -o table`
+   `az containerapp env certificate list -g vacationplanner-dev -n vacationplanner-dev -o table`
    — wait for `Succeeded` on `vacations-api.dev.amandasanti.com`.
 6. Redeploy once more with `backendBindCustomDomain=true`. This moves the
    ingress onto the custom domain; `backendUrl` now resolves to it, and
    `deploy.yml` builds the frontend against that value automatically, no
    further changes needed.
+
+If a managed certificate for `backendCustomDomainName` already exists in
+the environment under a name this template didn't generate (e.g. one
+created by `az containerapp hostname bind` instead of this rollout --
+those auto-generate their own certificate name), step 6 fails with
+`DuplicateManagedCertificateInEnvironment` (this template tries to create
+a second certificate for the same subject name) plus `CertificateNotFound`
+(ingress looks for the name this template expects, which was never
+created). Rather than deleting and reissuing an already-validated
+certificate, set `backendExistingCertificateResourceId`
+(`infra/main.bicep`) to that certificate's full resource ID -- find it with
+`az containerapp env certificate list -g <resource-group> -n <env-name> -o table`
+-- and this template points ingress at it directly instead of trying to
+create its own.
 
 `corsOrigins` in `infra/main.parameters.dev.bicepparam` is already set to
 `https://vacations.dev.amandasanti.com` for dev, ahead of the custom

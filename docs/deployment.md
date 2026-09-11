@@ -18,7 +18,7 @@ Two fully separate environments (no shared resources):
 | | dev | prod |
 |---|---|---|
 | GitHub Environment | `dev` | `prod` |
-| Resource group | `rg-vacationplanner-dev` | `rg-vacationplanner` |
+| Resource group | `vacationplanner-dev` | `vacationplanner` |
 | Parameters file | `infra/main.parameters.dev.bicepparam` | `infra/main.parameters.prod.bicepparam` |
 | Triggers on | every push to `main` | manual only |
 
@@ -50,7 +50,7 @@ resources.
 | `DEPLOY_CLIENT_ID` | Client ID of that environment's federated Entra app registration (`gh-vacationplanner-dev-deploy` / `...-prod-deploy`) — `infra/README.md` step 2. |
 | `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
 | `AZURE_TENANT_ID` | `az account show --query tenantId -o tsv` |
-| `AZURE_RESOURCE_GROUP` | `rg-vacationplanner-dev` (dev) / `rg-vacationplanner` (prod) |
+| `AZURE_RESOURCE_GROUP` | `vacationplanner-dev` (dev) / `vacationplanner` (prod) |
 | `ACR_NAME` | `vacationplannerdev` (dev) / `vacationplanner` (prod) |
 | `CONTAINER_APP_NAME` | `vacationplanner-dev` (dev) / `vacationplanner` (prod) |
 | `EASY_AUTH_CLIENT_ID` | Client ID of the separate Easy Auth Entra app registration (`infra/README.md` step 3). Leave unset until Easy Auth is set up. |
@@ -73,7 +73,7 @@ No stored Azure credential — login is federated (OIDC) via
 
 ## One-time setup (per environment, before CI deploy works)
 
-1. **Resource group** created (`rg-vacationplanner-dev` / `rg-vacationplanner`).
+1. **Resource group** created (`vacationplanner-dev` / `vacationplanner`).
 2. **Federated credential** on that environment's Entra app trusting
    `repo:itchy-squid/vacation-planner:environment:dev` (or `:prod`) —
    `infra/README.md` "Continuous deployment" step 2.

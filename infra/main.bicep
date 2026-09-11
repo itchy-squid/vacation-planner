@@ -38,6 +38,13 @@ bindCustomDomain parameter and infra/README.md "Custom domains" for why
 this is a separate step from setting backendCustomDomainName.''')
 param backendBindCustomDomain bool = true
 
+@description('''Forwarded to modules/container-app-backend.bicep's
+existingCertificateResourceId -- set only when a managed certificate for
+backendCustomDomainName already exists under a name this template didn't
+generate (see that param's description and infra/README.md "Custom
+domains"). Leave empty otherwise.''')
+param backendExistingCertificateResourceId string = ''
+
 @description('''Optional custom domain for the frontend Static Web App, e.g.
 vacations.dev.amandasanti.com. Leave empty on the first deploy of a new
 environment -- see modules/static-web-app.bicep and infra/README.md
@@ -127,6 +134,7 @@ module backend 'modules/container-app-backend.bicep' = {
     corsOrigins: corsOrigins
     customDomainName: backendCustomDomainName
     bindCustomDomain: backendBindCustomDomain
+    existingCertificateResourceId: backendExistingCertificateResourceId
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret

@@ -21,7 +21,7 @@ name: Deploy
 #     reviewer on the "prod" environment if you want a manual approval
 #     gate before anything deploys there.
 #   - Resource group already exists for that environment
-#     (rg-vacationplanner-dev / rg-vacationplanner).
+#     (vacationplanner-dev / vacationplanner).
 #   - The database uses Microsoft Entra ID auth only (no Postgres
 #     passwords) — see infra/README.md "Managed identity database auth".
 #     The one-time role provisioning (infra/sql/provision_roles.sql) is a
