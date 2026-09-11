@@ -54,7 +54,7 @@ gets no environment suffix (just "vacationplanner"), while every other
 environment is suffixed (e.g. "vacationplanner-dev") so it can never
 collide with prod or with another environment.''')
 var suffix = envName == 'prod' ? appName : '${appName}-${envName}'
-var registryName = replace('${suffix}acr', '-', '') // ACR names must be alphanumeric only
+var registryName = replace(suffix, '-', '') // ACR names must be alphanumeric only
 
 module logAnalytics 'modules/log-analytics.bicep' = {
   name: 'log-analytics'

@@ -40,7 +40,7 @@ entirely separate resource groups) so nothing dev does can touch prod.
 | Parameters file | `infra/main.parameters.json` | `infra/main.parameters.prod.json` |
 | Resource group | `rg-vacationplanner-dev` | `rg-vacationplanner` |
 | Log Analytics, Postgres, Container Apps env, backend Container App, Static Web App | `vacationplanner-dev` | `vacationplanner` |
-| Container Registry (alphanumeric only) | `vacationplannerdevacr` | `vacationplanneracr` |
+| Container Registry (alphanumeric only) | `vacationplannerdev` | `vacationplanner` |
 | Managed identity | `id-vacationplanner-dev` | `id-vacationplanner` |
 
 Different resource *types* sharing the exact same base name is fine in
@@ -186,15 +186,108 @@ it needs one-time setup per environment before its first run:
 
 1. **Create two GitHub Environments** named exactly `dev` and `prod`
    (repo Settings → Environments → New environment). Each one holds its
-   own copies of every secret listed at the top of `deploy.yml`
-   (`AZURE_CREDENTIALS`, `AZURE_RESOURCE_GROUP`, `ACR_NAME`,
-   `CONTAINER_APP_NAME`, `POSTGRES_AAD_ADMIN_OBJECT_ID`,
-   `POSTGRES_AAD_ADMIN_PRINCIPAL_NAME`, the optional `ENTRA_*` ones, and
-   `AZURE_STATIC_WEB_APPS_API_TOKEN`) — set as *environment* secrets, not
-   repo-level secrets, so dev and prod never share a value. Point dev's
-   copies at the `rg-vacationplanner-dev` resources and prod's at the
-   `rg-vacationplanner` ones from the steps above.
-2. **Optionally add a required reviewer** on the `prod` environment
+   own copies of the values below, so dev and prod never share one. Point
+   dev's copies at the `rg-vacationplanner-dev` resources and prod's at
+   the `rg-vacationplanner` ones from the steps above.
+2. **Set up federated (OIDC) auth for GitHub → Azure**, once per
+   environment — this is how the workflow authenticates to Azure with no
+   stored credential at all (not a client secret, not a service principal
+   password — the trust is the federated credential itself, verified
+   directly against the GitHub Actions OIDC token):
+   ```
+   ENV=dev   # then repeat the whole block with ENV=prod
+   RG=rg-vacationplanner-dev   # rg-vacationplanner for the prod pass
+
+   # An app registration + service principal used only for this
+   # environment's deploys — kept separate from prod's, same reasoning as
+   # every other per-environment resource in this file.
+   APP_ID=$(az ad app create --display-name "gh-vacationplanner-$ENV-deploy" --query appId -o tsv)
+   az ad sp create --id "$APP_ID"
+
+   # Scope it to just that environment's resource group.
+   az role assignment create \
+     --assignee "$APP_ID" \
+     --role Contributor \
+     --scope "/subscriptions/<subscription-id>/resourceGroups/$RG"
+
+   # Trust GitHub Actions runs against this repo's "$ENV" GitHub
+   # Environment specifically (not just any run on any branch).
+   az ad app federated-credential create --id "$APP_ID" --parameters '{
+     "name": "github-actions-'"$ENV"'",
+     "issuer": "https://token.actions.githubusercontent.com",
+     "subject": "repo:itchy-squid/vacation-planner:environment:'"$ENV"'",
+     "audiences": ["api://AzureADTokenExchange"]
+   }'
+
+   echo "DEPLOY_CLIENT_ID ($ENV) = $APP_ID"
+   ```
+   The `subject` is what makes this safe to scope per-environment: Azure
+   AD only accepts the token if it was minted for a run against that exact
+   GitHub Environment, so prod's app registration can't be used by a run
+   targeting dev, or vice versa.
+
+   **Doing this by hand instead, via the Microsoft Entra admin center**
+   (no CLI) — repeat this whole sequence once for `dev` and once for
+   `prod`:
+   1. [entra.microsoft.com](https://entra.microsoft.com) → **Identity** →
+      **Applications** → **App registrations** → **+ New registration**.
+      Name it `gh-vacationplanner-dev-deploy` (or `...-prod-deploy`),
+      leave "Accounts in this organizational directory only" selected,
+      leave the redirect URI blank, and **Register**. This creates both
+      the app registration and its backing service principal in one step
+      — unlike the CLI path, there's no separate "create the service
+      principal" action to remember here.
+   2. On the new app's **Overview** page, copy the **Application (client)
+      ID** — that's this environment's `DEPLOY_CLIENT_ID` — and the
+      **Directory (tenant) ID**, which is `AZURE_TENANT_ID` (the same
+      value both times, since there's only one tenant; you only need to
+      copy it once).
+   3. **Certificates & secrets** → **Federated credentials** tab → **+
+      Add credential**. Under "Federated credential scenario" pick
+      **"GitHub Actions deploying Azure resources"**, then fill in:
+      - Organization: `itchy-squid`
+      - Repository: `vacation-planner`
+      - Entity type: **Environment**
+      - GitHub environment name: `dev` (or `prod`)
+      - Name: `github-actions-dev` (or `github-actions-prod`)
+
+      Issuer and audience auto-fill to
+      `https://token.actions.githubusercontent.com` and
+      `api://AzureADTokenExchange` — leave those as they are. Select
+      **Add**. The subject this produces is the same
+      `repo:itchy-squid/vacation-planner:environment:dev` string the CLI
+      version sets explicitly.
+   4. Switch to the [Azure portal](https://portal.azure.com) →
+      **Resource groups** → `rg-vacationplanner-dev` (or
+      `rg-vacationplanner`) → **Access control (IAM)** → **+ Add** →
+      **Add role assignment** → role **Contributor** → **+ Select
+      members** → search for `gh-vacationplanner-dev-deploy` (or the
+      `-prod-deploy` one) → **Review + assign**. This is what scopes the
+      app registration to just that environment's resource group, the
+      same as the CLI's `az role assignment create`.
+   5. For `AZURE_SUBSCRIPTION_ID`: Azure portal → **Subscriptions** →
+      copy the **Subscription ID** shown there (same value for both
+      environments if they share a subscription).
+3. **Set the environment's variables and secrets**, using the values
+   above:
+   - **Variables** (that environment's "Variables" tab — none of these
+     are secret, they're just per-environment config that happens to live
+     next to the secrets below): `DEPLOY_CLIENT_ID` (the `$APP_ID` from
+     step 2), `AZURE_SUBSCRIPTION_ID` (`az account show --query id -o tsv`),
+     `AZURE_TENANT_ID` (`az account show --query tenantId -o tsv`) —
+     there's only one Entra tenant involved here, so this single value
+     covers GitHub's federated login, Postgres's AAD admin, and Easy Auth
+     alike, rather than needing a separate tenant ID per consumer —
+     `AZURE_RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APP_NAME`,
+     `POSTGRES_ADMIN_OBJECT_ID`, `POSTGRES_ADMIN_PRINCIPAL_NAME`,
+     and the optional `EASY_AUTH_CLIENT_ID` (a distinct Entra app from the
+     `DEPLOY_CLIENT_ID` one above — different client IDs, same tenant).
+   - **Secrets** (that environment's "Secrets" tab — these genuinely are
+     sensitive, and are the *only* things that belong there now that
+     Azure login is federated): the optional `EASY_AUTH_CLIENT_SECRET`, and
+     `AZURE_STATIC_WEB_APPS_API_TOKEN` (from the Static Web App resource,
+     after the first Bicep deploy creates it).
+4. **Optionally add a required reviewer** on the `prod` environment
    (same Settings page) if you want a person to approve every prod
    deployment before it runs.
 

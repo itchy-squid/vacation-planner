@@ -16,8 +16,8 @@ name: Deploy
 # steps and infra/main.bicep for what gets provisioned), per environment:
 #   - A GitHub Environment named exactly "dev" and one named "prod"
 #     (Settings -> Environments) — each holds its OWN copies of the
-#     secrets below, so dev and prod never share a resource group,
-#     registry, Postgres server, or Static Web App. Add a required
+#     variables/secrets below, so dev and prod never share a resource
+#     group, registry, Postgres server, or Static Web App. Add a required
 #     reviewer on the "prod" environment if you want a manual approval
 #     gate before anything deploys there.
 #   - Resource group already exists for that environment
@@ -28,17 +28,40 @@ name: Deploy
 #     database-level operation this workflow does not run; it's a manual
 #     step in infra/README.md, done once per environment before the first
 #     deploy.
-#   - Per-environment secrets (set on the "dev" / "prod" GitHub
-#     Environments, NOT repo-level secrets): AZURE_CREDENTIALS (a service
-#     principal with Contributor on that environment's resource group —
-#     `az ad sp create-for-rbac --sdk-auth`), AZURE_RESOURCE_GROUP,
-#     ACR_NAME, CONTAINER_APP_NAME, POSTGRES_AAD_ADMIN_OBJECT_ID,
-#     POSTGRES_AAD_ADMIN_PRINCIPAL_NAME (your Entra object ID / UPN — not
-#     secret values, just kept out of source control same as the others),
-#     ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_TENANT_ID (optional —
-#     leave the Entra ones unset until Easy Auth is set up),
-#     AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App resource,
-#     after the first Bicep deploy creates it).
+#   - GitHub's own authentication to Azure (`azure/login@v2` below) is
+#     federated (OIDC) — no Azure credential is stored in GitHub at all.
+#     Each environment needs its own Entra app registration with a
+#     federated credential trusting exactly that GitHub Environment's
+#     runs, and Contributor scoped to just that environment's resource
+#     group — see infra/README.md "Continuous deployment" for the exact
+#     `az` commands, INCLUDING the repository/owner ID GitHub's newer
+#     "immutable subject claims" require in the federated credential's
+#     subject (a plain `repo:<owner>/<repo>:environment:dev` subject
+#     still works today, but only once the repo has opted into immutable
+#     subjects does GitHub actually mint tokens with the ID-based subject
+#     — mismatching the two fails auth silently rather than erroring
+#     clearly, so read the README before creating these credentials).
+#     That app registration has its own distinct client ID
+#     (DEPLOY_CLIENT_ID below) from the one Easy Auth uses
+#     (EASY_AUTH_CLIENT_ID) — two different Entra apps for two different
+#     purposes. The tenant, though, is just ENTRA_TENANT_ID — the same
+#     Entra tenant backs GitHub's login, Postgres's AAD auth, and Easy
+#     Auth alike, so there's only ever one tenant ID to set, not one per
+#     consumer.
+#   - Per-environment VARIABLES (set on the "dev" / "prod" GitHub
+#     Environments' "Variables" tab — none of these are secret, they're
+#     just per-environment config): DEPLOY_CLIENT_ID / AZURE_SUBSCRIPTION_ID
+#     (the federated app registration above), ENTRA_TENANT_ID (shared by
+#     GitHub's login, Postgres's AAD admin, and Easy Auth),
+#     AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME,
+#     POSTGRES_ADMIN_OBJECT_ID (your Entra object ID),
+#     POSTGRES_ADMIN_PRINCIPAL_NAME (your Entra UPN/email), and
+#     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up).
+#   - Per-environment SECRETS (same Environments' "Secrets" tab — these
+#     ARE sensitive): EASY_AUTH_CLIENT_SECRET (leave unset until Easy Auth
+#     is set up), AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App
+#     resource, after the first Bicep deploy creates it). Nothing Azure
+#     login related is a secret anymore — that's the point of OIDC.
 
 on:
   push:
@@ -87,22 +110,24 @@ jobs:
 
       - uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ vars.DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.ENTRA_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy infrastructure (Bicep)
         id: deploy
         uses: azure/arm-deploy@v2
         with:
           scope: resourcegroup
-          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          resourceGroupName: ${{ vars.AZURE_RESOURCE_GROUP }}
           template: infra/main.bicep
           parameters: >
             ${{ needs.resolve-environment.outputs.params-file }}
-            postgresAadAdminObjectId=${{ secrets.POSTGRES_AAD_ADMIN_OBJECT_ID }}
-            postgresAadAdminPrincipalName=${{ secrets.POSTGRES_AAD_ADMIN_PRINCIPAL_NAME }}
-            entraClientId=${{ secrets.ENTRA_CLIENT_ID }}
-            entraClientSecret=${{ secrets.ENTRA_CLIENT_SECRET }}
-            entraTenantId=${{ secrets.ENTRA_TENANT_ID }}
+            postgresAadAdminObjectId=${{ vars.POSTGRES_ADMIN_OBJECT_ID }}
+            postgresAadAdminPrincipalName=${{ vars.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+            entraClientId=${{ vars.EASY_AUTH_CLIENT_ID }}
+            entraClientSecret=${{ secrets.EASY_AUTH_CLIENT_SECRET }}
+            entraTenantId=${{ vars.ENTRA_TENANT_ID }}
 
   backend:
     needs: [resolve-environment, infra]
@@ -113,12 +138,14 @@ jobs:
 
       - uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ vars.DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.ENTRA_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build and push backend image
         run: |
           az acr build \
-            --registry "${{ secrets.ACR_NAME }}" \
+            --registry "${{ vars.ACR_NAME }}" \
             --image "vacation-planner-backend:${{ github.sha }}" \
             --image "vacation-planner-backend:latest" \
             backend
@@ -126,9 +153,9 @@ jobs:
       - name: Point the Container App at the new image
         run: |
           az containerapp update \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --name "${{ secrets.CONTAINER_APP_NAME }}" \
-            --image "${{ secrets.ACR_NAME }}.azurecr.io/vacation-planner-backend:${{ github.sha }}"
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.CONTAINER_APP_NAME }}" \
+            --image "${{ vars.ACR_NAME }}.azurecr.io/vacation-planner-backend:${{ github.sha }}"
 
   frontend:
     needs: [resolve-environment, infra]
