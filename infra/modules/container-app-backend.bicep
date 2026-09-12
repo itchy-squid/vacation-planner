@@ -79,6 +79,13 @@ param existingCertificateResourceId string = ''
 
 var authEnabled = !empty(entraClientId)
 
+// Single source of truth for CORS: enforced entirely at the Container
+// Apps ingress (below), not in application code -- see
+// backend/app/main.py, which no longer runs its own CORSMiddleware.
+// Local dev sidesteps CORS altogether via the Vite dev server's proxy
+// (frontend/vite.config.js) rather than needing a second policy here.
+var corsOriginList = [for origin in split(corsOrigins, ','): trim(origin)]
+
 // Needed only to parent the managed certificate below -- the container app
 // itself is still pointed at the environment via containerAppsEnvironmentId.
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
@@ -115,6 +122,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         external: true
         targetPort: 8000
         transport: 'auto'
+        corsPolicy: {
+          allowedOrigins: corsOriginList
+          allowedMethods: ['*']
+          allowedHeaders: ['*']
+          allowCredentials: true
+        }
         // Built with resourceId(...) rather than managedCertificate.id on
         // purpose -- referencing the resource symbol here would make Bicep
         // add an unconditional dependsOn on it even while it doesn't exist
@@ -165,7 +178,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'USE_AZURE_AD_AUTH', value: 'true' }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'ENVIRONMENT', value: 'production' }
-            { name: 'CORS_ORIGINS', value: corsOrigins }
           ]
           probes: [
             {

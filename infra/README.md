@@ -359,11 +359,7 @@ certificate, set `backendExistingCertificateResourceId`
 -- and this template points ingress at it directly instead of trying to
 create its own.
 
-`corsOrigins` in `infra/main.parameters.dev.bicepparam` is already set to
-`https://vacations.dev.amandasanti.com` for dev, ahead of the custom
-domain being bound — testing against whichever origin you're actually
-serving from partway through this rollout may fail CORS until step 6
-completes, or until `corsOrigins` temporarily includes both hostnames.
+`corsOrigins` feeds the Container App ingress's own `corsPolicy` (`modules/container-app-backend.bicep`) -- the only place CORS is configured; the app itself (`backend/app/main.py`) runs no CORS middleware, and local dev avoids the question entirely via the Vite dev server's proxy (`frontend/vite.config.js`). It's already set to `https://vacations.dev.amandasanti.com` for dev, ahead of the custom domain being bound -- testing against whichever origin you're actually serving from partway through this rollout may fail CORS until step 6 completes, or until `corsOrigins` temporarily includes both hostnames.
 
 ## Adding a maintainer
 

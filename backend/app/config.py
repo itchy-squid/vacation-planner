@@ -35,18 +35,11 @@ class Settings(BaseSettings):
     # session (DefaultAzureCredential falls back to the Azure CLI credential).
     azure_client_id: str | None = None
 
-    # Comma-separated list of allowed browser origins for CORS.
-    cors_origins: str = "http://localhost:5173"
-
     # Azure Container Apps / App Service built-in auth ("Easy Auth") forwards
     # signed-in Entra ID users via X-MS-CLIENT-PRINCIPAL* headers — see
     # app/auth.py. Locally, with no Easy Auth in front of you, requests are
     # attributed to this fake user instead of being rejected.
     dev_user_email: str = "mei@example.com"
-
-    @property
-    def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def is_development(self) -> bool:

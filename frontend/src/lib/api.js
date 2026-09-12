@@ -4,7 +4,12 @@
 // contract). No caching, no retries: PlannerContext owns all client-side
 // state and decides when to call these.
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+// Empty by default: local dev goes through the Vite dev server's proxy
+// (frontend/vite.config.js) instead of calling the backend cross-origin,
+// so requests are same-origin and relative. CI sets VITE_API_BASE_URL to
+// the real backend URL for deployed environments (see
+// .github/workflows/deploy.yml).
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 async function request(path, { method = "GET", body } = {}) {
   let res;

@@ -1,10 +1,6 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from .config import get_settings
 from .routers import comments, contests, events, health, pins, plans, travel_items, trips
-
-settings = get_settings()
 
 app = FastAPI(
     title="Vacation Planner API",
@@ -17,13 +13,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is enforced entirely at the Azure Container Apps ingress layer
+# (see infra/modules/container-app-backend.bicep's corsPolicy) -- not
+# here, so there is exactly one place it's configured. Local dev
+# sidesteps the need for it altogether via the Vite dev server's proxy
+# (frontend/vite.config.js), which makes every request same-origin.
 
 app.include_router(health.router)
 app.include_router(trips.router)
