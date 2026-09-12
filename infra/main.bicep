@@ -53,9 +53,15 @@ param frontendCustomDomainName string = ''
 
 @description('Entra ID app registration client ID for Easy Auth. Leave empty to deploy without auth turned on yet — see infra/README.md.')
 param entraClientId string = ''
-param entraTenantId string = subscription().tenantId
 @secure()
 param entraClientSecret string = ''
+
+@description('''Tenant for Postgres AAD auth (modules/postgres.bicep) only
+-- Easy Auth (modules/container-app-backend.bicep) signs users in via the
+/consumers endpoint regardless of this value, since that app registration
+is Personal Microsoft accounts only, not scoped to this tenant. See
+infra/README.md "Register an Entra ID app for Easy Auth".''')
+param entraTenantId string = subscription().tenantId
 
 @description('''The Postgres role name the backend's managed identity will
 connect as — must match the roleName given to pgaadauth_create_principal_with_oid
@@ -135,7 +141,6 @@ module backend 'modules/container-app-backend.bicep' = {
     customDomainName: backendCustomDomainName
     bindCustomDomain: backendBindCustomDomain
     existingCertificateResourceId: backendExistingCertificateResourceId
-    entraTenantId: entraTenantId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
   }

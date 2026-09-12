@@ -56,7 +56,6 @@ itself.''')
 param postgresAppRole string = 'app-backend'
 
 @description('Set to enable Azure Easy Auth with Entra ID. Leave clientId empty to deploy without auth turned on yet (see infra/README.md).')
-param entraTenantId string = ''
 param entraClientId string = ''
 @secure()
 param entraClientSecret string = ''
@@ -223,7 +222,15 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (a
         registration: {
           clientId: entraClientId
           clientSecretSettingName: 'entra-client-secret'
-          openIdIssuer: '${environment().authentication.loginEndpoint}${entraTenantId}/v2.0'
+          // The 'consumers' endpoint, not a tenant-specific one: this app
+          // registration is deliberately Personal Microsoft accounts only
+          // (any contributor's outlook.com/hotmail/live account, or any
+          // other Microsoft account -- not scoped to this deployment's own
+          // Entra tenant), so end-user sign-in has no dependency on
+          // entraTenantId at all -- see infra/README.md "Register an Entra
+          // ID app for Easy Auth". Postgres AAD auth (modules/postgres.bicep)
+          // is a separate, still tenant-scoped concern.
+          openIdIssuer: '${environment().authentication.loginEndpoint}consumers/v2.0'
         }
         validation: {
           defaultAuthorizationPolicy: {

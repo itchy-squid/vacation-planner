@@ -88,12 +88,24 @@ operation, no Bicep/ARM resource type for it).
 3. **Register an Entra ID app for Easy Auth** (`az ad app create`, or App
    registrations in the portal) — separate from the database auth above;
    this is for users signing into the app (`backend/app/auth.py`).
+   - **Supported account types: Personal Microsoft accounts only**
+     (`--sign-in-audience PersonalMicrosoftAccount`, or "Personal Microsoft
+     accounts only" in the portal's registration screen) — this app is
+     meant for anyone planning a trip with you, not just people in your
+     own Entra tenant. `modules/container-app-backend.bicep`'s authConfig
+     hardcodes the matching `/consumers` OIDC issuer, independent of
+     `entraTenantId` — registering this app any other way (e.g. the
+     portal's single-tenant default) fails sign-in at runtime with
+     `AADSTS9002346` ("configured for use by Microsoft Account users
+     only... use the /consumers endpoint") or its mirror image, depending
+     on which side is mismatched.
    - Redirect URI: `https://<container-app-fqdn>/.auth/login/aad/callback`
      — known only after the first deploy without auth (step 5): two-pass
      setup, deploy once with `entraClientId` empty, note the fqdn,
      register the app, redeploy with real values.
    - Create a client secret under "Certificates & secrets".
-   - Note the client ID, secret value, and tenant ID.
+   - Note the client ID and secret value (tenant ID isn't used here --
+     see above).
 
 4. **Push a real backend image** to the registry (or let
    `.github/workflows/deploy.yml` do it) — `main.bicep`'s default image is
@@ -268,8 +280,10 @@ one-time setup per environment first:
    5. `AZURE_SUBSCRIPTION_ID`: Azure portal → Subscriptions.
 3. **Set the environment's variables and secrets**:
    - **Variables**: `DEPLOY_CLIENT_ID` (`$APP_ID`), `AZURE_SUBSCRIPTION_ID`,
-     `AZURE_TENANT_ID` (one value covers GitHub login, Postgres AAD admin,
-     and Easy Auth), `AZURE_RESOURCE_GROUP`, `ACR_NAME`,
+     `AZURE_TENANT_ID` (covers GitHub login and Postgres AAD admin -- *not*
+     Easy Auth, which signs in personal Microsoft accounts via the fixed
+     `/consumers` endpoint regardless of tenant; see "One-time manual
+     setup" step 3), `AZURE_RESOURCE_GROUP`, `ACR_NAME`,
      `CONTAINER_APP_NAME`, optional `EASY_AUTH_CLIENT_ID` (distinct app
      from `DEPLOY_CLIENT_ID`, same tenant). No `POSTGRES_ADMIN_*` — see
      "One-time manual setup" step 6.
