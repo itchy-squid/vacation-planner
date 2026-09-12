@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from .routers import comments, contests, events, health, pins, plans, travel_items, trips
+from .routers import comments, contests, events, health, me, pins, plans, travel_items, trips
 
 app = FastAPI(
     title="Vacation Planner API",
@@ -20,6 +20,7 @@ app = FastAPI(
 # (frontend/vite.config.js), which makes every request same-origin.
 
 app.include_router(health.router)
+app.include_router(me.router)
 app.include_router(trips.router)
 app.include_router(pins.router)
 app.include_router(plans.router)

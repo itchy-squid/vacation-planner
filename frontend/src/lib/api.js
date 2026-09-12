@@ -23,11 +23,19 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 // layer's whole job is: (1) send that cookie cross-origin, (2) notice when
 // there isn't one, and (3) send the browser to log in and back.
 //
-// Locally there's no Easy Auth at all — `/.auth/me` doesn't exist (the Vite
-// proxy only forwards /api and /healthz, see vite.config.js) — so every
-// check below fails soft: anything other than a definite "signed out"
-// answer is treated as "carry on", which is what keeps local dev working
-// unauthenticated exactly as it did before this layer existed.
+// The "is there a session" check goes to the backend's own GET /api/me
+// (backend/app/routers/me.py), NOT Easy Auth's /.auth/me: Container Apps
+// only serves /.auth/me when Easy Auth's token store is enabled, which
+// there means a storage account plus a SAS URL kept as a Container App
+// secret — so /.auth/me 404s on this deployment even for a valid session.
+// /api/me reads the same X-MS-CLIENT-PRINCIPAL headers, which the platform
+// forwards with no token store at all.
+//
+// Locally /api/me answers over the Vite proxy with DEV_USER_EMAIL, so
+// local dev reads as signed in rather than as an inconclusive check. Every
+// other failure still fails soft: only a definite 401 counts as "signed
+// out", so a network hiccup or a CORS problem never locks anyone out of
+// the app.
 
 function loginUrl() {
   const returnTo = window.location.href;
@@ -38,16 +46,49 @@ function redirectToLogin() {
   window.location.href = loginUrl();
 }
 
-// Resolved once per page load: true if Easy Auth reports a signed-in user,
-// false if it positively reports signed-out, null if the check itself was
-// inconclusive (local dev, a network hiccup, no Easy Auth in front of us at
-// all). Callers treat null the same as "don't block" — see ensureSignedIn.
+// Query-string marker appended to the post-logout URL below and read by
+// main.jsx. Without it a signed-out user lands back on the frontend root,
+// ensureSignedIn() finds no session, and they're bounced straight back
+// into Entra — logging out would look like it did nothing.
+export const SIGNED_OUT_PARAM = "signedout";
+
+export function isSignedOutLanding() {
+  return new window.URLSearchParams(window.location.search).has(SIGNED_OUT_PARAM);
+}
+
+// Easy Auth's logout endpoint clears its own session cookie, then honours
+// post_logout_redirect_uri under the same allowlist rule as login's
+// post_login_redirect_uri (infra/modules/container-app-backend.bicep's
+// authConfig → login.allowedExternalRedirectUrls, which lists the
+// frontend origin). Note this signs the user out of *this app* only; it
+// deliberately doesn't hit Entra's own /oauth2/logout, which would sign
+// them out of their Microsoft account everywhere.
+export function logout() {
+  const returnTo = `${window.location.origin}/?${SIGNED_OUT_PARAM}=1`;
+  window.location.href = `${API_BASE}/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(returnTo)}`;
+}
+
+// The Sign in button on the signed-out screen (see main.jsx). Same hosted
+// Easy Auth login as the automatic redirect, just user-initiated.
+export function signIn() {
+  window.location.href = `${API_BASE}/.auth/login/aad?post_login_redirect_uri=${encodeURIComponent(window.location.origin + "/")}`;
+}
+
+// Resolved once per page load: true if the API reports a signed-in user,
+// false if it positively reports signed-out (401 — either from Easy Auth's
+// ingress, which rejects anonymous requests before they reach FastAPI, or
+// from /api/me itself), null if the check was inconclusive (the API
+// unreachable, a CORS failure, a 5xx). Callers treat null the same as
+// "don't block" — see ensureSignedIn.
 let sessionCheck = null;
 function checkSession() {
   if (!sessionCheck) {
-    sessionCheck = fetch(`${API_BASE}/.auth/me`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((claims) => (Array.isArray(claims) ? claims.length > 0 : null))
+    sessionCheck = fetch(`${API_BASE}/api/me`, { credentials: "include" })
+      .then((res) => {
+        if (res.ok) return true;
+        if (res.status === 401) return false;
+        return null;
+      })
       .catch(() => null);
   }
   return sessionCheck;

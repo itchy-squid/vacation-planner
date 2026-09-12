@@ -213,6 +213,18 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (a
   name: 'current'
   properties: {
     platform: { enabled: true }
+    // The SPA lives on a different host than this API (vacations.<env>
+    // .amandasanti.com vs vacations-api.<env>.amandasanti.com), so the
+    // post_login_redirect_uri it sends to /.auth/login/aad (see
+    // frontend/src/lib/api.js loginUrl()) is "external" as far as Easy
+    // Auth is concerned. Without the host listed here Easy Auth silently
+    // drops the parameter and finishes on its own /.auth/login/done page
+    // on THIS host instead of returning to the frontend. Reuses
+    // corsOriginList so the frontend origin is declared once per
+    // environment, in the .bicepparam file's corsOrigins.
+    login: {
+      allowedExternalRedirectUrls: corsOriginList
+    }
     globalValidation: {
       unauthenticatedClientAction: 'Return401'
     }

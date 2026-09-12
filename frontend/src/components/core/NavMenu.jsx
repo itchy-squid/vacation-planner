@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePlannerState } from "../../state/PlannerContext";
+import { logout } from "../../lib/api";
 
 // Single hamburger entry point for the trip's three main screens (Board,
 // Map, Schedule — pages/PinBoard.jsx, pages/LassoMap.jsx,
@@ -87,6 +88,10 @@ export default function NavMenu({ style, size = 36 }) {
         >
           <MenuItem label="Trips home" onClick={() => go("/")} />
           <MenuItem label="Trip settings" onClick={() => go(`/trips/${trip.id}/trip-settings`)} />
+          {/* Separated from the two navigation items: this one leaves the
+              app entirely rather than routing within it. */}
+          <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+          <MenuItem label="Sign out" onClick={logout} />
         </div>
       ) : null}
     </div>

@@ -10,6 +10,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class MeOut(BaseModel):
+    """The signed-in principal (app/auth.py Principal), independent of any
+    trip — see routers/me.py. Trip membership is a separate question,
+    answered by ContributorOut below."""
+
+    email: str
+    display_name: str
+    object_id: str | None = None
+    identity_provider: str | None = None
+
+
 class ContributorOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
