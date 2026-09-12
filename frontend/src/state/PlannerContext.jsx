@@ -138,6 +138,28 @@ function phaseProgress(phase) {
 // initial load and by OPEN_TRIP (switching which trip is active — see
 // TripsHome's "Also planning" rows) so both produce an identical LOADED
 // payload.
+// The payload for "the database has no trips at all" — the same shape
+// loadTripView returns below, with nothing in it. Deliberately a LOADED
+// payload rather than a fourth status: an empty database is a perfectly
+// successful load that happens to contain no trip, not a failure, and
+// routing it through the normal ready path is what lets TripsHome render
+// its own empty state (pages/TripsHome.jsx) with the "+" still in reach,
+// instead of the provider swapping the entire router out for a
+// full-screen message the user can't act on.
+function emptyTripView() {
+  return {
+    trip: null,
+    otherTrips: [],
+    contributors: [],
+    contributorOverflowCount: 0,
+    pins: {},
+    overrides: {},
+    plans: [],
+    travelItems: {},
+    currentUserId: null,
+  };
+}
+
 async function loadTripView(tripId, trips) {
   const trip = trips.find((t) => t.id === tripId);
   if (!trip) throw new Error("Trip not found.");
@@ -353,7 +375,16 @@ export function PlannerProvider({ children }) {
       try {
         const trips = await api.listTrips();
         if (!trips.length) {
-          throw new Error('No trips in the database yet. From backend/, run: uv run python -m app.seed');
+          // Nothing to open yet — a fresh database, or a new user who
+          // hasn't made a trip. Render the app normally with no active
+          // trip; TripsHome shows its empty state and App.jsx keeps the
+          // trip-scoped routes unreachable until there's a trip to scope
+          // them to, so nothing downstream has to cope with a null trip.
+          // Returning here also skips the URL/last-trip resolution below,
+          // which has nothing to resolve against.
+          if (cancelled) return;
+          dispatch({ type: "LOADED", payload: emptyTripView() });
+          return;
         }
         // Every trip-scoped route is /trips/:tripId/... (see App.jsx) — a
         // shared link carries the trip right in the URL, so a fresh load
@@ -593,10 +624,22 @@ export function PlannerProvider({ children }) {
           // Trip creation always goes through the API (there's no local
           // fallback) — the new trip needs a real id before anything else
           // can reference it. On success, fold it into "otherTrips" the
-          // same shape load() builds them in; a full trip-switching flow
-          // (making the new trip the active TRIP) is out of scope here,
-          // same as the rest of "Also planning".
+          // same shape load() builds them in; making a new trip the active
+          // TRIP when there already is one is out of scope here, same as
+          // the rest of "Also planning". The one exception is the very
+          // first trip — see below.
           const trip = await api.createTrip(action.payload);
+          if (!state.trip) {
+            // First trip in an empty database (see emptyTripView above).
+            // There's no active trip for this one to sit "also planning"
+            // beside, and filing it there would strand the user on the
+            // very empty state they just acted on. Open it properly
+            // instead — the same load OPEN_TRIP performs.
+            const trips = await api.listTrips();
+            const payload = await loadTripView(trip.id, trips);
+            dispatch({ type: "LOADED", payload });
+            return trip;
+          }
           dispatch({
             type: "ADD_TRIP",
             trip: {

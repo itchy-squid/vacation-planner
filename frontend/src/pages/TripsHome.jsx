@@ -27,6 +27,15 @@ export default function TripsHome() {
   const CONTRIBUTORS = allContributors.slice(0, 4);
   const CONTRIBUTOR_OVERFLOW_COUNT = contributorOverflowCount;
 
+  // Nothing in the database yet — a fresh install, or a new user who
+  // hasn't started a trip (see PlannerContext's emptyTripView). Its own
+  // screen rather than a blank version of the one below: with no trip
+  // there is no primary card, no "also planning" list and no contributors
+  // to stack, so all that's left is the one thing to do next.
+  if (TRIP === null) {
+    return <NoTripsYet onCreate={() => navigate("/new-trip")} />;
+  }
+
   async function openTrip(tripId) {
     // Swaps this "also planning" trip into the primary card (OPEN_TRIP
     // re-derives both `trip` and `otherTrips`, so the former primary trip
@@ -95,7 +104,12 @@ export default function TripsHome() {
           </div>
         </div>
 
-        <div className="mono-caption" style={{ padding: "20px var(--gutter-text) 10px" }}>Also planning</div>
+        {/* Hidden rather than shown empty — with one trip (the common case
+            right after creating the first one) there is nothing "also"
+            about it. */}
+        {OTHER_TRIPS.length > 0 ? (
+          <div className="mono-caption" style={{ padding: "20px var(--gutter-text) 10px" }}>Also planning</div>
+        ) : null}
         <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 var(--gutter-screen)" }}>
           {OTHER_TRIPS.map((t) => {
             const isOpening = switchingTripId === t.id;
@@ -137,6 +151,57 @@ export default function TripsHome() {
               </div>
             );
           })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The no-trips screen. Keeps the same header as the populated screen —
+// same title, same "+" in the same place — so the affordance the user
+// will reach for doesn't move once they have trips, and the card below is
+// a second, larger route to the same destination.
+function NoTripsYet({ onCreate }) {
+  return (
+    <div className="screen">
+      <div className="screen-scroll" style={{ paddingBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "20px var(--gutter-text) 14px" }}>
+          <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
+          <div style={{ display: "flex", gap: 8 }}>
+            <CircleGlyph glyph="+" label="Add trip" onClick={onCreate} />
+          </div>
+        </div>
+
+        <div style={{ padding: "0 var(--gutter-screen)" }}>
+          <div
+            style={{
+              borderRadius: "var(--radius-2xl)",
+              border: "1px dashed var(--border-strong)",
+              background: "var(--surface-card)",
+              padding: "36px 22px",
+              textAlign: "center",
+            }}
+          >
+            <div className="serif-place" style={{ fontSize: 23, lineHeight: 1.2, color: "var(--text-primary)" }}>
+              No trips yet
+            </div>
+            <div
+              style={{
+                font: "400 13px var(--font-sans)",
+                color: "var(--text-secondary)",
+                marginTop: 8,
+                maxWidth: 268,
+                marginInline: "auto",
+              }}
+            >
+              Create a new trip to get started.
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 20 }}>
+              <Button variant="primary" fullWidth={false} onClick={onCreate} style={{ padding: "0 24px" }}>
+                New trip
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -13,6 +13,9 @@ import { usePlannerState } from "../state/PlannerContext";
 // this jumps to whichever one is open first, if any.
 export default function DevNav() {
   const { trip, plans } = usePlannerState();
+  // No trips in the database yet (see PlannerContext's emptyTripView):
+  // every link below is trip-scoped, so there's nothing to point at.
+  if (!trip) return null;
   const base = `/trips/${trip.id}`;
   const firstOpenContestId = plans.find((p) => p.status === "contested")?.contestId ?? null;
 

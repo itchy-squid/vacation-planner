@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
-import { PlannerProvider } from "./state/PlannerContext";
+import { PlannerProvider, usePlannerState } from "./state/PlannerContext";
 import TripsHome from "./pages/TripsHome";
 import NewTrip from "./pages/NewTrip";
 import NewPin from "./pages/NewPin";
@@ -22,25 +22,49 @@ function ScheduleIndexRedirect() {
   return <Navigate to={`/trips/${tripId}/schedule/1`} replace />;
 }
 
+// With no trips in the database there is nothing for a trip-scoped route
+// to be about (see PlannerContext's emptyTripView), so only the two
+// trip-agnostic screens exist until one is created — everything else,
+// including a stale bookmark to /trips/7/board, lands back on Trips Home
+// and its empty state. Keeping the guard here rather than in each page
+// means no trip-scoped screen ever renders against a null trip.
+function AppRoutes() {
+  const { trip } = usePlannerState();
+
+  if (!trip) {
+    return (
+      <Routes>
+        <Route path="/" element={<TripsHome />} />
+        <Route path="/new-trip" element={<NewTrip />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<TripsHome />} />
+      <Route path="/new-trip" element={<NewTrip />} />
+      <Route path="/trips/:tripId/board" element={<PinBoard />} />
+      <Route path="/trips/:tripId/new-pin" element={<NewPin />} />
+      <Route path="/trips/:tripId/trip-settings" element={<TripSettings />} />
+      <Route path="/trips/:tripId/map" element={<LassoMap />} />
+      <Route path="/trips/:tripId/schedule" element={<ScheduleIndexRedirect />} />
+      <Route path="/trips/:tripId/schedule/:day" element={<DaySchedule />} />
+      <Route path="/trips/:tripId/contests/:contestId" element={<CompareSets />} />
+      <Route path="/trips/:tripId/edit/:pinId" element={<EditVisit />} />
+      <Route path="/trips/:tripId/itinerary" element={<FinalItinerary />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <PlannerProvider>
       <BrowserRouter>
         <div className="app-viewport">
-          <Routes>
-            <Route path="/" element={<TripsHome />} />
-            <Route path="/new-trip" element={<NewTrip />} />
-            <Route path="/trips/:tripId/board" element={<PinBoard />} />
-            <Route path="/trips/:tripId/new-pin" element={<NewPin />} />
-            <Route path="/trips/:tripId/trip-settings" element={<TripSettings />} />
-            <Route path="/trips/:tripId/map" element={<LassoMap />} />
-            <Route path="/trips/:tripId/schedule" element={<ScheduleIndexRedirect />} />
-            <Route path="/trips/:tripId/schedule/:day" element={<DaySchedule />} />
-            <Route path="/trips/:tripId/contests/:contestId" element={<CompareSets />} />
-            <Route path="/trips/:tripId/edit/:pinId" element={<EditVisit />} />
-            <Route path="/trips/:tripId/itinerary" element={<FinalItinerary />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <AppRoutes />
         </div>
         <DevNav />
       </BrowserRouter>
