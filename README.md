@@ -45,6 +45,11 @@ timeline (only drop targets are drawn), a real comment-thread view
 (comments are counts + one quoted line today), the photo-picker flow, and
 invite/permissions/login screens.
 
+The **Lasso Map** (`frontend/src/pages/LassoMap.jsx`) is out of the main
+flow: `/trips/:tripId/map` is still routed and works if you type the URL,
+but nothing links to it — it's in neither the bottom nav nor the Board
+header, whose Board/Map segmented switch was removed.
+
 ### Added beyond the design handoff
 
 Engineering additions, not design-reviewed screens:
@@ -58,6 +63,12 @@ Engineering additions, not design-reviewed screens:
   `POST /api/trips/{id}/pins`) — hands off to Edit Visit for
   duration/cost/notes/tags. Board region filter chips derive from the
   active trip's real pins now.
+- **Bottom navigation** (`frontend/src/components/core/BottomNav.jsx`) —
+  a fixed strip linking Home, Board, Schedule, Compare (when a contest is
+  open) and Final. Started as the dev-only `src/dev/DevNav.jsx` jump strip
+  and is now the app's permanent trip-level navigation; its styling is
+  still the scaffold's and hasn't been through design. The Lasso Map is
+  intentionally not in it — see below.
 - **Trip settings** (`frontend/src/pages/TripSettings.jsx`,
   `PATCH /api/trips/{id}`) — name, regions, start/end dates, reachable
   from the Board/Map/Schedule header (`components/core/SettingsButton.jsx`).
@@ -84,10 +95,6 @@ cd frontend
 npm install
 npm run dev        # http://localhost:5173
 ```
-`frontend/src/dev/DevNav.jsx` is a bottom strip for jumping between the 7
-screens — not part of the design, just review scaffolding. Delete once real
-trip-level navigation exists.
-
 **Backend — requires Docker Desktop running** (for local Postgres; or point
 `DATABASE_URL` at a Postgres instance you already have)
 

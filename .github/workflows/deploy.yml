@@ -25,6 +25,13 @@ name: Deploy
 #     gate before anything deploys there.
 #   - Resource group already exists for that environment
 #     (vacationplanner-dev / vacationplanner).
+#   - The backend identity's two storage roles (Storage Blob Data
+#     Contributor + Storage Blob Delegator on the pin-photos storage
+#     account, infra/modules/storage-account.bicep) are granted by hand,
+#     once per environment, before the first deploy that needs photo
+#     uploads to actually work -- this workflow's DEPLOY_CLIENT_ID only
+#     has Contributor on the resource group, which can't write role
+#     assignments. See infra/README.md "One-time manual setup" step 7.
 #   - The database uses Microsoft Entra ID auth only (no Postgres
 #     passwords) — see infra/README.md "Managed identity database auth".
 #     The one-time role provisioning (infra/sql/provision_roles.sql) is a

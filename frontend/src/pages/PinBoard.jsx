@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PinCard from "../components/planner/PinCard";
 import { usePlannerState } from "../state/PlannerContext";
-import NavMenu from "../components/core/NavMenu";
+import TripHeader from "../components/core/TripHeader";
+import HeaderIconButton from "../components/core/HeaderIconButton";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
-// Board/Map segment switch navigates to the lasso map (see
-// pages/LassoMap.jsx); filtering is local UI state only in this pass.
+// Board/Map segment switch is gone: the lasso map (pages/LassoMap.jsx) is
+// out of the main flow, still routed but no longer linked from here or
+// from the bottom nav. Filtering is local UI state only in this pass.
 // The "+" opens pages/NewPin.jsx to add a pin from a link.
 export default function PinBoard() {
   const navigate = useNavigate();
@@ -42,41 +44,20 @@ export default function PinBoard() {
   return (
     <div className="screen">
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
-        <div style={{ padding: "20px var(--gutter-text) 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <NavMenu />
-            <div>
-              <div className="mono-caption">Ideation · {PINS.length} pins</div>
-              <div className="serif-place" style={{ fontSize: 28, marginTop: 2, color: "var(--text-primary)" }}>{TRIP.name}</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              type="button"
-              aria-label="Add pin"
+        {/* The trip's name lives in the header now, so this screen's own
+            heading would only repeat it — what's left is the line that
+            says something the header doesn't. */}
+        <TripHeader
+          right={
+            <HeaderIconButton
+              glyph="+"
+              label="Add pin"
+              glyphSize={20}
               onClick={() => navigate(`/trips/${TRIP.id}/new-pin`)}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: "50%",
-                background: "var(--surface-card)",
-                border: "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                font: "400 18px var(--font-sans)",
-                color: "var(--text-primary)",
-                flex: "none",
-              }}
-            >
-              +
-            </button>
-            <div style={{ display: "flex", background: "var(--stone-200)", borderRadius: 999, padding: 3 }}>
-              <SegButton label="Board" active onClick={() => {}} />
-              <SegButton label="Map" onClick={() => navigate(`/trips/${TRIP.id}/map`)} />
-            </div>
-          </div>
-        </div>
+            />
+          }
+        />
+        <div className="mono-caption" style={{ padding: "6px var(--gutter-text) 12px" }}>Ideation · {PINS.length} pins</div>
 
         <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 var(--gutter-screen) 16px" }}>
           {["All", ...REGIONS].map((r) => (
@@ -110,23 +91,5 @@ export default function PinBoard() {
         </div>
       </div>
     </div>
-  );
-}
-
-function SegButton({ label, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "6px 14px",
-        borderRadius: 999,
-        font: "600 12px var(--font-sans)",
-        background: active ? "#fff" : "transparent",
-        color: "var(--text-primary)",
-        boxShadow: active ? "0 1px 2px rgba(0,0,0,.08)" : "none",
-      }}
-    >
-      {label}
-    </button>
   );
 }

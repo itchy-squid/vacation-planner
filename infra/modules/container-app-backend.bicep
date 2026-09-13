@@ -55,6 +55,10 @@ name grants nothing without also being (or impersonating) the identity
 itself.''')
 param postgresAppRole string = 'app-backend'
 
+@description('Blob endpoint of the storage account pin photos are mirrored into (modules/storage-account.bicep\'s blobEndpoint output) -- read back by the app as AZURE_STORAGE_ACCOUNT_URL (see app/config.py, app/photo_storage.py).')
+param storageBlobEndpoint string
+param storageContainerName string = 'pin-photos'
+
 @description('Set to enable Azure Easy Auth with Entra ID. Leave clientId empty to deploy without auth turned on yet (see infra/README.md).')
 param entraClientId string = ''
 @secure()
@@ -177,6 +181,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'USE_AZURE_AD_AUTH', value: 'true' }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'ENVIRONMENT', value: 'production' }
+            // Same managed identity as the two vars above, reused for
+            // blob storage (see app/photo_storage.py) -- one identity,
+            // two Azure services, no stored credential for either.
+            { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storageBlobEndpoint }
+            { name: 'AZURE_STORAGE_CONTAINER', value: storageContainerName }
           ]
           probes: [
             {

@@ -72,6 +72,12 @@ function normalizePin(p, contributorsById) {
     notes: p.notes,
     link: p.link,
     tags: p.tags,
+    // Chosen from the linked page when the pin was added (see
+    // pages/NewPin.jsx). Null for every pin added before that flow
+    // existed, and for anyone who picked "No image" — surfaces fall back
+    // to the striped placeholder.
+    photoUrl: p.photo_url,
+    photoSourceUrl: p.photo_source_url,
     availabilityRule: p.availability_rule
       ? { days: p.availability_rule.days, bands: p.availability_rule.bands, why: p.availability_rule.reasons }
       : { days: null, bands: null, why: [] },
@@ -573,6 +579,34 @@ export function PlannerProvider({ children }) {
           }
         }
 
+        // Direct lock/reopen on a plan with no contest attached — the
+        // sheet-driven counterpart to CompareSets.jsx's handleLock/
+        // handleReopen, which go through a contest instead (see
+        // routers/contests.py lock_contest/reopen_plan). Both are
+        // reversible from the same control, so neither needs a
+        // confirmation step here, same as UNPLACE_PLAN above.
+        case "LOCK_PLAN": {
+          try {
+            await api.lockPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("lock failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "REOPEN_PLAN": {
+          try {
+            await api.reopenPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("reopen failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
         case "CREATE_TRAVEL_ITEM": {
           const created = await api.createTravelItem(state.trip.id, action.payload);
           const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
@@ -710,21 +744,40 @@ export function PlannerProvider({ children }) {
           const backendFields = {};
           const f = action.fields;
           if ("title" in f) backendFields.title = f.title;
+          if ("region" in f) backendFields.region = f.region;
           if ("dur" in f) backendFields.duration_minutes = f.dur;
           if ("cost" in f) backendFields.cost_cents = Math.round(f.cost * 100);
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;
+          // A pasted replacement URL, or a cleared field going back to
+          // "no photo" — either way sent as photo_url, same as create
+          // (pages/NewPin.jsx); routers/pins.py re-mirrors it into blob
+          // storage whenever this lands a new external link.
+          if ("photoUrl" in f) backendFields.photo_url = f.photoUrl.trim() || null;
+          // Returns a result rather than swallowing the failure: an
+          // explicit Save (pages/EditVisit.jsx) has to be able to keep the
+          // user on the form and say so when the write didn't land, instead
+          // of navigating away as if it had. Callers that only fire off a
+          // background sync (components/planner/PlanDetailsSheet.jsx) can
+          // still ignore what comes back.
           try {
             const updated = await api.patchPin(action.id, backendFields);
             const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
-            dispatch({ type: "APPLY_PIN", pin: normalizePin(updated, contributorsById) });
+            const pin = normalizePin(updated, contributorsById);
+            dispatch({ type: "APPLY_PIN", pin });
+            return { ok: true, pin };
           } catch (err) {
             console.error("pin update failed", err);
+            return { ok: false, error: err.message };
           }
-          return;
         }
 
+        // Flips one availability cell for one pin. The endpoint is a
+        // toggle, not a set, so a caller holding a draft of the grid
+        // (pages/EditVisit.jsx) sends one of these per cell that actually
+        // differs from what's stored — see its commitOverrides. Reports
+        // ok/error for the same reason PATCH_PIN does.
         case "TOGGLE_OVERRIDE": {
           try {
             const result = await api.toggleAvailabilityOverride(action.pinId, action.day, action.band);
@@ -735,10 +788,11 @@ export function PlannerProvider({ children }) {
               band: action.band,
               overridden: result.overridden,
             });
+            return { ok: true, overridden: result.overridden };
           } catch (err) {
             console.error("availability override failed", err);
+            return { ok: false, error: err.message };
           }
-          return;
         }
 
         default:

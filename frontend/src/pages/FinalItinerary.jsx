@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AvatarStack from "../components/planner/AvatarStack";
 import { usePlannerState } from "../state/PlannerContext";
+import TripHeader from "../components/core/TripHeader";
 import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
 import { dayIndexForDate, clockLabel } from "../lib/planTime";
@@ -41,7 +42,9 @@ export default function FinalItinerary() {
           stops.push({
             time: clockLabel(t),
             title: item.title,
-            detail: item.costCents === 0 ? "free" : `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}`,
+            detail: item.costCents
+              ? `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}`
+              : fmtMin(item.durationMinutes),
             notable: p.status === "pencilled",
           });
           t += item.durationMinutes;
@@ -64,13 +67,12 @@ export default function FinalItinerary() {
   return (
     <div className="screen">
       <div className="screen-scroll" style={{ paddingBottom: 32 }}>
-        <div style={{ padding: "20px var(--gutter-text) 0" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div className="mono-caption">{finishedCount} of {dayViews.length || 1} days set</div>
-            <HomeButtonInline />
-          </div>
-          <div className="serif-place" style={{ fontSize: 30, marginTop: 4, color: "var(--text-primary)" }}>{TRIP.name}</div>
-          <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>{TRIP.regionLine}</div>
+        <TripHeader />
+        {/* The trip's name is in the header now — what stays here is how far
+            through it the group actually is. */}
+        <div style={{ padding: "6px var(--gutter-text) 0" }}>
+          <div className="mono-caption">{finishedCount} of {dayViews.length || 1} days set</div>
+          <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>{TRIP.regionLine}</div>
           <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: "var(--surface-sunken)", overflow: "hidden" }}>
             <div style={{ width: `${dayViews.length ? (finishedCount / dayViews.length) * 100 : 0}%`, height: "100%", background: "var(--geo)" }} />
           </div>
@@ -96,21 +98,6 @@ export default function FinalItinerary() {
         </div>
       </div>
     </div>
-  );
-}
-
-function HomeButtonInline() {
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      aria-label="Back to Trips home"
-      className="tap"
-      onClick={() => navigate("/")}
-      style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--surface-card)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", font: "400 16px var(--font-sans)", color: "var(--text-primary)", flex: "none" }}
-    >
-      ⌂
-    </button>
   );
 }
 

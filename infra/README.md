@@ -143,7 +143,7 @@ operation, no Bicep/ARM resource type for it).
    az deployment group create -g vacationplanner-dev -p infra/main.parameters.dev.bicepparam
    ```
    Note the `backendIdentityObjectId` and `postgresFqdn` outputs. Repeat
-   steps 2, 3, 6, 7, 8 independently per environment.
+   steps 2, 3, 6, 7, 8, 9 independently per environment.
 
 6. **Create the Postgres Entra Administrator manually** — Bicep's
    `Microsoft.DBforPostgreSQL/flexibleServers/administrators` resource
@@ -159,7 +159,38 @@ operation, no Bicep/ARM resource type for it).
    ```
    (prod: `-g vacationplanner -s vacationplanner`.)
 
-7. **Provision the database roles** — connect as yourself (already the
+7. **Grant the backend identity storage roles** — like the Postgres Entra
+   Administrator above, this is a manual step: the GitHub Actions deploy
+   identity only holds Contributor on the resource group ("Continuous
+   deployment" below), and built-in Contributor explicitly excludes
+   `Microsoft.Authorization/*/Write`, so CI can create the storage account
+   and its container but can't grant roles on it
+   (`infra/modules/storage-account.bicep`). Run once per environment,
+   using the `backendIdentityObjectId` and `photoStorageAccountName`
+   outputs from step 5:
+   ```
+   STORAGE_ID=$(az storage account show \
+     -g vacationplanner-dev -n <photoStorageAccountName from step 5> \
+     --query id -o tsv)
+
+   az role assignment create \
+     --assignee-object-id <backendIdentityObjectId from step 5> \
+     --assignee-principal-type ServicePrincipal \
+     --role "Storage Blob Data Contributor" \
+     --scope "$STORAGE_ID"
+
+   az role assignment create \
+     --assignee-object-id <backendIdentityObjectId from step 5> \
+     --assignee-principal-type ServicePrincipal \
+     --role "Storage Blob Delegator" \
+     --scope "$STORAGE_ID"
+   ```
+   (prod: `-g vacationplanner`.) Without this, the storage account and
+   container still get created fine, but every actual blob read/write and
+   SAS-URL mint (`backend/app/photo_storage.py`) fails with an
+   authorization error at runtime.
+
+8. **Provision the database roles** — connect as yourself (already the
    Entra Administrator from step 6) and run
    `infra/sql/provision_roles.sql`, filling in your object ID, the
    `backendIdentityObjectId` output, AND the deploy service principal's
@@ -176,10 +207,10 @@ operation, no Bicep/ARM resource type for it).
    (Tokens are short-lived — re-run `az account get-access-token` and
    retry on an auth failure.)
 
-8. **Run the migration** — no manual command anymore. Nothing (not the
+9. **Run the migration** — no manual command anymore. Nothing (not the
    app, not a maintainer) runs `alembic upgrade head` by hand; it runs in
    CI, connected as `gh-deploy`, in `.github/workflows/deploy.yml`'s
-   `migrate` job — see "Continuous deployment" below. Once step 7 above
+   `migrate` job — see "Continuous deployment" below. Once step 8 above
    has mapped `gh-deploy` and CI is set up, trigger a deploy (push to
    `main` for dev; run the "Deploy" workflow manually for prod) and the
    schema gets created for you, before the backend image ever goes live.
@@ -407,3 +438,17 @@ reconnect on an auth error.
   can connect to a replica that never sees another replica's event. Pin
   to `maxReplicas: 1` or move to a shared event bus (Azure Web PubSub or
   Redis) before relying on live updates in production.
+- **Mirrored pin photos are never deleted from blob storage**
+  (`backend/app/photo_storage.py`) — deleting a pin, or editing its photo
+  to a different link, leaves the old blob behind. Photos are small and
+  the container is private, so this is cost/hygiene debt, not a leak; add
+  a delete alongside `DELETE /api/pins/{pin_id}` and the photo-edit path
+  in `PATCH /api/pins/{pin_id}` before this matters at scale, or set a
+  lifecycle-management rule on the container to age out anything unread
+  for N days.
+- **A pin's photo briefly shows the hotlinked source, then swaps to the
+  mirrored copy** once the background copy in `routers/pins.py`'s
+  `_mirror_pin_photo` finishes (seconds, typically) — by design, so
+  adding a pin never waits on a slow third-party image host, but it does
+  mean the very first render of a newly-added pin's photo, and the odd
+  cache lookup for that URL, load a page you're not actually storing yet.

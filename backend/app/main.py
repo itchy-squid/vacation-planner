@@ -1,6 +1,16 @@
 from fastapi import FastAPI
 
-from .routers import comments, contests, events, health, me, pins, plans, travel_items, trips
+from .routers import (
+    comments,
+    contests,
+    events,
+    health,
+    me,
+    pins,
+    plans,
+    travel_items,
+    trips,
+)
 
 app = FastAPI(
     title="Vacation Planner API",

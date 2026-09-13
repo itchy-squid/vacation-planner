@@ -6,8 +6,8 @@ import HomeButton from "../components/core/HomeButton";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 
 // Not one of the handoff README's numbered screens. Reachable from any of
-// the trip's main screens via components/core/NavMenu.jsx's "Trip
-// settings" item (Board, Map, Schedule). Only edits the currently-active
+// the trip's main screens via the gear in components/core/TripHeader.jsx.
+// Only edits the currently-active
 // trip — there's no flow
 // yet for editing a trip you haven't opened (see PlannerContext's
 // OPEN_TRIP for what "active" means). Mirrors NewTrip.jsx's fields since
@@ -18,7 +18,6 @@ export default function TripSettings() {
   const { trip } = usePlannerState();
 
   const [name, setName] = useState(trip.name);
-  const [regionLine, setRegionLine] = useState(trip.regionLine);
   const [startDate, setStartDate] = useState(trip.startDate || "");
   const [endDate, setEndDate] = useState(trip.endDate || "");
   const [submitting, setSubmitting] = useState(false);
@@ -35,7 +34,6 @@ export default function TripSettings() {
         type: "UPDATE_TRIP",
         fields: {
           name: name.trim(),
-          region_line: regionLine.trim(),
           start_date: startDate || null,
           end_date: endDate || null,
         },
@@ -72,12 +70,6 @@ export default function TripSettings() {
             onChange={(e) => setName(e.target.value)}
             weight={600}
             size={15}
-          />
-          <TextField
-            label="Regions"
-            value={regionLine}
-            onChange={(e) => setRegionLine(e.target.value)}
-            placeholder="e.g. Cusco · Sacred Valley · Lima"
           />
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>

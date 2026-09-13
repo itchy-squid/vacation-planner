@@ -13,12 +13,19 @@ dependencies = [
   "pydantic-settings>=2.6,<3.0",
   "python-dotenv>=1.0,<2.0",
   "azure-identity>=1.19,<2.0",
+  # Runtime, not just tests: routers/link_preview.py fetches the page
+  # behind a pasted link server-side, because the browser can't read a
+  # cross-origin page itself.
+  "httpx>=0.27,<0.28",
+  # app/photo_storage.py mirrors a chosen pin photo into Azure Blob
+  # Storage and mints short-lived read URLs for it (user-delegation SAS,
+  # no stored account key — see that module's docstring).
+  "azure-storage-blob>=12.20,<13.0",
 ]
 
 [dependency-groups]
 dev = [
   "pytest>=8.3,<9.0",
-  "httpx>=0.27,<0.28",
   "ruff>=0.7,<0.8",
 ]
 

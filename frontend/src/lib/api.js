@@ -169,6 +169,7 @@ export const api = {
   createPlan: (tripId, payload) => request(`/api/trips/${tripId}/plans`, { method: "POST", body: payload }),
   movePlan: (planId, fields) => request(`/api/plans/${planId}`, { method: "PATCH", body: fields }),
   deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
+  lockPlan: (planId) => request(`/api/plans/${planId}/lock`, { method: "POST" }),
 
   proposeAlternative: (tripId, payload) => request(`/api/trips/${tripId}/contests`, { method: "POST", body: payload }),
   getContest: (contestId) => request(`/api/contests/${contestId}`),
