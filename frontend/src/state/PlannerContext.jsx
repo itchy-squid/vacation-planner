@@ -66,6 +66,11 @@ function normalizePin(p, contributorsById) {
     cy,
     dur: p.duration_minutes,
     cost: Math.round(p.cost_cents / 100),
+    costCents: p.cost_cents,
+    // Contributor ids sharing this cost; [] means everyone on the trip.
+    // Kept as raw ids rather than resolved contributors so a head who has
+    // since left the trip doesn't silently vanish from the split.
+    heads: p.heads ?? [],
     who: addedBy?.id ?? null,
     whoName: addedBy?.name ?? "Someone",
     addedAgo: relativeTime(p.added_at),
@@ -93,6 +98,8 @@ function normalizeTravelItem(t, contributorsById) {
     kind: t.kind,
     dur: t.duration_minutes,
     cost: Math.round(t.cost_cents / 100),
+    costCents: t.cost_cents,
+    heads: t.heads ?? [],
     notes: t.notes,
     link: t.link,
     who: addedBy?.id ?? null,
@@ -102,12 +109,25 @@ function normalizeTravelItem(t, contributorsById) {
 }
 
 function normalizePlanItem(it) {
+  const source = it.pin ?? it.travel_item;
   return {
     pinId: it.pin?.id ?? null,
     travelItemId: it.travel_item?.id ?? null,
-    title: it.pin?.title ?? it.travel_item?.title ?? "Untitled",
-    durationMinutes: (it.pin ?? it.travel_item)?.duration_minutes ?? 0,
-    costCents: (it.pin ?? it.travel_item)?.cost_cents ?? 0,
+    title: source?.title ?? "Untitled",
+    // What this placement is actually as long as — the trim if there is
+    // one, the item's own duration otherwise. Same resolution order as
+    // backend/app/derive.py's item_duration.
+    durationMinutes: it.duration_minutes ?? source?.duration_minutes ?? 0,
+    // Kept separately so a screen can tell "trimmed to 90m" from "the pin
+    // is 90m" — that's the difference between the stops list reading
+    // "1H 30M · SHORTENED FROM 3H" and just "1H 30M".
+    durationOverrideMinutes: it.duration_minutes ?? null,
+    baseDurationMinutes: source?.duration_minutes ?? 0,
+    offsetMinutes: it.offset_minutes ?? null,
+    // Served pre-computed by the API so no screen re-derives packing.
+    startMinuteOfDay: it.start_minute_of_day ?? null,
+    costCents: source?.cost_cents ?? 0,
+    heads: source?.heads ?? [],
     position: it.position,
   };
 }
@@ -122,14 +142,42 @@ function normalizePlan(p) {
     endDt: parseApiDateTime(p.ends_at),
     label: p.label,
     color: p.color,
-    status: p.status, // "placed" | "pencilled" | "contested" | "locked"
+    status: p.status, // "draft" | "placed" | "pencilled" | "contested" | "locked"
     contestId: p.contest_id,
+    createdById: p.created_by_id ?? null,
+    // The proposer's case for this plan, shown to voters on the compare
+    // screen. Empty for anything not proposed through the block flow.
+    rationale: p.rationale ?? "",
     items: (p.items ?? []).map(normalizePlanItem),
     totalDurationMinutes: p.total_duration_minutes,
     totalCostCents: p.total_cost_cents,
-    movingMinutes: p.moving_minutes,
+    // No movingMinutes: there is one definition of slack now, and it
+    // doesn't subtract a guess at travel time. See backend/app/derive.py.
     slackMinutes: p.slack_minutes,
   };
+}
+
+// The two ways a proposal can be refused, unpacked into something a
+// screen can say out loud. `contest` carries the hours already out for a
+// vote so step 2 can name them; `locked` carries the pinned item the
+// selection should have clipped at. Anything else is a real failure.
+function proposalConflict(err) {
+  if (err.status !== 409) return null;
+  const detail = err.body?.detail;
+  if (!detail || typeof detail === "string") return null;
+  if (detail.contest_id) {
+    return {
+      conflict: "contest",
+      contestId: detail.contest_id,
+      contestStartsAt: detail.starts_at,
+      contestEndsAt: detail.ends_at,
+      message: detail.message,
+    };
+  }
+  if (detail.locked_plan_id) {
+    return { conflict: "locked", lockedPlanId: detail.locked_plan_id, message: detail.message };
+  }
+  return null;
 }
 
 function phaseProgress(phase) {
@@ -231,7 +279,12 @@ async function loadTripView(tripId, trips) {
     return ordered;
   };
   const scheduledPinIds = new Set(
-    plans.flatMap((plan) => plan.items.map((item) => item.pinId)).filter(Boolean)
+    plans
+      // A draft claims nothing — not a slot on the calendar, and not a
+      // region on the home card either.
+      .filter((plan) => plan.status !== "draft")
+      .flatMap((plan) => plan.items.map((item) => item.pinId))
+      .filter(Boolean)
   );
   const scheduledRegionNames = distinctRegionsInOrder(pinsList.filter((p) => scheduledPinIds.has(p.id)));
   const pinnedRegionNames = distinctRegionsInOrder(pinsList);
@@ -258,6 +311,10 @@ async function loadTripView(tripId, trips) {
     endDate: trip.end_date,
     phase: trip.phase,
     contributorCount: contributors.length,
+    // How many people the trip is *costed* for, which is not how many are
+    // planning it. null means "as many as there are contributors" — see
+    // headcountFor below, the one place that fallback is spelled out.
+    travellerCount: trip.traveller_count ?? null,
     metrics: { pins: pinsList.length, regions: regionCount, toDecide: toDecideCount },
   };
 
@@ -549,21 +606,88 @@ export function PlannerProvider({ children }) {
           return;
         }
 
+        // Both proposal entry points land here. The quick sheet is the
+        // degenerate case of the four-step flow: a window exactly one
+        // stop long, no name, no rationale (feature spec §6.6). Keeping
+        // them on one action means the 409 handling below is written once.
+        case "PROPOSE_BLOCK": {
+          if (!state.trip) return { ok: false };
+          try {
+            const contest = await api.proposeBlock(state.trip.id, {
+              starts_at: action.startsAt,
+              ends_at: action.endsAt,
+              label: action.label ?? "",
+              rationale: action.rationale ?? "",
+              items: action.items,
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, contestId: contest.id };
+          } catch (err) {
+            const conflict = proposalConflict(err);
+            if (conflict) return { ok: false, ...conflict };
+            console.error("propose block failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
         case "CONFIRM_PROPOSE": {
           const sheet = state.proposeSheet;
           if (!sheet || !state.trip) return { ok: false };
+          const result = await dispatchRef.current({
+            type: "PROPOSE_BLOCK",
+            startsAt: action.startsAt,
+            endsAt: action.endsAt,
+            items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
+          });
+          if (result.ok) dispatch({ type: "CLOSE_PROPOSE" });
+          return result;
+        }
+
+        // A draft block: the author's own, occupying no time, invisible to
+        // everyone else until it's published (feature spec §6.4).
+        // Re-saving one replaces it rather than PATCHing, because a draft
+        // is a whole window plus a whole stop list — there's no partial
+        // edit of it worth an endpoint of its own.
+        case "SAVE_DRAFT": {
+          if (!state.trip) return { ok: false };
           try {
-            const contest = await api.proposeAlternative(state.trip.id, {
-              against_plan_id: sheet.targetPlanId,
+            if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
+            const plan = await api.createPlan(state.trip.id, {
               starts_at: action.startsAt,
               ends_at: action.endsAt,
-              items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
+              status: "draft",
+              label: action.label ?? "",
+              rationale: action.rationale ?? "",
+              items: action.items,
             });
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
-            dispatch({ type: "CLOSE_PROPOSE" });
+            return { ok: true, planId: plan.id };
+          } catch (err) {
+            console.error("save draft failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "PUBLISH_DRAFT": {
+          try {
+            const contest = await api.publishPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, contestId: contest.id };
           } catch (err) {
-            console.error("propose alternative failed", err);
+            const conflict = proposalConflict(err);
+            if (conflict) return { ok: false, ...conflict };
+            console.error("publish draft failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "DISCARD_DRAFT": {
+          try {
+            await api.deletePlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("discard draft failed", err);
             return { ok: false, error: err.message };
           }
         }
@@ -703,6 +827,7 @@ export function PlannerProvider({ children }) {
               startDate: updated.start_date,
               endDate: updated.end_date,
               phase: updated.phase,
+              travellerCount: updated.traveller_count ?? null,
             },
           });
           return updated;
@@ -750,6 +875,7 @@ export function PlannerProvider({ children }) {
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;
+          if ("heads" in f) backendFields.heads = f.heads;
           // A pasted replacement URL, or a cleared field going back to
           // "no photo" — either way sent as photo_url, same as create
           // (pages/NewPin.jsx); routers/pins.py re-mirrors it into blob

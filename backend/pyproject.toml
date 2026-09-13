@@ -35,3 +35,11 @@ dev = [
 # dependencies above into it.
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/ has no __init__.py, so pytest would otherwise put only that
+# directory on sys.path and `from app...` would fail. This puts the backend
+# root there instead, which is the same thing alembic.ini's
+# prepend_sys_path does for migrations.
+pythonpath = ["."]

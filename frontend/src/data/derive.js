@@ -1,11 +1,9 @@
-// Pure formatting/sequencing helpers shared by the compare and itinerary
-// screens. Set/plan totals themselves (duration, cost, moving time,
-// slack) come from the backend for real plans — see backend/app/
-// derive.py — so nothing here computes totals anymore; the old
-// draftSetTotals() was only for the local, unpersisted "Set C" draft,
-// which no longer exists now that propose-an-alternative is a real,
-// persisted backend flow (see docs/features/scheduling-feature-spec.md
-// "Proposing an alternative").
+// Pure formatting helpers shared by the compare, itinerary and proposal
+// screens. Set/plan totals themselves (duration, cost, slack) come from
+// the backend for real plans — see backend/app/derive.py — so nothing here
+// computes totals anymore. The one exception is the proposal flow's local
+// draft, which has no server-side plan to ask yet; it does its own
+// arithmetic in pages/ProposeBlock.jsx, deliberately by the same rules.
 
 export function fmtMin(totalMinutes) {
   const sign = totalMinutes < 0 ? "−" : "";
@@ -27,15 +25,9 @@ export function slackColor(slackMinutes) {
   return slackMinutes < 15 ? "var(--warn)" : "var(--geo)";
 }
 
-// Sequential per-stop start/end times for a plan's stops — the backend
-// only gives aggregate totals per plan (total_duration_minutes etc.), not
-// a stop-by-stop schedule, so the map route and the "13:20–14:10" style
-// labels are still sequenced client-side.
-export function sequenceStops(stopPins, blockStartMinutes, gapMinutes) {
-  let t = blockStartMinutes;
-  return stopPins.map((pin) => {
-    const start = t;
-    t += pin.dur + gapMinutes;
-    return { pin, start, end: start + pin.dur };
-  });
-}
+// sequenceStops() used to live here: per-stop start/end times, sequenced
+// client-side with a caller-supplied gap. It's gone because the gap was
+// the problem — the backend now serves each PlanItem's own
+// start_minute_of_day (see backend/app/derive.py), so the compare screen,
+// the itinerary and the Expenses page all read one clock instead of three
+// slightly different ones.

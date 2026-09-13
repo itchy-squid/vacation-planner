@@ -18,8 +18,14 @@ import { useGuardedNavigate, useIsNavGuarded } from "../../state/NavGuard";
 //
 // That also removes the need for a "Home" tab: every screen this bar shows
 // on already carries its own way back to Trips Home — the back chevron in
-// components/core/TripHeader.jsx, which all five of them wear — and a fifth
-// tab spends scarce width restating it.
+// components/core/TripHeader.jsx, which all of them wear — and another tab
+// spends scarce width restating it.
+//
+// With a contest open the bar runs to five items (Board / Schedule /
+// Compare / Final / Expenses), which is one more than the handoff drew.
+// Dropping Compare to keep it at four would strand the very screen the
+// "N blocks open" pill on the schedule points at; at 393pt the five labels
+// still fit.
 //
 // Trip-scoped screens live under /trips/:tripId/... (see App.jsx), so these
 // links point at whichever trip is currently loaded. There's no fixed
@@ -45,6 +51,7 @@ const MAIN_SCREEN_PATHS = [
   "/trips/:tripId/schedule/:day",
   "/trips/:tripId/contests/:contestId",
   "/trips/:tripId/itinerary",
+  "/trips/:tripId/expenses",
 ];
 
 export default function BottomNav() {
@@ -67,12 +74,13 @@ export default function BottomNav() {
   // would leave the bar with nothing highlighted on the screen the user is
   // most often looking at.
   const LINKS = [
-    { to: `${base}/board`, label: "Board", match: ["/trips/:tripId/board"] },
-    { to: `${base}/schedule/1`, label: "Schedule", match: ["/trips/:tripId/schedule", "/trips/:tripId/schedule/:day"] },
+    { to: `${base}/board`, label: "Ideas", match: ["/trips/:tripId/board"] },
+    { to: `${base}/schedule/1`, label: "Plan", match: ["/trips/:tripId/schedule", "/trips/:tripId/schedule/:day"] },
     firstOpenContestId
       ? { to: `${base}/contests/${firstOpenContestId}`, label: "Compare", match: ["/trips/:tripId/contests/:contestId"] }
       : null,
-    { to: `${base}/itinerary`, label: "Final", match: ["/trips/:tripId/itinerary"] },
+    { to: `${base}/expenses`, label: "Expenses", match: ["/trips/:tripId/expenses"] },
+    { to: `${base}/itinerary`, label: "Itinerary", match: ["/trips/:tripId/itinerary"] },
   ].filter(Boolean);
 
   return (
@@ -111,8 +119,10 @@ export default function BottomNav() {
               guardedNavigate(l.to);
             }}
             style={{
-              padding: "6px 12px",
-              fontSize: 15,
+              // 12px of side padding fits four labels but not five, and a
+              // contest opening is exactly when the bar gains its fifth.
+              padding: "6px 9px",
+              fontSize: 14,
               color: active ? "#8f4478" : "rgba(255,255,255,.6)",
               textDecoration: "none",
             }}

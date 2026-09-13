@@ -12,8 +12,6 @@ import { fmtMin, slackColor } from "../data/derive";
 import { clockLabel } from "../lib/planTime";
 import { coordsForPin } from "../lib/mapLayout";
 
-const STOP_GAP_MIN = 10;
-
 // Screen 5, rebuilt against the spec's Contest/Plan model. Handoff README
 // screen 5's "select a set → highlight its pins + route, nothing else
 // moves" interaction is unchanged; what changed is the data source and
@@ -26,6 +24,12 @@ const STOP_GAP_MIN = 10;
 // fetched fresh via api.getContest() on mount and after every vote/lock/
 // reopen, rather than normalized into the global PlannerContext store —
 // see state/PlannerContext.jsx's header comment for why.
+//
+// Stop times are no longer sequenced here. They come from each item's
+// start_minute_of_day, computed once on the server (backend/app/derive.py)
+// — this screen used to space stops 10 minutes apart while the itinerary
+// screen used 12 and the backend subtracted another 12 from slack, so the
+// same three-stop set read differently depending where you looked at it.
 export default function CompareSets() {
   const navigate = useNavigate();
   const { contestId } = useParams();
@@ -57,17 +61,19 @@ export default function CompareSets() {
   const displaySets = useMemo(() => {
     if (!contest) return [];
     return contest.plans.map((p) => {
-      const startMin = minuteOfDay(p.starts_at);
       const stops = [...p.items]
         .sort((a, b) => a.position - b.position)
-        .map((it, i) => {
+        .map((it) => {
           const isPin = Boolean(it.pin);
           const src = isPin ? it.pin : it.travel_item;
-          const start = startMin + i * STOP_GAP_MIN + sumPriorDurations(p.items, i);
+          // The placement's own duration if it was trimmed, the item's
+          // otherwise — the same resolution the server uses for totals.
+          const duration = it.duration_minutes ?? src.duration_minutes;
+          const start = it.start_minute_of_day;
           return {
             id: `${isPin ? "pin" : "travel"}-${src.id}`,
             title: src.title,
-            meta: `${clockLabel(start)}–${clockLabel(start + src.duration_minutes)} · ${fmtMin(src.duration_minutes)}${
+            meta: `${clockLabel(start)}–${clockLabel(start + duration)} · ${fmtMin(duration)}${
               src.cost_cents ? ` · $${Math.round(src.cost_cents / 100)}` : ""
             }`,
             isPin,
@@ -78,23 +84,31 @@ export default function CompareSets() {
         id: p.id,
         color: p.color,
         label: p.label,
+        setLetter: p.set_letter,
+        rationale: p.rationale,
         status: p.status,
         cost: Math.round(p.total_cost_cents / 100),
-        moving: p.moving_minutes,
         slack: p.slack_minutes,
         votes: p.vote_count,
         voted: p.voted_by_me,
         stops,
-        rangeLabel: `${clockLabel(startMin)}–${clockLabel(minuteOfDay(p.ends_at))}`,
       };
     });
   }, [contest]);
+
+  // Every option spans the contest's window, so the hours under decision
+  // are the contest's own — not something to re-read off whichever plan
+  // happens to be selected.
+  const windowLabel = contest
+    ? `${clockLabel(minuteOfDay(contest.starts_at))}–${clockLabel(minuteOfDay(contest.ends_at))}`
+    : "";
 
   const leadingId = useMemo(
     () => displaySets.reduce((best, s) => (best == null || s.votes > (best.votes ?? -1) ? s : best), null)?.id ?? null,
     [displaySets]
   );
 
+  const owner = state.contributors.find((c) => c.isOwner);
   const selectedSetView = displaySets.find((s) => s.id === selectedPlanId);
   const selectedColor = selectedSetView?.color ?? "var(--accent)";
   const selectedMapStops = (selectedSetView?.stops ?? []).filter((s) => s.isPin);
@@ -148,7 +162,7 @@ export default function CompareSets() {
   }
 
   function backToSchedule() {
-    const dayIndex = contest?.plans[0] ? dayIndexOf(contest.plans[0].starts_at, trip.startDate) : 1;
+    const dayIndex = contest ? dayIndexOf(contest.starts_at, trip.startDate) : 1;
     navigate(`/trips/${trip.id}/schedule/${dayIndex}`);
   }
 
@@ -188,7 +202,7 @@ export default function CompareSets() {
                   {isResolved ? "LOCKED" : `${displaySets.length} option${displaySets.length === 1 ? "" : "s"}`}
                 </div>
                 <div style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-primary)", marginTop: 1 }}>
-                  {selectedSetView?.rangeLabel ?? ""}
+                  {windowLabel}
                 </div>
               </div>
               {/* The header's back goes to Trips Home, and the tab bar's
@@ -243,11 +257,13 @@ export default function CompareSets() {
                 setKey={s.id}
                 color={s.color}
                 name={s.label || `${s.stops.length} stop${s.stops.length === 1 ? "" : "s"}`}
+                setLetter={s.setLetter}
                 sub={s.stops.map((x) => x.title).join(" → ") || "no stops"}
                 isLeading={s.id === leadingId && s.votes > 0 && !isResolved}
+                isMajority={s.id === contest.majority_plan_id && !isResolved}
+                rationale={s.rationale}
                 votes={s.votes}
                 cost={s.cost}
-                moving={s.moving}
                 slack={s.slack}
                 slackColor={slackColor(s.slack)}
                 selected={selectedPlanId === s.id}
@@ -261,6 +277,7 @@ export default function CompareSets() {
                 onVote={() => handleVote(s.id)}
                 onLock={() => handleLock(s.id)}
                 isOwner={currentUser.isOwner && !isResolved}
+                ownerName={owner?.name}
               />
             ))}
           </div>
@@ -286,6 +303,10 @@ export default function CompareSets() {
           <div style={{ marginTop: 8, font: "400 11px var(--font-sans)", lineHeight: 1.5, color: "var(--text-muted)" }}>
             {isResolved
               ? "This decision is locked. Reopening removes the lock but does not bring back the other option — it would need to be proposed again."
+              : contest.majority_plan_id
+              ? `More than half the group has picked a set. Nothing changes until ${
+                  owner?.name ? `${owner.name} locks it in` : "the trip owner locks it in"
+                }.`
               : "Selecting a plan highlights its pins and draws its route on the map above. Nothing else moves."}
           </div>
         </div>
@@ -310,12 +331,3 @@ function dayIndexOf(iso, startDate) {
   return Math.round((dUTC - sUTC) / 86400000) + 1;
 }
 
-function sumPriorDurations(items, uptoIndex) {
-  const sorted = [...items].sort((a, b) => a.position - b.position);
-  let sum = 0;
-  for (let i = 0; i < uptoIndex; i++) {
-    const src = sorted[i].pin || sorted[i].travel_item;
-    sum += src?.duration_minutes ?? 0;
-  }
-  return sum;
-}

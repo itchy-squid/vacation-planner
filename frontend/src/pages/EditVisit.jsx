@@ -4,6 +4,7 @@ import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import TextField, { TextArea, textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
+import HeadsPicker from "../components/planner/HeadsPicker";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
@@ -67,6 +68,10 @@ function baselineFrom(pin) {
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
+    // Contributor ids sharing this pin's cost; [] means everyone. Kept in
+    // the draft like every other field so Save writes it in the same PATCH
+    // and the discard guard covers it.
+    heads: pin.heads ?? [],
   };
 }
 
@@ -158,6 +163,14 @@ export default function EditVisit() {
     if (!form || !baseline) return {};
     const changed = {};
     Object.keys(baseline).forEach((key) => {
+      // `heads` is an array, so identity comparison would call every save
+      // dirty. Order is meaningless in it, hence the sort before compare.
+      if (key === "heads") {
+        const a = [...(form.heads ?? [])].sort();
+        const b = [...(baseline.heads ?? [])].sort();
+        if (a.length !== b.length || a.some((id, i) => id !== b[i])) changed.heads = form.heads;
+        return;
+      }
       if (form[key] !== baseline[key]) changed[key] = form[key];
     });
     return changed;
@@ -539,7 +552,12 @@ export default function EditVisit() {
               onUp={() => changeDuration(form.dur + 15)}
             />
             <div style={{ flex: 1 }}>
-              <div className="mono-caption">Cost each</div>
+              {/* Not "cost each": this is the whole cost of the visit, for
+                  everyone it's split between. Per-head is a division done
+                  for display (see data/expenses.js), so storing the total
+                  is what keeps a row on the Expenses screen and the trip
+                  total agreeing to the cent. */}
+              <div className="mono-caption">Cost, in total</div>
               <div style={{ marginTop: 6, display: "flex", alignItems: "center", background: "var(--surface-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-lg)", height: 46, padding: "0 13px" }}>
                 <span style={{ font: "500 14px var(--font-sans)", color: "var(--text-muted)", marginRight: 4 }}>$</span>
                 <input
@@ -554,6 +572,17 @@ export default function EditVisit() {
               </div>
             </div>
           </div>
+
+          {/* Sits directly under "Cost each" because it's the divisor of
+              exactly that number — see the Expenses screen, where the two
+              are shown together as "$85 × 4". */}
+          <HeadsPicker
+            contributors={state.contributors}
+            value={form.heads}
+            onChange={(heads) => setField("heads", heads)}
+            travellerCount={state.trip.travellerCount || state.contributors.length || 1}
+            disabled={saving || deleting}
+          />
 
           {durationSyncNote && (
             <div style={{ font: "500 11px var(--font-sans)", color: "var(--warn, #a15c1a)" }}>{durationSyncNote}</div>

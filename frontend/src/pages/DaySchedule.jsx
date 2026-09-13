@@ -2,11 +2,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
+import DayGrid from "../components/planner/DayGrid";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
-import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import HeadsPicker from "../components/planner/HeadsPicker";
+import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
+import {
+  DAY_END_MIN,
+  DAY_START_MIN,
+  PX_PER_MIN,
+  SNAP_MIN,
+  contestWindowsFrom,
+  layoutDayPlans,
+  minuteFromOffsetY,
+  planDurationMinutes,
+  planStartMinute,
+  planEndMinute,
+  topForMinute,
+} from "../lib/dayGrid";
 import TripHeader from "../components/core/TripHeader";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
@@ -16,79 +31,13 @@ import TripHeader from "../components/core/TripHeader";
 // contests now — there's no more hardcoded "Day 5" special case (see
 // state/PlannerContext.jsx normalizePlan/loadTripView).
 //
-// The grid uses true minute-to-pixel positioning (PX_PER_MIN below)
-// instead of the old duration-heuristic block heights, so a 30-minute
-// stop is visibly half the height of a 60-minute one. Overlapping plans
-// (mainly: two contested Plans sharing the same slot) are laid out
-// side-by-side via layoutDayPlans()'s column-packing sweep, the same
-// technique most calendar UIs use.
-const PX_PER_MIN = 1;
-const DAY_START_MIN = 0; // 00:00 — grid always shows the full midnight-to-midnight day
-const DAY_END_MIN = 1440; // 24:00
-const GRID_HEIGHT = (DAY_END_MIN - DAY_START_MIN) * PX_PER_MIN;
-const SNAP_MIN = 15;
-const GUTTER_W = 44;
+// The grid itself — its geometry, its snapping, and the column-packing
+// sweep that lays overlapping plans side by side — lives in
+// lib/dayGrid.js and components/planner/DayGrid.jsx, because the proposal
+// flow's hour picker renders the same grid with a selection layer over it
+// rather than a lookalike of it (see pages/ProposeBlock.jsx).
 const DRAG_THRESHOLD_PX = 5; // pointer travel (px) before a pointer-down on a block counts as a drag rather than a tap
 const TRAY_DELETE_CONFIRM_WINDOW_MS = 3000; // matches components/planner/PlanDetailsSheet.jsx's double-tap-to-confirm window
-
-function planStartMinute(plan) {
-  return plan.startDt ? plan.startDt.minuteOfDay : 0;
-}
-function planDurationMinutes(plan) {
-  if (plan.startDt && plan.endDt) {
-    const d = (plan.endDt.minuteOfDay - plan.startDt.minuteOfDay + 1440) % 1440;
-    if (d > 0) return d;
-  }
-  return plan.totalDurationMinutes || 60;
-}
-function planEndMinute(plan) {
-  return planStartMinute(plan) + planDurationMinutes(plan);
-}
-
-// Column-packing sweep: groups overlapping plans into clusters, then
-// greedily assigns each plan to the first column whose previous
-// occupant has already ended — same idea as Google-Calendar-style
-// side-by-side event layout. Returns { plan, col, numCols } per plan.
-function layoutDayPlans(plans) {
-  const items = plans
-    .map((p) => ({ plan: p, start: planStartMinute(p), end: planEndMinute(p) }))
-    .sort((a, b) => a.start - b.start || a.end - b.end);
-
-  const clusters = [];
-  let current = [];
-  let currentEnd = -Infinity;
-  for (const it of items) {
-    if (current.length && it.start >= currentEnd) {
-      clusters.push(current);
-      current = [];
-      currentEnd = -Infinity;
-    }
-    current.push(it);
-    currentEnd = Math.max(currentEnd, it.end);
-  }
-  if (current.length) clusters.push(current);
-
-  const result = [];
-  for (const cluster of clusters) {
-    const columnEnds = [];
-    const colOf = new Map();
-    for (const it of cluster) {
-      let idx = columnEnds.findIndex((endT) => endT <= it.start);
-      if (idx === -1) {
-        idx = columnEnds.length;
-        columnEnds.push(it.end);
-      } else {
-        columnEnds[idx] = it.end;
-      }
-      colOf.set(it.plan.id, idx);
-    }
-    const numCols = columnEnds.length;
-    for (const it of cluster) {
-      result.push({ plan: it.plan, start: it.start, end: it.end, col: colOf.get(it.plan.id), numCols });
-    }
-  }
-  return result;
-}
 
 export default function DaySchedule() {
   const navigate = useNavigate();
@@ -98,9 +47,34 @@ export default function DaySchedule() {
   const dispatch = usePlannerDispatch();
   const { trip, pins, travelItems, plans, placing, proposeSheet } = state;
 
+  const currentUser = useCurrentUser();
+
+  // Drafts are excluded from the grid, from the overlap checks and from
+  // the tray's "unplaced" reckoning: a draft block claims no time and is
+  // visible to its author alone (feature spec §6.4). The API already
+  // filters out *other* people's; this filters out your own, which you're
+  // meant to see in the tray rather than on the calendar.
   const dayPlans = useMemo(
-    () => plans.filter((p) => p.startDt && dayIndexForDate(p.startDt, trip.startDate) === dayIndex),
+    () =>
+      plans.filter(
+        (p) => p.status !== "draft" && p.startDt && dayIndexForDate(p.startDt, trip.startDate) === dayIndex
+      ),
     [plans, trip.startDate, dayIndex]
+  );
+
+  // "N blocks open" — hours on this day already out for a vote.
+  const openBlocks = useMemo(() => contestWindowsFrom(dayPlans), [dayPlans]);
+
+  const myDrafts = useMemo(
+    () =>
+      plans.filter(
+        (p) =>
+          p.status === "draft" &&
+          p.createdById === currentUser.id &&
+          p.startDt &&
+          dayIndexForDate(p.startDt, trip.startDate) === dayIndex
+      ),
+    [plans, currentUser.id, trip.startDate, dayIndex]
   );
 
   const laidOut = useMemo(() => layoutDayPlans(dayPlans), [dayPlans]);
@@ -260,9 +234,7 @@ export default function DaySchedule() {
     if (e.target !== e.currentTarget) return; // block taps handle their own onClick
     if (!placing) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const offsetY = e.clientY - rect.top;
-    const rawMinute = DAY_START_MIN + offsetY / PX_PER_MIN;
-    handleTapAt(rawMinute);
+    handleTapAt(minuteFromOffsetY(e.clientY - rect.top));
   }
 
   const suppressClickRef = useRef(false);
@@ -387,20 +359,39 @@ export default function DaySchedule() {
     const result = await dispatch({ type: "CONFIRM_PROPOSE", startsAt, endsAt });
     if (result.ok && result.contestId) {
       navigate(`/trips/${trip.id}/contests/${result.contestId}`);
+      return;
     }
+    // Those hours already have a vote running: the useful move is to show
+    // it, not to report a failure — this proposal is a set that belongs on
+    // that decision.
+    if (result.conflict === "contest" && result.contestId) {
+      dispatch({ type: "CLOSE_PROPOSE" });
+      navigate(`/trips/${trip.id}/contests/${result.contestId}`);
+      return;
+    }
+    dispatch({ type: "CLOSE_PROPOSE" });
+    setMoveError(
+      result.conflict === "locked"
+        ? "That time is pinned — ask the owner to reopen it first."
+        : "Couldn't propose that — try again."
+    );
   }
 
   // ---- Tray: unplaced pins + travel items --------------------------------
   const unplacedPins = useMemo(() => {
     const placedIds = new Set();
-    plans.forEach((p) => p.items.forEach((it) => it.pinId && placedIds.add(it.pinId)));
+    plans
+      .filter((p) => p.status !== "draft")
+      .forEach((p) => p.items.forEach((it) => it.pinId && placedIds.add(it.pinId)));
     const regionSet = trayFilter.length ? new Set(trayFilter) : null;
     return Object.values(pins).filter((p) => !placedIds.has(p.id) && (!regionSet || regionSet.has(p.region)));
   }, [plans, pins, trayFilter]);
 
   const unplacedTravelItems = useMemo(() => {
     const placedIds = new Set();
-    plans.forEach((p) => p.items.forEach((it) => it.travelItemId && placedIds.add(it.travelItemId)));
+    plans
+      .filter((p) => p.status !== "draft")
+      .forEach((p) => p.items.forEach((it) => it.travelItemId && placedIds.add(it.travelItemId)));
     return Object.values(travelItems).filter((t) => !placedIds.has(t.id));
   }, [plans, travelItems]);
 
@@ -443,12 +434,12 @@ export default function DaySchedule() {
   }
 
   const [showAddTravel, setShowAddTravel] = useState(false);
-  const [newTravel, setNewTravel] = useState({ title: "", kind: "other", dur: 60, cost: 0 });
+  const [newTravel, setNewTravel] = useState({ title: "", kind: "other", dur: 60, cost: 0, heads: [] });
 
   async function submitNewTravel(e) {
     e.preventDefault();
     if (!newTravel.title.trim()) return;
-    await dispatch({
+    const created = await dispatch({
       type: "CREATE_TRAVEL_ITEM",
       payload: {
         title: newTravel.title.trim(),
@@ -457,12 +448,15 @@ export default function DaySchedule() {
         cost_cents: Math.round((Number(newTravel.cost) || 0) * 100),
       },
     });
-    setNewTravel({ title: "", kind: "other", dur: 60, cost: 0 });
+    if (newTravel.heads.length) {
+      // TravelItemCreate doesn't take heads (the API's create shape is
+      // unchanged — see backend/app/schemas.py), so a non-default split is
+      // a follow-up patch rather than part of the create.
+      await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: newTravel.heads } });
+    }
+    setNewTravel({ title: "", kind: "other", dur: 60, cost: 0, heads: [] });
     setShowAddTravel(false);
   }
-
-  const hourMarks = [];
-  for (let m = DAY_START_MIN; m < DAY_END_MIN; m += 60) hourMarks.push(m);
 
   return (
     <div className="screen">
@@ -472,8 +466,30 @@ export default function DaySchedule() {
           <div className="mono-caption">Scheduling · {region}</div>
           {/* Kept as this screen's heading: it's the day you're looking at,
               which the header's trip name doesn't say. */}
-          <div className="serif-place" style={{ fontSize: 24, marginTop: 2, color: "var(--text-primary)" }}>
-            {dayHeaderLabel(dayIndex, trip.startDate, trip.endDate)}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="serif-place" style={{ flex: 1, minWidth: 0, fontSize: 24, marginTop: 2, color: "var(--text-primary)" }}>
+              {dayHeaderLabel(dayIndex, trip.startDate, trip.endDate)}
+            </div>
+            {/* Hidden at zero — an empty "0 blocks open" would be chrome
+                announcing nothing. Goes to the first of them; the Compare
+                tab is how you reach any others. */}
+            {openBlocks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate(`/trips/${trip.id}/contests/${openBlocks[0].contestId}`)}
+                style={{
+                  flex: "none",
+                  padding: "5px 11px",
+                  borderRadius: "var(--radius-xl)",
+                  background: "var(--surface-card)",
+                  border: "1px solid var(--border)",
+                  font: "500 11px var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                {openBlocks.length} block{openBlocks.length === 1 ? "" : "s"} open
+              </button>
+            )}
           </div>
         </div>
 
@@ -550,27 +566,12 @@ export default function DaySchedule() {
         )}
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ width: GUTTER_W, flex: "none", position: "relative", height: GRID_HEIGHT }}>
-              {hourMarks.map((m) => (
-                <div key={m} className="mono-data-sm" style={{ position: "absolute", top: (m - DAY_START_MIN) * PX_PER_MIN - 6, color: "var(--text-faint)" }}>
-                  {clockLabel(m)}
-                </div>
-              ))}
-            </div>
-            <div
-              style={{ flex: 1, minWidth: 0, position: "relative", height: GRID_HEIGHT, borderLeft: "1px solid var(--hairline)", cursor: placing ? "crosshair" : "default" }}
-              onClick={handleGridClick}
-            >
-              {hourMarks.map((m) => (
-                <div key={m} aria-hidden="true" style={{ position: "absolute", top: (m - DAY_START_MIN) * PX_PER_MIN, left: 0, right: 0, borderTop: "1px solid var(--hairline)" }} />
-              ))}
-
-              {laidOut.map(({ plan, start, numCols, col }) => {
+          <DayGrid cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
+            {laidOut.map(({ plan, start, numCols, col }) => {
                 const draggable = plan.status === "placed" || plan.status === "pencilled";
                 const isDragging = dragPreview?.planId === plan.id;
                 const effectiveStart = isDragging ? dragPreview.previewStart : start;
-                const top = (effectiveStart - DAY_START_MIN) * PX_PER_MIN;
+                const top = topForMinute(effectiveStart);
                 const height = planDurationMinutes(plan) * PX_PER_MIN;
                 const width = `calc(${100 / numCols}% - 4px)`;
                 const left = `calc(${(col / numCols) * 100}% + 2px)`;
@@ -604,9 +605,8 @@ export default function DaySchedule() {
                     <PlanBlock plan={displayPlan} rect={{ top, height, left, width }} onTap={() => {}} />
                   </div>
                 );
-              })}
-            </div>
-          </div>
+            })}
+          </DayGrid>
         </div>
       </div>
 
@@ -727,6 +727,61 @@ export default function DaySchedule() {
           </button>
         </div>
 
+        {/* Below the unplaced chips, above the travel-item form: placing
+            one item is what the chips are for, and this is the other
+            thing you can do with a day — claim a range of hours and fill
+            them (feature spec §5.1). */}
+        <button
+          type="button"
+          onClick={() => navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`)}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            padding: "11px 14px",
+            borderRadius: "var(--radius-md)",
+            background: "var(--accent)",
+            textAlign: "left",
+          }}
+        >
+          <div style={{ font: "600 14px var(--font-sans)", color: "#fff" }}>Propose a block</div>
+          <div className="mono-data-sm" style={{ color: "rgba(255,255,255,.72)", marginTop: 2 }}>
+            Pick hours, then fill them
+          </div>
+        </button>
+
+        {/* Your own unpublished drafts for this day. Nobody else can see
+            these, which is exactly why they need somewhere to be seen —
+            an invisible draft with no way back into it is just lost work. */}
+        {myDrafts.map((draft) => (
+          <button
+            key={draft.id}
+            type="button"
+            onClick={() =>
+              navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`, { state: { draftPlanId: draft.id } })
+            }
+            style={{
+              width: "100%",
+              marginTop: 8,
+              padding: "10px 13px",
+              borderRadius: "var(--radius-md)",
+              border: "1px dashed rgba(255,255,255,.3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              textAlign: "left",
+            }}
+          >
+            <span style={{ font: "500 12px var(--font-sans)", color: "var(--text-on-dark)" }}>
+              {draft.label || "Draft block"} ·{" "}
+              {clockLabel(planStartMinute(draft))}–{clockLabel(planEndMinute(draft))}
+            </span>
+            <span className="mono-data-sm" style={{ color: "var(--text-on-dark-muted)", flex: "none" }}>
+              Draft
+            </span>
+          </button>
+        ))}
+
         {showAddTravel && (
           <form onSubmit={submitNewTravel} style={{ marginTop: 10, padding: 10, borderRadius: "var(--radius-lg)", background: "rgba(255,255,255,.06)", display: "flex", flexDirection: "column", gap: 8 }}>
             <input
@@ -762,6 +817,17 @@ export default function DaySchedule() {
                 onChange={(e) => setNewTravel((t) => ({ ...t, cost: e.target.value }))}
                 placeholder="Cost $"
                 style={{ width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)", color: "#fff", font: "400 12.5px var(--font-sans)" }}
+              />
+            </div>
+            {/* Who this cost is split between, on the one form travel
+                items have. Defaults to everyone, which is what an empty
+                list means (see data/expenses.js). */}
+            <div style={{ background: "rgba(255,255,255,.9)", borderRadius: 8, padding: "9px 10px" }}>
+              <HeadsPicker
+                contributors={state.contributors}
+                value={newTravel.heads}
+                onChange={(heads) => setNewTravel((t) => ({ ...t, heads }))}
+                travellerCount={trip.travellerCount || state.contributors.length || 1}
               />
             </div>
             <button type="submit" style={{ padding: "8px 0", borderRadius: 8, background: "#fff", color: "var(--surface-inverse)", font: "600 12.5px var(--font-sans)" }}>

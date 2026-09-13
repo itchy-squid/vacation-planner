@@ -15,11 +15,17 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 export default function TripSettings() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
-  const { trip } = usePlannerState();
+  const { trip, contributors } = usePlannerState();
 
   const [name, setName] = useState(trip.name);
   const [startDate, setStartDate] = useState(trip.startDate || "");
   const [endDate, setEndDate] = useState(trip.endDate || "");
+  // Blank means "as many as there are contributors" — the Expenses screen
+  // reads it that way too (see data/expenses.js headcountFor), so an empty
+  // field is a real answer rather than an unset one.
+  const [travellerCount, setTravellerCount] = useState(
+    trip.travellerCount == null ? "" : String(trip.travellerCount)
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -36,6 +42,7 @@ export default function TripSettings() {
           name: name.trim(),
           start_date: startDate || null,
           end_date: endDate || null,
+          traveller_count: travellerCount.trim() === "" ? null : Math.max(1, Number(travellerCount)),
         },
       });
       navigate(-1);
@@ -88,6 +95,24 @@ export default function TripSettings() {
                 onChange={(e) => setEndDate(e.target.value)}
                 min={startDate || undefined}
               />
+            </div>
+          </div>
+
+          <div>
+            <TextField
+              type="number"
+              label="Travellers"
+              value={travellerCount}
+              onChange={(e) => setTravellerCount(e.target.value)}
+              placeholder={String(contributors.length)}
+              min={1}
+            />
+            <div style={{ marginTop: 6, font: "400 11px var(--font-sans)", color: "var(--text-muted)" }}>
+              {/* Not the same as the number of people planning: a child
+                  along for the ride is a head the tickets are bought for
+                  and never a contributor (feature spec decision 9). */}
+              How many people costs are split between. Leave it blank to use the {contributors.length}{" "}
+              {contributors.length === 1 ? "person" : "people"} planning this trip.
             </div>
           </div>
 

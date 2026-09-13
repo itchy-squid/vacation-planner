@@ -3,16 +3,26 @@ import MetricTile from "./MetricTile";
 
 // Only the selected card expands. Selection border/shadow only — never a
 // background change. See handoff README screen 5 "Set cards".
+//
+// Two tiles, not three: the "moving" tile is gone along with the flat
+// per-hop travel estimate behind it (see backend/app/derive.py's module
+// docstring — three screens each guessed a different number, so all three
+// now show none). And the remaining cost tile reads "total", not "each":
+// a plan's cost is the whole cost of its stops, and the Expenses screen
+// shows the same figure as a trip total, so calling it "each" here would
+// make two screens disagree about one number.
 export default function SetCard({
   color,
   name,
+  setLetter,
   sub,
   isLeading,
+  isMajority,
   votes,
   cost,
-  moving,
   slack,
   slackColor,
+  rationale,
   selected,
   onSelect,
   stops,
@@ -21,6 +31,7 @@ export default function SetCard({
   onVote,
   onLock,
   isOwner,
+  ownerName,
 }) {
   return (
     <div
@@ -36,13 +47,30 @@ export default function SetCard({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 10, height: 10, borderRadius: 3, background: color, flex: "none" }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "600 13.5px var(--font-sans)", color: "var(--text-primary)" }}>{name}</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              {setLetter ? (
+                <span className="mono-data-sm" style={{ color: "var(--text-faint)", flex: "none" }}>
+                  SET {setLetter}
+                </span>
+              ) : null}
+              <div style={{ font: "600 13.5px var(--font-sans)", color: "var(--text-primary)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {name}
+              </div>
+            </div>
             <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {sub}
             </div>
           </div>
-          {isLeading ? (
+          {/* MAJORITY outranks LEADING and replaces it — "most votes so
+              far" and "more than half the group" are the same card's
+              story at two different strengths, and showing both would
+              read as two separate accolades. */}
+          {isMajority ? (
             <span style={{ font: "600 9px var(--font-mono)", background: "var(--accent)", color: "#fff", padding: "3px 6px", borderRadius: 4, flex: "none" }}>
+              MAJORITY
+            </span>
+          ) : isLeading ? (
+            <span style={{ font: "600 9px var(--font-mono)", background: "var(--surface-sunken)", color: "var(--text-secondary)", padding: "3px 6px", borderRadius: 4, flex: "none" }}>
               LEADING
             </span>
           ) : null}
@@ -52,8 +80,7 @@ export default function SetCard({
           </div>
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-          <MetricTile value={`$${cost}`} label="each" />
-          <MetricTile value={fmtMin(moving)} label="moving" />
+          <MetricTile value={`$${cost}`} label="total" />
           <MetricTile value={fmtMin(slack)} label="slack" valueColor={slackColor} />
         </div>
       </div>
@@ -81,6 +108,14 @@ export default function SetCard({
             ) : null}
           </div>
 
+          {/* The proposer's own case for this set, in their words. Only
+              a set proposed through the block flow has one. */}
+          {rationale ? (
+            <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--plum-tint)", font: "400 12px/1.5 var(--font-sans)", color: "var(--accent-press)" }}>
+              {rationale}
+            </div>
+          ) : null}
+
           <div style={{ marginTop: 11, display: "flex", gap: 8 }}>
             <button
               type="button"
@@ -107,13 +142,16 @@ export default function SetCard({
                 onClick={onLock}
                 style={{ flex: 1, height: 40, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", font: "600 13px var(--font-sans)" }}
               >
-                Lock this set
+                {/* A majority doesn't resolve anything by itself — the
+                    owner still decides, and the label says which of the
+                    two things they're doing. */}
+                {isMajority ? "Lock in the majority" : "Lock this set"}
               </button>
             ) : null}
           </div>
           {!isOwner ? (
             <div style={{ marginTop: 8, font: "400 10.5px var(--font-sans)", color: "var(--text-muted)" }}>
-              Only Mei (owner) can lock. Everyone else can vote and comment.
+              {ownerName ? `Only ${ownerName} (owner) can lock.` : "Only the trip owner can lock."} Everyone else can vote and comment.
             </div>
           ) : null}
         </div>

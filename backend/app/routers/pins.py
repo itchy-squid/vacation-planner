@@ -9,6 +9,7 @@ from ..auth import Principal, get_current_principal
 from ..db import SessionLocal, get_db
 from ..events import bus
 from ..models import AvailabilityOverride, AvailabilityRule, Contributor, Pin, PlanItem
+from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import (
     AvailabilityOverrideToggle,
     AvailabilityRuleIn,
@@ -126,7 +127,7 @@ def delete_pin(pin_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pin not found")
     referenced = db.scalar(select(PlanItem).where(PlanItem.pin_id == pin_id))
     if referenced is not None:
-        raise HTTPException(status_code=409, detail="This pin is scheduled in a plan — remove it from the schedule first")
+        raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, referenced, "pin"))
 
     trip_id = pin.trip_id
     db.delete(pin)

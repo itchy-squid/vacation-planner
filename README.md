@@ -8,7 +8,11 @@ places on a shared map, with per-set votes, comments, and an owner lock.
 
 Design source: the handoff in `.claude/claude-design.zip` (design system
 tokens + two `.dc.html` prototypes) — see that bundle's own README for the
-full screen-by-screen spec.
+full screen-by-screen spec. A second handoff,
+`.claude/Vacation planning site features.zip`, adds the Expenses screen,
+the four-step proposal flow and the favicon; its implementation contract
+is `docs/features/proposals-and-expenses-feature-spec.md`, which wins
+wherever the two differ.
 
 ## Stack
 
@@ -23,8 +27,10 @@ full screen-by-screen spec.
 
 ## Current state — read this before assuming something works
 
-1. **Frontend**: the 7 design-handoff screens are implemented, plus a few
-   added since (see "Added beyond the design handoff"). Trips,
+1. **Frontend**: the 7 design-handoff screens are implemented, plus
+   Expenses and the four-step "propose a block" flow from the second
+   handoff, plus a few added since (see "Added beyond the design
+   handoff"). Trips,
    contributors, pins, votes, locks, and comments persist to the real API
    (`frontend/src/state/PlannerContext.jsx`, `frontend/src/lib/api.js`).
    `frontend/src/data/*.js` is no longer live: `pins.js`/`contributors.js`
@@ -136,6 +142,15 @@ backend + GitHub Actions. To change it: `.github/workflows/deploy.yml`'s
 4. **Photo picker** — not designed yet; flag to design before building.
 5. **Harden infra for real user data** — `infra/README.md`'s "Known
    simplifications".
-6. **Tests** — `backend-ci.yml` runs `pytest` but there's no suite yet
-   (`continue-on-error: true` — remove once tests exist).
+6. **Widen the test suite** — `backend/tests/` now covers the scheduling
+   rules (window contests, capture, drafts, locking, derived values) and
+   `backend-ci.yml` treats a failure as a failure. Nothing covers the
+   frontend yet.
+7. **Real currency** — Expenses hardcodes `USD` (see
+   `docs/features/proposals-and-expenses-feature-spec.md` decision 10);
+   the schema has nowhere to put a trip's currency.
+8. **A pinned item inside a claimed window** — the proposal flow's hour
+   picker clips at a locked plan rather than packing stops around one
+   (decision/§6.5). Supporting it would make "stops pack end to end"
+   conditional, which is why v1 doesn't.
 

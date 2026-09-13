@@ -11,6 +11,8 @@ import DaySchedule from "./pages/DaySchedule";
 import CompareSets from "./pages/CompareSets";
 import EditVisit from "./pages/EditVisit";
 import FinalItinerary from "./pages/FinalItinerary";
+import Expenses from "./pages/Expenses";
+import ProposeBlock from "./pages/ProposeBlock";
 import BottomNav from "./components/core/BottomNav";
 
 // Every trip-scoped screen lives under /trips/:tripId/... so a URL always
@@ -52,7 +54,14 @@ function AppRoutes() {
       <Route path="/trips/:tripId/map" element={<LassoMap />} />
       <Route path="/trips/:tripId/schedule" element={<ScheduleIndexRedirect />} />
       <Route path="/trips/:tripId/schedule/:day" element={<DaySchedule />} />
+      {/* Steps 2-4 of the proposal flow, as one route: the step lives in
+          component state rather than the URL so backing out of "Review"
+          returns to the hour selection with the drag intact, which a URL
+          step would throw away (see pages/ProposeBlock.jsx). Modal-style,
+          so it deliberately stays out of BottomNav's MAIN_SCREEN_PATHS. */}
+      <Route path="/trips/:tripId/schedule/:day/propose" element={<ProposeBlock />} />
       <Route path="/trips/:tripId/contests/:contestId" element={<CompareSets />} />
+      <Route path="/trips/:tripId/expenses" element={<Expenses />} />
       <Route path="/trips/:tripId/edit/:pinId" element={<EditVisit />} />
       <Route path="/trips/:tripId/itinerary" element={<FinalItinerary />} />
       <Route path="*" element={<Navigate to="/" replace />} />

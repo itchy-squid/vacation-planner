@@ -48,6 +48,9 @@ class TripOut(BaseModel):
     start_date: date | None
     end_date: date | None
     phase: str
+    # How many people the trip is costed for. None means "as many as there
+    # are contributors" — see models.py Trip.
+    traveller_count: int | None
     created_at: datetime
 
 
@@ -60,6 +63,7 @@ class TripUpdate(BaseModel):
     region_line: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    traveller_count: int | None = None
 
 
 class AvailabilityRuleIn(BaseModel):
@@ -105,6 +109,9 @@ class PinUpdate(BaseModel):
     region: str | None = None
     duration_minutes: int | None = None
     cost_cents: int | None = None
+    # Contributor ids sharing this pin's cost; [] means everyone on the
+    # trip. Edited as a row of initial chips on pages/EditVisit.jsx.
+    heads: list[int] | None = None
     notes: str | None = None
     link: str | None = None
     tags: list[str] | None = None
@@ -124,6 +131,7 @@ class PinOut(BaseModel):
     lng: float | None
     duration_minutes: int
     cost_cents: int
+    heads: list[int]
     notes: str
     link: str
     tags: list[str]
@@ -179,6 +187,7 @@ class TravelItemUpdate(BaseModel):
     kind: TravelItemKind | None = None
     duration_minutes: int | None = None
     cost_cents: int | None = None
+    heads: list[int] | None = None
     notes: str | None = None
     link: str | None = None
 
@@ -191,6 +200,7 @@ class TravelItemOut(BaseModel):
     kind: str
     duration_minutes: int
     cost_cents: int
+    heads: list[int]
     notes: str
     link: str
     added_by_id: int | None
@@ -200,6 +210,10 @@ class TravelItemOut(BaseModel):
 class PlanItemCreate(BaseModel):
     pin_id: int | None = None
     travel_item_id: int | None = None
+    # A trim, local to this placement — the pin/travel item's own duration
+    # is untouched (feature spec decision 2). Floor of 15m matches the
+    # stepper everywhere else in the app.
+    duration_minutes: int | None = Field(default=None, ge=15)
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> "PlanItemCreate":
@@ -212,20 +226,37 @@ class PlanItemOut(BaseModel):
     pin: PinOut | None = None
     travel_item: TravelItemOut | None = None
     position: int
+    # Both nullable overrides, echoed back as stored so a client can tell
+    # "trimmed to 90m" from "the pin is 90m" — that's the difference
+    # between the proposal flow showing "1H 30M · SHORTENED FROM 3H" and
+    # just "1H 30M".
+    duration_minutes: int | None = None
+    offset_minutes: int | None = None
+    # Pre-computed clock position, so the Expenses page and the compare /
+    # itinerary stop lists don't each re-derive the packing rule (feature
+    # spec §7). Minutes from midnight on the plan's own day.
+    start_minute_of_day: int
 
 
-PlanStatusLiteral = Literal["placed", "pencilled", "contested", "locked"]
+PlanStatusLiteral = Literal["draft", "placed", "pencilled", "contested", "locked"]
 
 
 class PlanCreate(BaseModel):
     """Direct placement — POST /api/trips/{trip_id}/plans. `status` is
-    restricted to placed/pencilled here: contested/locked plans only ever
-    come out of the propose-alternative and lock flows (see
-    routers/contests.py), never straight from a client-supplied status."""
+    restricted to placed/pencilled/draft here: contested/locked plans only
+    ever come out of the propose-a-block and lock flows (see
+    routers/contests.py), never straight from a client-supplied status.
+
+    `draft` is allowed because a draft is exactly a plan its author hasn't
+    shown anyone yet — it occupies no time and is filtered out of every
+    other contributor's reads (feature spec §6.4), so nothing is claimed by
+    creating one."""
 
     starts_at: datetime
     ends_at: datetime
-    status: Literal["placed", "pencilled"] = "placed"
+    status: Literal["placed", "pencilled", "draft"] = "placed"
+    label: str = ""
+    rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
 
 
@@ -243,24 +274,42 @@ class PlanOut(BaseModel):
     color: str
     status: PlanStatusLiteral
     contest_id: int | None
+    created_by_id: int | None
+    # The proposer's case for this plan, shown to voters.
+    rationale: str
     items: list[PlanItemOut]
-    # Derived, never stored — see app/derive.py.
+    # Derived, never stored — see app/derive.py. There is no
+    # moving_minutes any more; see that module's docstring for why.
     total_duration_minutes: int
     total_cost_cents: int
-    moving_minutes: int
     slack_minutes: int
 
 
 class ContestProposeCreate(BaseModel):
-    against_plan_id: int
+    """Propose a block — POST /api/trips/{trip_id}/contests.
+
+    There is no `against_plan_id` any more: a proposal claims a *window*,
+    not one existing plan. Everything already in those hours is captured
+    into a single incumbent option, which is what makes locking the winner
+    safe — see routers/contests.py::open_block_contest and the feature
+    spec's decision 1."""
+
     starts_at: datetime
     ends_at: datetime
+    label: str = ""
+    rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
 
 
 class ContestPlanOut(PlanOut):
     vote_count: int
     voted_by_me: bool
+    # Derived, not stored: options are lettered by created_at with the
+    # incumbent first, so A is always what's already on the board. A letter
+    # can therefore shift if an option is removed — which is the right
+    # trade for never having a stored letter disagree with the order the
+    # cards are actually drawn in.
+    set_letter: str
 
 
 class ContestOut(BaseModel):
@@ -268,9 +317,16 @@ class ContestOut(BaseModel):
     trip_id: int
     status: Literal["open", "resolved"]
     winning_plan_id: int | None
+    # The hours under contest. Every option spans exactly these.
+    starts_at: datetime
+    ends_at: datetime
     plans: list[ContestPlanOut]
     voted_count: int
     contributor_count: int
+    # The plan holding strictly more than half of contributor_count, or
+    # None. Advisory only — nothing resolves automatically; the owner still
+    # locks (feature spec decision 4).
+    majority_plan_id: int | None = None
     # Which plan the requesting principal has voted for in this contest, if
     # any — lets the frontend show "Voted ✓" without a separate lookup. See
     # app/routers/contests.py::_contest_to_schema.

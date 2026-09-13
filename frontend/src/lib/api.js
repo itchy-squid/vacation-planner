@@ -171,7 +171,15 @@ export const api = {
   deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
   lockPlan: (planId) => request(`/api/plans/${planId}/lock`, { method: "POST" }),
 
-  proposeAlternative: (tripId, payload) => request(`/api/trips/${tripId}/contests`, { method: "POST", body: payload }),
+  // Propose a block: { starts_at, ends_at, label?, rationale?, items:
+  // [{ pin_id | travel_item_id, duration_minutes? }] }. There's no
+  // against_plan_id any more — a proposal claims a range of hours, and the
+  // server captures whatever is already in them into one "on the board"
+  // option (see backend/app/routers/contests.py::open_block_contest).
+  proposeBlock: (tripId, payload) => request(`/api/trips/${tripId}/contests`, { method: "POST", body: payload }),
+  // Turns the caller's own draft block into a real proposal. 409s if the
+  // hours went out for a vote while the draft sat unpublished.
+  publishPlan: (planId) => request(`/api/plans/${planId}/publish`, { method: "POST" }),
   getContest: (contestId) => request(`/api/contests/${contestId}`),
   toggleContestVote: (contestId, planId) =>
     request(`/api/contests/${contestId}/vote`, { method: "POST", body: { plan_id: planId } }),

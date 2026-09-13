@@ -1,34 +1,79 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
-from ..auth import get_current_contributor, get_current_principal
+from ..auth import Principal, get_current_contributor, get_current_principal, get_principal
 from ..db import get_db
-from ..derive import plan_range_minutes, plan_totals
+from ..derive import item_start_minutes, plan_range_minutes, plan_totals
 from ..events import bus
-from ..models import Plan, PlanItem, PlanStatus
+from ..models import Contributor, Plan, PlanItem, PlanStatus
 from ..schemas import PinOut, PlanCreate, PlanItemOut, PlanMove, PlanOut, TravelItemOut
 
 router = APIRouter(prefix="/api", tags=["plans"])
 
 # Any plan in one of these statuses occupies real time on the trip's
 # calendar and can conflict with a new placement — see docs/features/
-# scheduling-feature-spec.md "Direct placement".
+# scheduling-feature-spec.md "Direct placement". `draft` is deliberately
+# absent: a private draft nobody else can see must not be able to block
+# anybody else's placement (proposals-and-expenses spec §6.1).
 _OCCUPYING_STATUSES = (PlanStatus.placed, PlanStatus.pencilled, PlanStatus.contested, PlanStatus.locked)
 
 
-def _plan_item_to_schema(item: PlanItem) -> PlanItemOut:
+def contributor_for_request(db: Session, trip_id: int, request: Request) -> Contributor | None:
+    """The signed-in contributor on this trip, or None — never raising, and
+    never enrolling anyone. Read paths use this rather than
+    auth.get_current_contributor because a GET shouldn't 403 an outsider
+    (they simply see no drafts) and shouldn't have the side effect of
+    creating a Contributor row the way the dev-mode auto-enrol does."""
+    principal = get_principal(request)
+    if principal is None:
+        from ..config import get_settings
+
+        settings = get_settings()
+        if not settings.is_development:
+            return None
+        email = settings.dev_user_email
+    else:
+        email = principal.email
+    return db.scalar(select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == email))
+
+
+def visible_plans_condition(viewer: Contributor | None) -> ColumnElement[bool]:
+    """The app's one per-contributor read filter: a draft plan belongs to
+    its author alone (feature spec §6.4). Every plan-listing path goes
+    through this single helper rather than spelling the condition out —
+    a draft leaking onto someone else's calendar is exactly the kind of bug
+    a second copy of this condition would eventually cause."""
+    if viewer is None:
+        return Plan.status != PlanStatus.draft
+    return or_(Plan.status != PlanStatus.draft, Plan.created_by_id == viewer.id)
+
+
+def _plan_item_to_schema(plan: Plan, item: PlanItem) -> PlanItemOut:
+    start_minute_of_day = (
+        plan.starts_at.hour * 60 + plan.starts_at.minute + item_start_minutes(plan, item)
+    ) % 1440
     return PlanItemOut(
         pin=PinOut.model_validate(item.pin) if item.pin_id is not None else None,
         travel_item=TravelItemOut.model_validate(item.travel_item) if item.travel_item_id is not None else None,
         position=item.position,
+        duration_minutes=item.duration_minutes,
+        offset_minutes=item.offset_minutes,
+        start_minute_of_day=start_minute_of_day,
     )
 
 
-def plan_to_schema(plan: Plan) -> PlanOut:
+def plan_schema_kwargs(plan: Plan) -> dict:
+    """Everything PlanOut needs, as keyword arguments rather than a built
+    model — routers/contests.py builds a ContestPlanOut (PlanOut plus vote
+    fields) from the same values. Handing it a dict rather than
+    model_dump()ing a finished PlanOut matters: PinOut signs photo URLs on
+    validation (see schemas.py), so round-tripping one through a dict would
+    sign an already-signed URL a second time."""
     range_minutes = plan_range_minutes(plan)
     totals = plan_totals(plan, range_minutes)
-    return PlanOut(
+    return dict(
         id=plan.id,
         trip_id=plan.trip_id,
         starts_at=plan.starts_at,
@@ -37,9 +82,15 @@ def plan_to_schema(plan: Plan) -> PlanOut:
         color=plan.color,
         status=plan.status.value,
         contest_id=plan.contest_id,
-        items=[_plan_item_to_schema(i) for i in plan.items],
+        created_by_id=plan.created_by_id,
+        rationale=plan.rationale,
+        items=[_plan_item_to_schema(plan, i) for i in plan.items],
         **totals,
     )
+
+
+def plan_to_schema(plan: Plan) -> PlanOut:
+    return PlanOut(**plan_schema_kwargs(plan))
 
 
 def find_overlapping_plan(db: Session, trip_id: int, starts_at, ends_at, exclude_plan_id: int | None = None) -> Plan | None:
@@ -56,39 +107,95 @@ def find_overlapping_plan(db: Session, trip_id: int, starts_at, ends_at, exclude
     return db.scalar(stmt)
 
 
+def find_overlapping_plans(db: Session, trip_id: int, starts_at, ends_at, statuses) -> list[Plan]:
+    return list(
+        db.scalars(
+            select(Plan)
+            .where(
+                Plan.trip_id == trip_id,
+                Plan.status.in_(statuses),
+                Plan.starts_at < ends_at,
+                Plan.ends_at > starts_at,
+            )
+            .order_by(Plan.starts_at, Plan.id)
+        ).all()
+    )
+
+
+def occupied_detail(occupying: Plan) -> dict:
+    """The 409 body every placement path shares. `occupying_contest_id` is
+    what lets a client offer "add a set to the open vote" instead of always
+    opening a fresh propose sheet (feature spec §6.1)."""
+    return {
+        "message": "That time is already occupied.",
+        "occupying_plan_id": occupying.id,
+        "occupying_contest_id": occupying.contest_id,
+    }
+
+
 def _add_items(db: Session, plan: Plan, items) -> None:
     for position, item in enumerate(items):
-        db.add(PlanItem(plan_id=plan.id, pin_id=item.pin_id, travel_item_id=item.travel_item_id, position=position))
+        db.add(
+            PlanItem(
+                plan_id=plan.id,
+                pin_id=item.pin_id,
+                travel_item_id=item.travel_item_id,
+                position=position,
+                duration_minutes=getattr(item, "duration_minutes", None),
+            )
+        )
 
 
 @router.get("/trips/{trip_id}/plans", response_model=list[PlanOut])
-def list_plans(trip_id: int, db: Session = Depends(get_db)):
-    plans = db.scalars(select(Plan).where(Plan.trip_id == trip_id)).all()
+def list_plans(trip_id: int, request: Request, db: Session = Depends(get_db)):
+    viewer = contributor_for_request(db, trip_id, request)
+    plans = db.scalars(
+        select(Plan).where(Plan.trip_id == trip_id, visible_plans_condition(viewer))
+    ).all()
     return [plan_to_schema(p) for p in plans]
+
+
+@router.get("/plans/{plan_id}", response_model=PlanOut)
+def get_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    if plan.status == PlanStatus.draft:
+        viewer = contributor_for_request(db, plan.trip_id, request)
+        # 404 rather than 403: someone else's draft shouldn't even confirm
+        # that a plan exists at that id.
+        if viewer is None or plan.created_by_id != viewer.id:
+            raise HTTPException(status_code=404, detail="Plan not found")
+    return plan_to_schema(plan)
 
 
 @router.post("/trips/{trip_id}/plans", response_model=PlanOut, status_code=201)
 def create_plan(
     trip_id: int,
     payload: PlanCreate,
-    principal=Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ):
-    """Direct placement. A caller who gets the 409 below should switch to
-    the propose-alternative flow (POST /api/trips/{trip_id}/contests)
-    instead of retrying this endpoint — see spec "Direct placement"."""
-    occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at)
-    if occupying is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={"message": "That time is already occupied.", "occupying_plan_id": occupying.id},
-        )
+    """Direct placement, or — with status "draft" — the private, unclaimed
+    kind. A caller who gets the 409 below should switch to the propose-a-
+    block flow (POST /api/trips/{trip_id}/contests) instead of retrying
+    this endpoint, or, when the 409 carries an occupying_contest_id, offer
+    to add a set to the vote that's already open there."""
+    is_draft = payload.status == "draft"
+    if not is_draft:
+        # A draft skips this entirely: it claims no time, so there is
+        # nothing for it to conflict with (feature spec §6.4).
+        occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at)
+        if occupying is not None:
+            raise HTTPException(status_code=409, detail=occupied_detail(occupying))
 
     contributor = get_current_contributor(trip_id=trip_id, principal=principal, db=db)
     plan = Plan(
         trip_id=trip_id,
         starts_at=payload.starts_at,
         ends_at=payload.ends_at,
+        label=payload.label,
+        rationale=payload.rationale,
         status=PlanStatus(payload.status),
         created_by_id=contributor.id if contributor else None,
     )
@@ -97,7 +204,10 @@ def create_plan(
     _add_items(db, plan, payload.items)
     db.commit()
     db.refresh(plan)
-    bus.publish(trip_id, "plan.placed", {"plan_id": plan.id})
+    # A draft is never broadcast — nobody else can see it, so telling the
+    # whole trip about it would only make other clients refetch for nothing.
+    if not is_draft:
+        bus.publish(trip_id, "plan.placed", {"plan_id": plan.id})
     return plan_to_schema(plan)
 
 
@@ -113,10 +223,7 @@ def move_plan(plan_id: int, payload: PlanMove, db: Session = Depends(get_db)):
     new_ends = payload.ends_at if payload.ends_at is not None else plan.ends_at
     occupying = find_overlapping_plan(db, plan.trip_id, new_starts, new_ends, exclude_plan_id=plan.id)
     if occupying is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={"message": "That time is already occupied.", "occupying_plan_id": occupying.id},
-        )
+        raise HTTPException(status_code=409, detail=occupied_detail(occupying))
 
     plan.starts_at = new_starts
     plan.ends_at = new_ends
@@ -127,24 +234,38 @@ def move_plan(plan_id: int, payload: PlanMove, db: Session = Depends(get_db)):
 
 
 @router.delete("/plans/{plan_id}", status_code=204)
-def delete_plan(plan_id: int, db: Session = Depends(get_db)):
+def delete_plan(
+    plan_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
-    if plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
+
+    if plan.status == PlanStatus.draft:
+        # Discarding your own draft block. Author-only for the same reason
+        # reading one is: it isn't anyone else's to throw away. 404, not
+        # 403, to match get_plan.
+        viewer = contributor_for_request(db, plan.trip_id, request)
+        if viewer is None or plan.created_by_id != viewer.id:
+            raise HTTPException(status_code=404, detail="Plan not found")
+    elif plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
         raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be unplaced")
 
     trip_id = plan.trip_id
+    was_draft = plan.status == PlanStatus.draft
     db.delete(plan)
     db.commit()
-    bus.publish(trip_id, "plan.removed", {"plan_id": plan_id})
+    if not was_draft:
+        bus.publish(trip_id, "plan.removed", {"plan_id": plan_id})
     return None
 
 
 @router.post("/plans/{plan_id}/lock", response_model=PlanOut)
 def lock_plan(
     plan_id: int,
-    principal=Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ):
     """Owner-only. Locks a placed/pencilled plan directly, with no contest
@@ -153,7 +274,12 @@ def lock_plan(
     POST /api/contests/{contest_id}/lock instead, since that's what also
     resolves the contest and cleans up its losing siblings; this endpoint
     409s that case away by only ever accepting placed/pencilled (see spec
-    "Locking")."""
+    "Locking").
+
+    This is also how a pinned item — the ferry crossing, the handoff's
+    gangway times — comes to exist: there is no separate "pinned" concept,
+    just a locked plan, which the proposal flow's hour selection then clips
+    at rather than claiming (feature spec §6.5)."""
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")

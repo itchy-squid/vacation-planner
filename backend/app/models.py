@@ -68,6 +68,13 @@ class Trip(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     phase: Mapped[TripPhase] = mapped_column(Enum(TripPhase), default=TripPhase.ideation)
+    # How many people the trip is *costed* for, which is not the same
+    # question as how many people are planning it: a couple sharing one
+    # cabin plans as two contributors but a child along for the ride is a
+    # head the tickets are bought for and never a contributor. NULL falls
+    # back to len(contributors) — see app/routers/plans.py and the
+    # frontend's Expenses screen, which both go through that same fallback.
+    traveller_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     contributors: Mapped[list["Contributor"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
@@ -113,7 +120,17 @@ class Pin(Base):
     lng: Mapped[float | None] = mapped_column(nullable=True)
 
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    # The whole cost of visiting this pin, for everyone it's shared
+    # between — never a per-person price. Per-head is a display division
+    # (cost_cents / headcount), so rounding can never accumulate into a
+    # wrong trip total; see docs/features/proposals-and-expenses-feature-
+    # spec.md decision 3.
     cost_cents: Mapped[int] = mapped_column(Integer, default=0)
+    # Which contributors share cost_cents. [] means "everyone on the trip",
+    # which is the common case and is why it's the default rather than a
+    # list of every contributor id (which would go stale the moment someone
+    # joined). Headcount for an empty list is Trip.traveller_count.
+    heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -181,6 +198,9 @@ class TravelItem(Base):
     kind: Mapped[str] = mapped_column(String(20), default="other")
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     cost_cents: Mapped[int] = mapped_column(Integer, default=0)
+    # Same meaning as Pin.heads above: the contributors sharing this cost,
+    # empty meaning everyone.
+    heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
@@ -191,6 +211,13 @@ class TravelItem(Base):
 
 
 class PlanStatus(str, enum.Enum):
+    # Author-visible only, and deliberately *not* occupying: a private
+    # draft never blocks anyone else's placement, never appears on another
+    # contributor's calendar, and never reaches the trip's event channel.
+    # See docs/features/proposals-and-expenses-feature-spec.md §6.4 and
+    # routers/plans.py's visible_plans_condition, which is the one place
+    # the read filter lives.
+    draft = "draft"
     placed = "placed"
     pencilled = "pencilled"
     contested = "contested"
@@ -220,6 +247,10 @@ class Plan(Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     label: Mapped[str] = mapped_column(String(200), default="")
     color: Mapped[str] = mapped_column(String(32), default="var(--accent)")
+    # The proposer's case for this plan, shown to voters on the compare
+    # screen ("Why (optional)" in the proposal flow's review step). Empty
+    # for every plan that wasn't proposed through that flow.
+    rationale: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus), default=PlanStatus.placed)
     # Circular with Contest.winning_plan_id (a Contest is created only after
     # a Plan already exists to contest against) — use_alter, same pattern as
@@ -237,7 +268,13 @@ class Plan(Base):
 
 class PlanItem(Base):
     """One pin or travel item within a plan. Deleting a PlanItem never
-    deletes the Pin/TravelItem it points to — only the placement row."""
+    deletes the Pin/TravelItem it points to — only the placement row.
+
+    `duration_minutes` and `offset_minutes` are both overrides, both
+    nullable, and both local to this placement — the Pin/TravelItem behind
+    them is never touched, so trimming a stop in one proposal can't shorten
+    the same pin somewhere else on the calendar. See app/derive.py, which
+    is the only place that resolves either of them."""
 
     __tablename__ = "plan_items"
     __table_args__ = (
@@ -252,6 +289,17 @@ class PlanItem(Base):
     pin_id: Mapped[int | None] = mapped_column(ForeignKey("pins.id"), nullable=True)
     travel_item_id: Mapped[int | None] = mapped_column(ForeignKey("travel_items.id"), nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # NULL = read the duration off the pin/travel item. Set only when this
+    # placement is deliberately shorter (or longer) than the item's own
+    # duration — the proposal flow's "SHORTENED FROM 3H".
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Start, in minutes from plan.starts_at. NULL = packed end to end in
+    # position order, which is what a plan built by the proposal flow
+    # always is. Set explicitly when several plans are captured into one
+    # incumbent option (routers/contests.py) so the captured stops keep
+    # their real clock times inside the wider window instead of sliding to
+    # its start.
+    offset_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     plan: Mapped[Plan] = relationship(back_populates="items")
     pin: Mapped[Pin | None] = relationship()
@@ -259,14 +307,23 @@ class PlanItem(Base):
 
 
 class Contest(Base):
-    """Created on demand when an alternative is proposed against an
-    already-placed plan. `winning_plan_id` is set only on resolution
-    (locking) — see routers/contests.py."""
+    """Created on demand when an alternative is proposed for a range of
+    hours. `winning_plan_id` is set only on resolution (locking) — see
+    routers/contests.py.
+
+    The contest owns the window, not its plans: `starts_at`/`ends_at` are
+    the hours being decided, and every option in the contest spans exactly
+    those hours. That's what makes locking safe — everything that was in
+    those hours was captured into an option, so there's nothing left
+    outside the contest to collide with the winner. See docs/features/
+    proposals-and-expenses-feature-spec.md decision 1."""
 
     __tablename__ = "contests"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[ContestStatus] = mapped_column(Enum(ContestStatus), default=ContestStatus.open)
     winning_plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", use_alter=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

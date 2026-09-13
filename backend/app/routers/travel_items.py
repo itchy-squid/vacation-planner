@@ -6,6 +6,7 @@ from ..auth import Principal, get_current_principal
 from ..db import get_db
 from ..events import bus
 from ..models import Contributor, PlanItem, TravelItem
+from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import TravelItemCreate, TravelItemOut, TravelItemUpdate
 
 router = APIRouter(prefix="/api", tags=["travel-items"])
@@ -56,7 +57,7 @@ def delete_travel_item(travel_item_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Travel item not found")
     referenced = db.scalar(select(PlanItem).where(PlanItem.travel_item_id == travel_item_id))
     if referenced is not None:
-        raise HTTPException(status_code=409, detail="This travel item is scheduled in a plan — unplace it first")
+        raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, referenced, "travel item"))
 
     trip_id = item.trip_id
     db.delete(item)
