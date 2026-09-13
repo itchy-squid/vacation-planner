@@ -225,6 +225,16 @@ export default function DaySchedule() {
     const occupying = findOverlap(startMinute, endMinute, null);
 
     if (occupying) {
+      // A locked plan can't be proposed against — reopening it first is
+      // required (spec "Calendar grid": "Tapping time occupied by a
+      // locked plan is a no-op"; backend/app/routers/contests.py
+      // propose_alternative 403s the same case). Placing stays armed so
+      // the person can just tap a different slot instead of losing their
+      // in-progress placement over a tap that landed wrong.
+      if (occupying.status === "locked") {
+        setMoveError("That time is locked — ask the owner to reopen it first.");
+        return;
+      }
       dispatch({
         type: "OPEN_PROPOSE_FOR",
         proposeSheet: {
@@ -264,8 +274,14 @@ export default function DaySchedule() {
       suppressClickRef.current = false;
       return;
     }
-    if (plan.status === "contested" || plan.status === "locked") {
-      if (plan.contestId) navigate(`/trips/${trip.id}/contests/${plan.contestId}`);
+    // Contested plans, and locked plans that won a contest, go to the
+    // compare screen — that's where the contest's other side and the
+    // reopen action live. A plan locked directly (no contest — see
+    // components/planner/PlanDetailsSheet.jsx's lock button) has no
+    // contest to show, so it opens the same details sheet as placed/
+    // pencilled plans, just in its read-only + reopen state.
+    if (plan.status === "contested" || (plan.status === "locked" && plan.contestId)) {
+      navigate(`/trips/${trip.id}/contests/${plan.contestId}`);
       return;
     }
     // Placed/pencilled plans open a details sheet (not a routed page —

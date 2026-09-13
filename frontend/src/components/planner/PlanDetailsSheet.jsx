@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faLock, faLockOpen } from "@fortawesome/free-solid-svg-icons";
+import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../../state/PlannerContext";
 import { getTripDays } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
@@ -34,6 +36,7 @@ function planDurationMinutes(plan) {
 export default function PlanDetailsSheet({ planId, onClose }) {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
+  const currentUser = useCurrentUser();
   const { trip, plans } = state;
 
   const plan = plans.find((p) => p.id === planId);
@@ -58,6 +61,12 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   const [deleting, setDeleting] = useState(false);
   const deleteDisarmTimeoutRef = useRef(null);
 
+  // Lock/reopen — a reversible toggle (see components/planner/PlanBlock.jsx
+  // "locked" status + backend/app/routers/plans.py lock_plan), so unlike
+  // "Delete permanently" it needs no armed/confirm state, just a busy flag
+  // to keep the tap from double-firing while the request is in flight.
+  const [lockBusy, setLockBusy] = useState(false);
+
   // Reset local editing state whenever a *different* plan's data arrives —
   // same convention the routed version used, just keyed off the prop
   // instead of a URL param.
@@ -78,6 +87,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     setError("");
     setClearing(false);
     setDeleteArmed(false);
+    setLockBusy(false);
     setDeleting(false);
     clearTimeout(deleteDisarmTimeoutRef.current);
   }, [planId]);
@@ -100,6 +110,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
 
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
   const editable = plan.status === "placed" || plan.status === "pencilled";
+  // Only reachable here for a plan with no contest — pages/DaySchedule.jsx
+  // routes a contested/locked-via-contest plan to the compare screen
+  // instead (see handlePlanTap there), so "locked" in this sheet always
+  // means a direct lock (backend/app/routers/plans.py lock_plan), and
+  // reopening it (routers/contests.py reopen_plan tolerates a null
+  // contest_id) is always safe to offer right here.
+  const isLocked = plan.status === "locked";
   const endMinute = startMinute + durationMinutes;
   const timeValue = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
 
@@ -220,6 +237,20 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     });
   }
 
+  // Lock/reopen toggle — reversible either direction from this same
+  // control, so (like the ✕-clear above) it needs no confirmation step,
+  // unlike "Delete permanently" below.
+  async function handleToggleLock() {
+    if (lockBusy) return;
+    setLockBusy(true);
+    setError("");
+    const result = await dispatch(isLocked ? { type: "REOPEN_PLAN", planId: plan.id } : { type: "LOCK_PLAN", planId: plan.id });
+    setLockBusy(false);
+    if (!result.ok) {
+      setError(isLocked ? "Couldn't reopen this item — try again." : "Couldn't lock this item — try again.");
+    }
+  }
+
   // "Delete permanently" — actually deletes the underlying pin or travel
   // item, not just this scheduling of it. Unplace first: the backend
   // rejects deleting a pin/travel item that's still referenced by a
@@ -282,7 +313,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
 
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
           <div>
-            <div className="mono-caption">{plan.status === "pencilled" ? "Unconfirmed" : "Scheduled"}</div>
+            <div className="mono-caption">{isLocked ? "Locked" : plan.status === "pencilled" ? "Unconfirmed" : "Scheduled"}</div>
             <div className="serif-place" style={{ fontSize: 19, marginTop: 3, color: "var(--text-primary)" }}>
               {title}
             </div>
@@ -290,19 +321,65 @@ export default function PlanDetailsSheet({ planId, onClose }) {
               {clockLabel(startMinute)}–{clockLabel(endMinute)}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{ flex: "none", width: 28, height: 28, borderRadius: "50%", background: "var(--surface-page)", border: "1px solid var(--border)", font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}
-          >
-            ✕
-          </button>
+          <div style={{ display: "flex", gap: 6, flex: "none" }}>
+            {currentUser.isOwner && (
+              // Lock icon lives in the header, next to the status it
+              // changes — not in the destructive-action footer below,
+              // since this is a routine, reversible toggle rather than a
+              // "you can't undo this" action like Delete permanently.
+              <button
+                type="button"
+                onClick={handleToggleLock}
+                disabled={lockBusy}
+                aria-label={isLocked ? "Reopen — unlock this item" : "Lock this item in place"}
+                title={isLocked ? "Reopen — unlock this item" : "Lock this item in place"}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: isLocked ? "var(--accent)" : "var(--surface-page)",
+                  border: isLocked ? "none" : "1px solid var(--border)",
+                  font: "400 13px var(--font-sans)",
+                  color: isLocked ? "#fff" : "var(--text-secondary)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {lockBusy ? (
+                  "…"
+                ) : (
+                  // Open padlock when not locked (tap to lock), closed
+                  // when locked (tap to reopen) — this toggle is the one
+                  // place in the app that shows the unlocked state at
+                  // all, so it's the only spot that needs faLockOpen;
+                  // PlanBlock.jsx only ever renders a locked plan, so it
+                  // stays on the closed faLock alone. Flat, monochrome
+                  // (fill: currentColor), inheriting this button's own
+                  // color (white when locked/filled, --text-secondary
+                  // when outline).
+                  <FontAwesomeIcon icon={isLocked ? faLock : faLockOpen} style={{ width: 13, height: 13 }} />
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{ flex: "none", width: 28, height: 28, borderRadius: "50%", background: "var(--surface-page)", border: "1px solid var(--border)", font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {!editable && (
           <div style={{ marginTop: 14, padding: "10px 13px", borderRadius: "var(--radius-lg)", background: "var(--plum-tint)", font: "500 12px var(--font-sans)", color: "var(--accent)" }}>
-            This item is {plan.status} and cannot be edited from here.
+            {isLocked
+              ? currentUser.isOwner
+                ? "This item is locked — tap the lock icon above to reopen it."
+                : "This item is locked in place by the trip owner."
+              : `This item is ${plan.status} and cannot be edited from here.`}
           </div>
         )}
 

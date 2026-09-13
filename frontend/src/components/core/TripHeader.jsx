@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faChevronLeft } from "@fortawesome/free-solid-svg-icons";
 import { usePlannerState } from "../../state/PlannerContext";
 import { useGuardedNavigate } from "../../state/NavGuard";
 import SettingsButton from "./SettingsButton";
@@ -53,7 +55,11 @@ export default function TripHeader({ floating = false, right = null, style }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 2, flex: "none", ...shell, ...style }}>
-      <HeaderIconButton glyph="‹" label="Back to Trips home" onClick={() => navigate("/")} glyphSize={24} style={{ transform: "translateY(-2px)" }} />
+      {/* The "‹" text glyph used to need a manual translateY nudge to sit
+          optically centered (font metrics put it high in its em box); a
+          real SVG icon centers correctly on its own via this button's own
+          flex centering, so that offset is gone. */}
+      <HeaderIconButton glyph={<FontAwesomeIcon icon={faChevronLeft} style={{ width: 15, height: 15 }} />} label="Back to Trips home" onClick={() => navigate("/")} glyphSize={24} />
       <div
         className="serif-place"
         style={{

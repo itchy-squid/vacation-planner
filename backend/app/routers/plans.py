@@ -139,3 +139,33 @@ def delete_plan(plan_id: int, db: Session = Depends(get_db)):
     db.commit()
     bus.publish(trip_id, "plan.removed", {"plan_id": plan_id})
     return None
+
+
+@router.post("/plans/{plan_id}/lock", response_model=PlanOut)
+def lock_plan(
+    plan_id: int,
+    principal=Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    """Owner-only. Locks a placed/pencilled plan directly, with no contest
+    involved — the reversible companion to reopen_plan
+    (routers/contests.py). A contested plan must still go through
+    POST /api/contests/{contest_id}/lock instead, since that's what also
+    resolves the contest and cleans up its losing siblings; this endpoint
+    409s that case away by only ever accepting placed/pencilled (see spec
+    "Locking")."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    if plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
+        raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be locked directly")
+
+    contributor = get_current_contributor(trip_id=plan.trip_id, principal=principal, db=db)
+    if not contributor.is_owner:
+        raise HTTPException(status_code=403, detail="Only the trip owner can lock an item")
+
+    plan.status = PlanStatus.locked
+    db.commit()
+    db.refresh(plan)
+    bus.publish(plan.trip_id, "plan.locked", {"plan_id": plan.id})
+    return plan_to_schema(plan)

@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faGear } from "@fortawesome/free-solid-svg-icons";
 import { usePlannerState } from "../../state/PlannerContext";
 import { useGuardedNavigate } from "../../state/NavGuard";
 import HeaderIconButton from "./HeaderIconButton";
@@ -16,12 +18,13 @@ export default function SettingsButton({ style, size = 36 }) {
   const navigate = useGuardedNavigate();
   const { trip } = usePlannerState();
   if (!trip) return null;
+  const glyphSize = Math.round(size * 0.5);
   return (
     <HeaderIconButton
-      glyph="⚙"
+      glyph={<FontAwesomeIcon icon={faGear} style={{ width: glyphSize, height: glyphSize }} />}
       label="Trip settings"
       onClick={() => navigate(`/trips/${trip.id}/trip-settings`)}
-      glyphSize={Math.round(size * 0.5)}
+      glyphSize={glyphSize}
       style={style}
     />
   );

@@ -94,7 +94,7 @@ function navButtonStyle(edge) {
   };
 }
 
-export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand, onToggle, days }) {
+export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand, placedLocked = false, onToggle, days }) {
   const okBase = (day, band) => !rule || (rule.days?.includes(day) && rule.bands?.includes(band));
 
   let workingCount = 0;
@@ -235,7 +235,17 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
                       const key = `${pinId}|${d.n}-${band}`;
                       const overridden = Boolean(overrides[key]);
                       const works = overridden ? !okBase(d.n, band) : okBase(d.n, band);
-                      const placed = placedDayBand === `${d.n}-${band}` && works;
+                      // A locked plan can't be moved off this cell (spec
+                      // "Moving / unplacing" — only placed/pencilled can
+                      // resize/move), so its "placed" marker can't depend
+                      // on `works`: an override toggled after the lock, or
+                      // a rule that never matched this slot to begin with,
+                      // would otherwise make an immovable placement look
+                      // unplaced. A non-locked plan keeps the old
+                      // works-gated check, since it can still be moved to
+                      // a working square.
+                      const isPlacedCell = placedDayBand === `${d.n}-${band}`;
+                      const placed = isPlacedCell && (placedLocked || works);
                       return (
                         <div
                           key={key}

@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faLock } from "@fortawesome/free-solid-svg-icons";
 import { clockLabel } from "../../lib/planTime";
 
 // Renders one Plan absolutely positioned on the DaySchedule calendar grid
@@ -64,8 +66,16 @@ export default function PlanBlock({ plan, rect, onTap }) {
           padding: compact ? "3px 7px" : "6px 8px",
         }}
       >
-        <div style={{ font: "600 12px var(--font-sans)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {title}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 12px var(--font-sans)", color: "var(--text-primary)", overflow: "hidden" }}>
+          {/* Font Awesome Free's solid lock — flat, monochrome (fill:
+              currentColor, no color of its own), rides inline with the
+              title rather than only in the subtitle below, because
+              compact blocks (rect.height < 34, any stop under ~45min)
+              hide that subtitle entirely — without this a short locked
+              plan would render indistinguishably from an unlocked one.
+              Same icon as the lock toggle in PlanDetailsSheet.jsx. */}
+          <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
+          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>

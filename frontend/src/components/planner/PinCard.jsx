@@ -35,7 +35,7 @@ export default function PinCard({ pin, column, contributorInitial, onOpen }) {
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, flex: "none" }} />
           <span style={{ font: "400 11px var(--font-sans)", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {pin.place}
+            {pin.region}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>

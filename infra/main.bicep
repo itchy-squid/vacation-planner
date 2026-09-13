@@ -127,7 +127,6 @@ module photoStorage 'modules/storage-account.bicep' = {
   params: {
     location: location
     name: suffix
-    backendIdentityPrincipalId: backendIdentity.outputs.principalId
   }
 }
 
@@ -174,5 +173,5 @@ output registryLoginServer string = registry.outputs.loginServer
 output postgresFqdn string = postgres.outputs.fqdn
 output postgresServerName string = postgres.outputs.serverName
 output photoStorageAccountName string = photoStorage.outputs.accountName
-@description('Object ID of the backend managed identity — pass this to pgaadauth_create_principal_with_oid(..., objectType=\'service\') in infra/sql/provision_roles.sql to map it to the postgresAppRole Postgres role.')
+@description('Object ID of the backend managed identity — pass this to pgaadauth_create_principal_with_oid(..., objectType=\'service\') in infra/sql/provision_roles.sql to map it to the postgresAppRole Postgres role, and to the storage role assignments in infra/README.md "One-time manual setup" step 7.')
 output backendIdentityObjectId string = backendIdentity.outputs.principalId

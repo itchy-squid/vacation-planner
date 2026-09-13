@@ -78,7 +78,7 @@ No stored Azure credential — login is federated (OIDC) via
    `repo:itchy-squid/vacation-planner:environment:dev` (or `:prod`) —
    `infra/README.md` "Continuous deployment" step 2.
 3. **`infra/sql/provision_roles.sql`** run once by hand against that
-   environment's Postgres server — `infra/README.md` step 6.
+   environment's Postgres server — `infra/README.md` step 8.
 4. **Prod**: consider the required-reviewer approval gate above.
 
 ## First deploy of a new environment
@@ -97,8 +97,10 @@ deploy:
 4. After that deploy, grab the Static Web App's deployment token from the
    portal and set `AZURE_STATIC_WEB_APPS_API_TOKEN`.
 5. Re-run the workflow.
-6. Provision database roles and run the first migration —
-   `infra/README.md` steps 6–7 (manual, not part of `deploy.yml`).
+6. Grant the backend identity's storage roles and provision database
+   roles — `infra/README.md` steps 6–8 (manual, not part of
+   `deploy.yml`). The first migration then runs automatically via CI's
+   `migrate` job (`infra/README.md` step 9) on the next deploy.
 
 ## Known simplifications (flagged for later hardening)
 
@@ -120,3 +122,5 @@ From `infra/README.md`:
 - `infra/README.md` — full infra walkthrough.
 - `claude/db-privilege-provisioning.md` (project docs) — database
   auth/privilege model rationale.
+- `claude/storage-role-assignment-manual-step.md` (project docs) — why
+  the storage role assignments are a manual step, not CI-provisioned.

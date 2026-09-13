@@ -102,6 +102,7 @@ class PinCreate(BaseModel):
 
 class PinUpdate(BaseModel):
     title: str | None = None
+    region: str | None = None
     duration_minutes: int | None = None
     cost_cents: int | None = None
     notes: str | None = None
