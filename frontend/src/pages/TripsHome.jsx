@@ -5,6 +5,7 @@ import Button from "../components/core/Button";
 import AvatarStack from "../components/planner/AvatarStack";
 import MetricTile from "../components/planner/MetricTile";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { logout } from "../lib/api";
 
 // Screen 1 — "pick a trip; read its phase at a glance." Handoff README
 // screen 1. "Add trip" opens the new-trip form (see pages/NewTrip.jsx);
@@ -71,7 +72,7 @@ export default function TripsHome() {
               overflow: "hidden",
             }}
           >
-            <PhotoPlaceholder height={158} label="cover photo — Taipei skyline">
+            <PhotoPlaceholder height={158} label="">
               <div style={{ position: "absolute", bottom: 10, right: 10 }}>
                 <Badge>{TRIP.phase === "ideation" ? "IDEATION" : "SCHEDULING"}</Badge>
               </div>
@@ -152,24 +153,52 @@ export default function TripsHome() {
             );
           })}
         </div>
+
+        <SignOut />
       </div>
     </div>
   );
 }
 
-// The no-trips screen. Keeps the same header as the populated screen —
-// same title, same "+" in the same place — so the affordance the user
-// will reach for doesn't move once they have trips, and the card below is
-// a second, larger route to the same destination.
+// Signing out used to live in the ☰ menu on the trip screens (see
+// components/core/TripHeader.jsx, which replaced it with a back chevron and
+// a gear). It belongs here instead: leaving the app is something you do
+// when you're done with a trip, not mid-way through arranging one, and this
+// is the only screen that isn't about a particular trip. Quiet on purpose —
+// it's the rarest thing on the screen and the only irreversible one.
+function SignOut() {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "28px 0 4px" }}>
+      <button
+        type="button"
+        className="tap hit-target"
+        onClick={logout}
+        style={{
+          padding: "0 16px",
+          background: "none",
+          border: "none",
+          font: "500 12.5px var(--font-sans)",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+        }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
+// The no-trips screen. The header keeps only the title: with no trips
+// there is nothing for a second, smaller "add" affordance to sit
+// alongside, and the "New trip" button on the card below is the one
+// obvious thing to do. The "+" returns to the header as soon as there is
+// a first trip.
 function NoTripsYet({ onCreate }) {
   return (
     <div className="screen">
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "20px var(--gutter-text) 14px" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", padding: "20px var(--gutter-text) 14px" }}>
           <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
-          <div style={{ display: "flex", gap: 8 }}>
-            <CircleGlyph glyph="+" label="Add trip" onClick={onCreate} />
-          </div>
         </div>
 
         <div style={{ padding: "0 var(--gutter-screen)" }}>
@@ -203,6 +232,8 @@ function NoTripsYet({ onCreate }) {
             </div>
           </div>
         </div>
+
+        <SignOut />
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ import SetCard from "../components/planner/SetCard";
 import ConsensusMeter from "../components/planner/ConsensusMeter";
 import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../state/PlannerContext";
 import { api } from "../lib/api";
-import HomeButton from "../components/core/HomeButton";
+import TripHeader from "../components/core/TripHeader";
 import { fmtMin, slackColor } from "../data/derive";
 import { clockLabel } from "../lib/planTime";
 import { coordsForPin } from "../lib/mapLayout";
@@ -67,7 +67,9 @@ export default function CompareSets() {
           return {
             id: `${isPin ? "pin" : "travel"}-${src.id}`,
             title: src.title,
-            meta: `${clockLabel(start)}–${clockLabel(start + src.duration_minutes)} · ${fmtMin(src.duration_minutes)} · $${Math.round(src.cost_cents / 100)}`,
+            meta: `${clockLabel(start)}–${clockLabel(start + src.duration_minutes)} · ${fmtMin(src.duration_minutes)}${
+              src.cost_cents ? ` · $${Math.round(src.cost_cents / 100)}` : ""
+            }`,
             isPin,
             pin: isPin ? src : null,
           };
@@ -174,15 +176,13 @@ export default function CompareSets() {
       <div className="screen-scroll">
         <div style={{ position: "relative", height: 376 }}>
           <MapPlaceholder height="100%">
-            <div style={{ position: "absolute", top: 58, left: 16, right: 16, display: "flex", alignItems: "center", gap: 10, zIndex: 5 }}>
-              <button
-                className="tap"
-                onClick={backToSchedule}
-                style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(255,255,255,.95)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", font: "400 16px var(--font-sans)", color: "var(--text-primary)" }}
-              >
-                ‹
-              </button>
-              <HomeButton style={{ width: 38, height: 38, background: "rgba(255,255,255,.95)" }} />
+            {/* Same floating treatment as the map screen's controls — the
+                map runs to the top edge here too. */}
+            <div style={{ position: "absolute", top: 16, left: 16, right: 16, zIndex: 5 }}>
+              <TripHeader floating />
+            </div>
+
+            <div style={{ position: "absolute", top: 74, left: 16, right: 16, display: "flex", alignItems: "center", gap: 10, zIndex: 5 }}>
               <div style={{ flex: 1, background: "rgba(255,255,255,.95)", border: "1px solid var(--border)", borderRadius: 11, padding: "7px 12px" }}>
                 <div className="mono-data-sm" style={{ color: "var(--text-muted)" }}>
                   {isResolved ? "LOCKED" : `${displaySets.length} option${displaySets.length === 1 ? "" : "s"}`}
@@ -191,6 +191,16 @@ export default function CompareSets() {
                   {selectedSetView?.rangeLabel ?? ""}
                 </div>
               </div>
+              {/* The header's back goes to Trips Home, and the tab bar's
+                  Schedule goes to day 1 — neither lands back on the day this
+                  contest is about, which is where you came from. */}
+              <button
+                className="tap hit-target"
+                onClick={backToSchedule}
+                style={{ flex: "none", padding: "0 12px", height: "var(--hit-min)", borderRadius: 11, background: "rgba(255,255,255,.95)", border: "1px solid var(--border)", font: "600 12.5px var(--font-sans)", color: "var(--text-primary)" }}
+              >
+                ‹ Schedule
+              </button>
             </div>
 
             {selectedMapStops.slice(1).map((stop, i) => (

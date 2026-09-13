@@ -10,12 +10,18 @@ import { usePlannerDispatch } from "../state/PlannerContext";
 // full-screen form pattern (header row + stacked fields + a bottom
 // primary button) rather than a modal, to stay consistent with how this
 // app does every other editing flow.
+//
+// Deliberately name + dates only. A trip's regions are derived from its
+// pins (see PlannerContext's locationsLine), so asking for them up front
+// — before there are any pins — only invites a hand-typed line that the
+// derived one immediately contradicts. The trip's own region_line stays
+// editable in Trip settings for anyone who wants to override it; the
+// backend defaults it to "" when, as here, the create payload omits it.
 export default function NewTrip() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
 
   const [name, setName] = useState("");
-  const [regionLine, setRegionLine] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +38,6 @@ export default function NewTrip() {
         type: "CREATE_TRIP",
         payload: {
           name: name.trim(),
-          region_line: regionLine.trim(),
           start_date: startDate || null,
           end_date: endDate || null,
         },
@@ -71,12 +76,6 @@ export default function NewTrip() {
             weight={600}
             size={15}
             autoFocus
-          />
-          <TextField
-            label="Regions"
-            value={regionLine}
-            onChange={(e) => setRegionLine(e.target.value)}
-            placeholder="e.g. Cusco · Sacred Valley · Lima"
           />
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>

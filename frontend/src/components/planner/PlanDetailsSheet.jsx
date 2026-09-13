@@ -181,10 +181,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     if (ref) {
       try {
         if (ref.kind === "pin") {
-          // PATCH_PIN swallows its own errors (see state/PlannerContext.jsx)
+          // PATCH_PIN reports failure in its result rather than throwing
+          // (see state/PlannerContext.jsx) — nothing to catch, and nothing
+          // worth interrupting this sheet for: the move above is what the
+          // user asked for, and this is the follow-on sync.
           await dispatch({ type: "PATCH_PIN", id: ref.id, fields: { dur: clampedDuration } });
         } else {
-          // ...PATCH_TRAVEL_ITEM doesn't, so guard it here instead.
+          // ...PATCH_TRAVEL_ITEM does throw, so guard it here instead.
           await dispatch({ type: "PATCH_TRAVEL_ITEM", id: ref.id, fields: { duration_minutes: clampedDuration } });
         }
       } catch (err) {

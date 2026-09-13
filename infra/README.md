@@ -407,3 +407,17 @@ reconnect on an auth error.
   can connect to a replica that never sees another replica's event. Pin
   to `maxReplicas: 1` or move to a shared event bus (Azure Web PubSub or
   Redis) before relying on live updates in production.
+- **Mirrored pin photos are never deleted from blob storage**
+  (`backend/app/photo_storage.py`) — deleting a pin, or editing its photo
+  to a different link, leaves the old blob behind. Photos are small and
+  the container is private, so this is cost/hygiene debt, not a leak; add
+  a delete alongside `DELETE /api/pins/{pin_id}` and the photo-edit path
+  in `PATCH /api/pins/{pin_id}` before this matters at scale, or set a
+  lifecycle-management rule on the container to age out anything unread
+  for N days.
+- **A pin's photo briefly shows the hotlinked source, then swaps to the
+  mirrored copy** once the background copy in `routers/pins.py`'s
+  `_mirror_pin_photo` finishes (seconds, typically) — by design, so
+  adding a pin never waits on a slow third-party image host, but it does
+  mean the very first render of a newly-added pin's photo, and the odd
+  cache lookup for that URL, load a page you're not actually storing yet.

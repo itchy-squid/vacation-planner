@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from . import photo_storage
+
 
 class MeOut(BaseModel):
     """The signed-in principal (app/auth.py Principal), independent of any
@@ -88,6 +90,14 @@ class PinCreate(BaseModel):
     notes: str = ""
     link: str = ""
     tags: list[str] = Field(default_factory=list)
+    # Pasted directly by the person adding the pin (see pages/NewPin.jsx)
+    # rather than scraped from the link's page — a plain server-side
+    # fetch can't see photos a site injects client-side after load, and
+    # plenty of real pages do exactly that. photo_url is the image
+    # itself, hotlinked rather than copied; photo_source_url is the page
+    # it came from, kept so the pin can credit and link back to it.
+    photo_url: str | None = None
+    photo_source_url: str | None = None
 
 
 class PinUpdate(BaseModel):
@@ -97,6 +107,8 @@ class PinUpdate(BaseModel):
     notes: str | None = None
     link: str | None = None
     tags: list[str] | None = None
+    photo_url: str | None = None
+    photo_source_url: str | None = None
 
 
 class PinOut(BaseModel):
@@ -115,6 +127,7 @@ class PinOut(BaseModel):
     link: str
     tags: list[str]
     photo_url: str | None
+    photo_source_url: str | None
     added_by_id: int | None
     added_at: datetime
     # Included so the frontend can render the availability grid straight off
@@ -122,6 +135,25 @@ class PinOut(BaseModel):
     # app/routers/pins.py for how these are written.
     availability_rule: "AvailabilityRuleOut | None" = None
     availability_overrides: list[AvailabilityOverrideOut] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _sign_photo_url(self) -> "PinOut":
+        """The stored photo_url is a blob's *base* URL, good for exactly
+        as long as the blob exists — it's photo_storage.mirror_photo_to_
+        blob's job to fill it in, not this schema's. What actually reaches
+        a client needs a short-lived SAS query string appended, since the
+        container is private (see photo_storage.py's module docstring for
+        why). Every pin response passes through here — list_pins,
+        get_pin, create_pin, update_pin, and the pin nested inside a
+        calendar PlanItemOut — so this is the one place that needs to
+        remember to sign it, rather than every call site.
+
+        A pin whose photo_url isn't one of ours (still hotlinked, because
+        storage isn't configured or the mirror hasn't run yet) is left
+        exactly as stored; signing only ever applies to our own blobs."""
+        if self.photo_url and photo_storage.is_our_blob_url(self.photo_url):
+            self.photo_url = photo_storage.sign_photo_url(self.photo_url)
+        return self
 
 
 class AvailabilityOverrideToggle(BaseModel):

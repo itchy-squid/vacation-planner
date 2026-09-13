@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import TextField from "../components/forms/TextField";
 import Button from "../components/core/Button";
 import HomeButton from "../components/core/HomeButton";
+import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
+import { BOARD_PHOTO_HEIGHT_PRIMARY } from "../components/planner/PinCard";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 
 // Best-effort "give this pin a name" when someone pastes a link and
@@ -21,12 +23,18 @@ function deriveTitleFromLink(link) {
 }
 
 // Not one of the handoff README's numbered screens. Screen 2 (PinBoard)
-// only draws the masonry of already-collected pins — "the photo-picker
-// flow for choosing a pin's photo from a pinned link" is explicitly
-// flagged there as not designed yet, so this form stops at the fields a
-// pin actually needs to land on the board (link, title, place, region)
-// and hands off to EditVisit — already built — for duration, cost, notes,
-// and tags.
+// only draws the masonry of already-collected pins.
+//
+// Earlier this form tried to read the pasted link's own page server-side
+// (title + a picker of candidate photos scraped from its markup). That
+// depended on the linked page actually shipping its content in the raw
+// HTML a plain server-side fetch receives — plenty of real pages (bot
+// walls, or content a site injects via JavaScript after load, like a
+// dining page whose photos load from a separate client-side call) simply
+// don't, so the scrape came back thin or wrong often enough that it
+// wasn't worth the round trip. This is the simpler replacement: the
+// person pastes the title, the page link, and (optionally) a direct link
+// to the photo itself, all by hand.
 export default function NewPin() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
@@ -35,6 +43,7 @@ export default function NewPin() {
   const knownRegions = [...new Set(Object.values(pins).map((p) => p.region).filter(Boolean))];
 
   const [link, setLink] = useState("");
+  const [imageLink, setImageLink] = useState("");
   const [title, setTitle] = useState("");
   const [place, setPlace] = useState("");
   const [region, setRegion] = useState("");
@@ -49,6 +58,7 @@ export default function NewPin() {
     setError(null);
     try {
       const finalTitle = title.trim() || deriveTitleFromLink(link.trim()) || "Untitled pin";
+      const trimmedImage = imageLink.trim();
       const pin = await dispatch({
         type: "CREATE_PIN",
         payload: {
@@ -59,6 +69,11 @@ export default function NewPin() {
           link: link.trim(),
           notes: "",
           tags: [],
+          photo_url: trimmedImage || null,
+          // Kept alongside the photo so the pin can credit and link back
+          // to where it came from — the page link when there's one,
+          // otherwise just the image's own URL.
+          photo_source_url: trimmedImage ? link.trim() || trimmedImage : null,
         },
       });
       navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`);
@@ -96,6 +111,28 @@ export default function NewPin() {
             size={12.5}
             autoFocus
           />
+
+          <div>
+            <TextField
+              label="Image link"
+              value={imageLink}
+              onChange={(e) => setImageLink(e.target.value)}
+              placeholder="Paste a photo URL (optional)"
+              mono
+              size={12.5}
+            />
+            {/* Live preview only — nothing is fetched or validated until
+                the pin is saved. A link that doesn't actually point at an
+                image just falls back to the striped placeholder texture
+                (see PhotoPlaceholder's own onError handling), the same
+                way it would anywhere else a pin's photo is drawn. */}
+            {imageLink.trim() ? (
+              <div style={{ marginTop: 8 }}>
+                <PhotoPlaceholder height={BOARD_PHOTO_HEIGHT_PRIMARY} label="Couldn’t load that image" src={imageLink.trim()} alt={title || "Pin photo"} />
+              </div>
+            ) : null}
+          </div>
+
           <TextField
             label="Title"
             value={title}

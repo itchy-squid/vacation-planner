@@ -122,6 +122,15 @@ module backendIdentity 'modules/managed-identity.bicep' = {
   }
 }
 
+module photoStorage 'modules/storage-account.bicep' = {
+  name: 'photo-storage'
+  params: {
+    location: location
+    name: suffix
+    backendIdentityPrincipalId: backendIdentity.outputs.principalId
+  }
+}
+
 module backend 'modules/container-app-backend.bicep' = {
   name: 'backend'
   params: {
@@ -137,6 +146,8 @@ module backend 'modules/container-app-backend.bicep' = {
     postgresHost: postgres.outputs.fqdn
     postgresDatabase: postgres.outputs.databaseName
     postgresAppRole: postgresAppRole
+    storageBlobEndpoint: photoStorage.outputs.blobEndpoint
+    storageContainerName: photoStorage.outputs.containerName
     corsOrigins: corsOrigins
     customDomainName: backendCustomDomainName
     bindCustomDomain: backendBindCustomDomain
@@ -162,5 +173,6 @@ output backendCustomDomainVerificationId string = backend.outputs.customDomainVe
 output registryLoginServer string = registry.outputs.loginServer
 output postgresFqdn string = postgres.outputs.fqdn
 output postgresServerName string = postgres.outputs.serverName
+output photoStorageAccountName string = photoStorage.outputs.accountName
 @description('Object ID of the backend managed identity — pass this to pgaadauth_create_principal_with_oid(..., objectType=\'service\') in infra/sql/provision_roles.sql to map it to the postgresAppRole Postgres role.')
 output backendIdentityObjectId string = backendIdentity.outputs.principalId

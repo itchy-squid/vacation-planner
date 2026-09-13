@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { PlannerProvider, usePlannerState } from "./state/PlannerContext";
+import { NavGuardProvider } from "./state/NavGuard";
 import TripsHome from "./pages/TripsHome";
 import NewTrip from "./pages/NewTrip";
 import NewPin from "./pages/NewPin";
@@ -10,7 +11,7 @@ import DaySchedule from "./pages/DaySchedule";
 import CompareSets from "./pages/CompareSets";
 import EditVisit from "./pages/EditVisit";
 import FinalItinerary from "./pages/FinalItinerary";
-import DevNav from "./dev/DevNav";
+import BottomNav from "./components/core/BottomNav";
 
 // Every trip-scoped screen lives under /trips/:tripId/... so a URL always
 // carries which trip it's about — paste a link to someone else and it
@@ -63,10 +64,19 @@ export default function App() {
   return (
     <PlannerProvider>
       <BrowserRouter>
+        {/* BottomNav sits inside .app-viewport (it's position:fixed, so this
+            doesn't move it) purely so it and the routed screen share one
+            NavGuardProvider — a screen holding an unsaved draft has to be
+            able to intercept a tab-bar tap the same way it intercepts its
+            own Cancel. The guard's confirmation sheet renders inside this
+            column too, which is what keeps it from spilling past 430px on a
+            wide screen. */}
         <div className="app-viewport">
-          <AppRoutes />
+          <NavGuardProvider>
+            <AppRoutes />
+            <BottomNav />
+          </NavGuardProvider>
         </div>
-        <DevNav />
       </BrowserRouter>
     </PlannerProvider>
   );

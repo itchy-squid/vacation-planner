@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     # attributed to this fake user instead of being rejected.
     dev_user_email: str = "mei@example.com"
 
+    # Blob storage a chosen pin photo gets mirrored into (see
+    # app/photo_storage.py) — the account's blob endpoint, e.g.
+    # https://vacationplannerdevpinphotos.blob.core.windows.net (see
+    # infra/modules/storage-account.bicep's blobEndpoint output). Left
+    # unset for local dev, which has no storage account: photo_storage's
+    # functions all no-op in that case, so pins just keep the hotlinked
+    # photo they already had (see photo_storage.py's module docstring).
+    azure_storage_account_url: str | None = None
+    azure_storage_container: str = "pin-photos"
+
     @property
     def is_development(self) -> bool:
         return self.environment.lower() in {"development", "dev", "local"}
