@@ -8,8 +8,6 @@ import {
   clampToDay,
   minuteFromOffsetY,
   overlaps,
-  planEndMinute,
-  planStartMinute,
   snapToGrid,
   topForMinute,
 } from "../../lib/dayGrid";
@@ -25,14 +23,17 @@ import {
 // (the ferry, the handoff's gangway times), and the whole "stops pack end
 // to end inside the block" guarantee depends on there being nothing
 // immovable in the middle of the window (feature spec §6.5).
-export default function WindowSelection({ dayPlans, selection, onChange, contestWindows }) {
+export default function WindowSelection({ dayEntries, selection, onChange, contestWindows }) {
   const surfaceRef = useRef(null);
   const dragRef = useRef(null); // { anchorMin, mode: "new" | "start" | "end" }
   const [dragging, setDragging] = useState(false);
 
-  const lockedSpans = dayPlans
-    .filter((p) => p.status === "locked")
-    .map((p) => ({ start: planStartMinute(p), end: planEndMinute(p) }))
+  // Day entries, so a locked crossing that began last night still clips a
+  // selection drawn over this morning (feature spec §6.5). Its span here
+  // can start before 00:00; clipFromAnchor only cares where it ends.
+  const lockedSpans = dayEntries
+    .filter((e) => e.plan.status === "locked")
+    .map((e) => ({ start: e.startMin, end: e.endMin }))
     .sort((a, b) => a.start - b.start);
 
   function minuteAt(clientY) {
@@ -97,21 +98,28 @@ export default function WindowSelection({ dayPlans, selection, onChange, contest
       onPointerCancel={endDrag}
       surfaceStyle={{ touchAction: "none" }}
     >
-      {dayPlans.map((plan) => {
-        const start = planStartMinute(plan);
-        const end = planEndMinute(plan);
+      {dayEntries.map((entry) => {
+        const { plan, startMin, endMin, continuesBefore, continuesAfter } = entry;
         const isLocked = plan.status === "locked";
-        const inside = hasSelection && overlaps(start, end, selection.startMin, selection.endMin);
+        const inside = hasSelection && overlaps(startMin, endMin, selection.startMin, selection.endMin);
+        // Clipped to the grid the same way pages/DaySchedule.jsx clips it,
+        // so a crossing reads the same in both places.
+        const top = Math.max(startMin, DAY_START_MIN);
+        const bottom = Math.min(endMin, DAY_END_MIN);
         return (
           <div
             key={plan.id}
             style={{
               position: "absolute",
-              top: topForMinute(start),
-              height: Math.max(end - start, 20),
+              top: topForMinute(top),
+              height: Math.max(bottom - top, 20),
               left: 2,
               right: 2,
               borderRadius: "var(--radius-md)",
+              borderTopLeftRadius: continuesBefore ? 0 : undefined,
+              borderTopRightRadius: continuesBefore ? 0 : undefined,
+              borderBottomLeftRadius: continuesAfter ? 0 : undefined,
+              borderBottomRightRadius: continuesAfter ? 0 : undefined,
               // Desaturated, not hidden: these are what the proposal would
               // replace, and you can't judge a claim without seeing them.
               background: "var(--surface-sunken)",
@@ -133,9 +141,11 @@ export default function WindowSelection({ dayPlans, selection, onChange, contest
             >
               {plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled"}
             </div>
-            {end - start >= 34 && (
+            {bottom - top >= 34 && (
               <div className="mono-data-sm" style={{ color: "var(--text-faint)", marginTop: 2 }}>
-                {isLocked ? "Pinned" : inside ? "Inside selection" : `${clockLabel(start)}–${clockLabel(end)}`}
+                {/* The real clock times, never the clipped ones — an
+                    overnight crossing reads 22:00–10:00 on both days. */}
+                {isLocked ? "Pinned" : inside ? "Inside selection" : `${clockLabel(startMin)}–${clockLabel(endMin)}`}
               </div>
             )}
           </div>

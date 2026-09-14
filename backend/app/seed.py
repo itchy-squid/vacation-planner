@@ -184,15 +184,15 @@ def seed_taiwan(db: Session) -> None:
 
     # ---- Travel items — the trip's two logistics legs, as TravelItems
     # rather than Pins (see docs/features/scheduling-feature-spec.md). ----
-    arrival = TravelItem(trip_id=trip.id, title="Arrive Taipei · check in", kind="flight", duration_minutes=60, cost_cents=0, added_by_id=None)
-    ferry = TravelItem(trip_id=trip.id, title="Ferry to Xiaoliuqiu", kind="other", duration_minutes=75, cost_cents=0, added_by_id=None)
+    arrival = TravelItem(trip_id=trip.id, title="Arrive Taipei · check in", kind="travel", duration_minutes=60, cost_cents=0, added_by_id=None)
+    ferry = TravelItem(trip_id=trip.id, title="Ferry to Xiaoliuqiu", kind="travel", duration_minutes=75, cost_cents=0, added_by_id=None)
     # The return crossing, seeded as a locked plan below. Taiwan has no
     # cruise gangway, but the ferry timetable plays the same part the
     # handoff's "gangway up / gangway down" does: a fixed hour on an
     # island day that a proposal is not allowed to claim. Seeding one per
     # island day is what makes the step-2 selection's clip-at-a-locked-plan
     # rule (feature spec §6.5) reachable in local dev.
-    ferry_back = TravelItem(trip_id=trip.id, title="Ferry back to Donggang", kind="other", duration_minutes=75, cost_cents=0, added_by_id=None)
+    ferry_back = TravelItem(trip_id=trip.id, title="Ferry back to Donggang", kind="travel", duration_minutes=75, cost_cents=0, added_by_id=None)
     db.add_all([arrival, ferry, ferry_back])
     db.flush()
 

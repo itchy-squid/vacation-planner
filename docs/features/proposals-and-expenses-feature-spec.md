@@ -18,7 +18,8 @@ Three additions:
    with its budgeted cost, shown per head and multiplied by a headcount,
    with the viewer's own share and the trip total.
 3. **Proposal creation** — a four-step flow, entered from the Schedule
-   tray, for proposing an alternative for a chosen *range of hours* rather
+   day's add sheet, for proposing an alternative for a chosen *range of
+   hours* rather
    than against one existing item. A proposal is a **block**: one time
    window holding several non-overlapping stops. It ends by handing the
    block to the contest/vote UI that already exists
@@ -227,7 +228,7 @@ chips, defaulting to none selected — which means everyone, and is what makes
 
 ## 5. Proposal creation
 
-### 5.1 Step 1 — entry from the tray
+### 5.1 Step 1 — entry from the add sheet
 
 The existing `pages/DaySchedule.jsx`, unchanged, plus two additions:
 
@@ -235,10 +236,15 @@ The existing `pages/DaySchedule.jsx`, unchanged, plus two additions:
   `#e0e0e3`, radius 14, padding 5/11, 11px `#54545a`. Counts open contests
   whose window falls on this day; hidden at zero. Taps to
   `/trips/:tripId/contests/:contestId` for the first of them.
-- **"Propose a block"** primary button in the dark tray (`#17171a`), full
-  width, `#9d2d63`, radius 10, padding 11/14: title 14px/600 `#fff` over
-  mono 10px `#f0c7dc` `PICK HOURS, THEN FILL THEM`. Sits below the existing
-  unplaced-pin chips, above the travel-item create affordance.
+- **"Propose a block"** is the first row of the day's **add sheet**
+  (scheduling spec "Add sheet"), reached by the `+ Add` button that
+  replaced the tray: a `faCalendarDay` glyph on a `--plum-tint-strong`
+  chip, title 13.5px/600 over 12px `--text-secondary` "Pick hours, then
+  fill them". **(amends scheduling spec "Tray")** — the handoff's
+  full-width magenta button in the dark tray is gone with the tray it sat
+  in; the row keeps its copy and its place at the top of the list, since
+  claiming hours is the most consequential of the three things the sheet
+  offers.
 
 ### 5.2 Step 2 — claim the hours
 
@@ -293,10 +299,63 @@ Header: back chevron / `Your block` (Lora 18px) / window `13:00–18:00`
      Durations are editable and write `PlanItem.duration_minutes`; total
      duration may not exceed the window. Deliberate free time is allowed and
      lands at the end, where the slack readout covers it.
-3. **Pull in** — mono 10px `.14em` label `PULL IN`, then wrapping chips:
-   white, 1px `#e0e0e3`, radius 14, padding 7/12, 12px. Sources: unplaced
-   tray pins for this region (`Vase Rock · 1h`), items already inside the
-   claimed hours, and `New stop` for an inline-created item.
+3. **Pull in** — wrapping chips: white, 1px `#e0e0e3`, radius 14, padding
+   7/12, 12px. Sources: items already inside the claimed hours, unplaced
+   pins (those in a region this day is already about first), unplaced
+   travel items, and `New stop` for an inline-created item.
+
+   The chips are split into **two labelled groups by availability**, since
+   a block is a day *and* a range of hours and pins already carry an
+   answer for exactly that pair:
+
+   - `PULL IN · WORKS THESE HOURS` — mono 10px `.14em` — holds every
+     source whose availability says *works* for this block (definition
+     below). `New stop` sits at the end of this group: a stop invented
+     here is never ruled out.
+   - `RULED OUT THESE HOURS` — mono 10px `.14em` in `#a6a6ac`, shown only
+     when non-empty — holds the rest, as dashed-border `#a6a6ac` chips,
+     with the distinct `reasons` of the rules behind them on an 11px
+     `#a6a6ac` line under the label and on each chip's `title`.
+
+   **Ruled-out chips stay tappable.** Availability is the group's own note
+   about a place, not a server-enforced constraint — nothing in §6 checks
+   it — and overrides exist precisely so the group can decide a rule is
+   wrong. Someone who knows the shop opens late pulls the pin in and makes
+   the case in *Why (optional)*; a disabled chip would leave them no way
+   through. This is also why the group is a *split*, not a filter: hiding
+   the ruled-out pins would make "nothing has tied this down yet" and "the
+   ticket office shuts at 16:30" both read as simply absent, and would
+   hand a day with no matches an empty list — the same reason the region
+   sort above hides nothing either.
+
+   **"Works" for a block** is the existing per-cell rule from
+   `AvailabilityGrid`, asked of a window instead of a cell:
+
+   ```
+   works(pin, day, band) = overrides[pin|day-band] ? !allows(rule, day, band)
+                                                   : allows(rule, day, band)
+   allows(rule, day, band) = (rule has no days  or day  in rule.days)
+                         and (rule has no bands or band in rule.bands)
+
+   worksForBlock(pin) = any(works(pin, calendarDay, b)
+                            for b in bandsTouched(window))
+   ```
+
+   - `day` is a **calendar day-of-month**, not a trip-day index —
+     `AvailabilityRule.days` and the override keys have always been in
+     that currency, so the step's trip-relative `dayIndex` converts
+     through `getTripDays()` first, the same conversion `EditVisit` makes
+     for its "placed" cell.
+   - `bandsTouched` is every AM/PM/EVE band the window overlaps,
+     half-open at both ends: 13:00–18:00 is PM alone, 13:00–20:00 is
+     PM + EVE.
+   - **Any** band, not every band: the stop only has to fit *somewhere*
+     inside the block, so a PM-only pin belongs in a 13:00–20:00 block.
+     Requiring every band would rule it out while the free PM hours sat
+     visible in the list above.
+   - A pin with no rule, a rule with an empty axis, and every travel item
+     all answer *works* — so the second group means specifically "ruled
+     out", never "unknown".
 4. **Note card** — `#fdf6fa`, 1px `#eed4e2`, radius 10, padding 11/13,
    12px/1.5 `#7b1f4c`: "Stops snap end to end inside the block, so they can
    never overlap. Pinned times stay put." (Copy amended from "Gangway times
@@ -411,7 +470,9 @@ Nothing resolves automatically.
   `GET /api/plans/{id}` 404s for anyone else;
 - never broadcast on the trip's event channel;
 - excluded from the day grid, Expenses, `CompareSets`, and `FinalItinerary`;
-- surfaced in the tray as a "1 draft block" row that reopens step 3;
+- surfaced on the day's add bar as a "1 draft block" row that reopens
+  step 3 — on the bar itself, not inside the add sheet, since a draft is
+  something to return to rather than something to add;
 - publishable via `POST /api/plans/{plan_id}/publish`, which runs §6.2 from
   step 1 using the draft's own window and items and then deletes the draft.
   Publishing can `409` if the hours have gone to a vote in the meantime;
@@ -546,7 +607,31 @@ window shape; add `publishPlan`, `patchTrip` (for `traveller_count`).
 grid out of `DaySchedule` — step 2 renders the *same* grid with a selection
 layer over it, not a copy of it. New: `ExpensesPage`, `ProposeBlock` (the
 three-step shell), `WindowSelection`, `StopList`, `BudgetStrip`,
-`ComparisonColumns`.
+`ComparisonColumns`, `PullInChip`; `AddSheet` (scheduling spec "Add
+sheet"), which absorbs the tray's unplaced list, region filter, delete
+confirmation and travel-item form.
+
+**Availability** needs no server work — `PinOut` already ships
+`availability_rule` and `availability_overrides`, and `PlannerContext`
+already normalizes both into `pin.availabilityRule` and `state.overrides`.
+Two helpers, so the rule has one spelling:
+
+- `lib/availability.js` *(new)* — `ruleAllows`, `worksOn`,
+  `worksInAnyBand`, `reasonsFor`. `AvailabilityGrid` switches its inline
+  `okBase` onto these, for the same reason §2 collapses three definitions
+  of slack into one: a voter must not read *works* on the pin's own screen
+  and see a hatched cell five seconds later.
+- `lib/planTime.js` — `bandsForMinuteRange(startMin, endMin)`, exporting
+  the band boundaries `BAND_MINUTE_RANGES` already holds.
+
+**Note, in passing:** `AvailabilityGrid`'s `okBase` guarded the no-rule
+case with `!rule`, but `normalizePin` hands every pin a rule *object*
+(`{days: null, bands: null, why: []}`) and never null, so that branch was
+dead and every pin without a rule rendered as fully hatched — the opposite
+of the documented intent ("a pin with no rule is treated as available
+every day/band", `data/pins.js`). `ruleAllows` reads each axis on its own
+and fixes this, which visibly unhatches the grid for most pins on the
+board.
 
 **Fetching**: the day's plans, unplaced pins for the region, the contributor
 roster, and any open contests whose window touches this day (for the pill,
@@ -585,7 +670,11 @@ FontAwesome set; the reference canvas approximates them with text glyphs.
 ## 11. Validation and edge cases
 
 - Selection minimum 30m; both edges snap to 15m; a selection may not cross
-  midnight (a proposal is one day).
+  midnight (a proposal is one day) — even though a *placement* may, and
+  the picker now shows and clips at one that does (scheduling spec
+  "Overnight plans"). Relaxing this would mean a window contest spanning
+  two days, an AM/PM/EVE band set that wraps, and a slack readout that
+  stops being one day's arithmetic; it is deliberately left closed.
 - Selection clips at a locked plan (§6.5) and at the grid's 00:00/24:00
   bounds.
 - A selection partially overlapping an open contest's window is refused in
@@ -594,6 +683,13 @@ FontAwesome set; the reference canvas approximates them with text glyphs.
 - At least one stop; `sum(durations) <= window`; a stop's override must be
   >= 15m.
 - A pin or travel item may appear at most once in a proposal.
+- Availability grouping in step 3 never blocks anything: a ruled-out chip
+  still adds its stop, and the server never checks a rule. A block on a
+  trip with no `start_date` has no calendar day to ask about, so every
+  chip lands in the works group.
+- A window lying entirely before 06:00 touches no band range; it falls
+  back to `bandForMinuteOfDay(start)` rather than returning an empty band
+  list, which would silently rule every pin out.
 - Deleting a pin or travel item referenced by *any* `PlanItem` still `409`s,
   drafts included — with a message naming the draft, since its author may be
   someone else and the plan is invisible to the caller.
@@ -622,6 +718,8 @@ FontAwesome set; the reference canvas approximates them with text glyphs.
 5. **Drafts** — status, read filtering, `publish`.
 6. **Proposal flow UI** — steps 2, 3, 4 over the existing grid; rewire the
    quick-propose sheet onto the same endpoint; the "N blocks open" pill.
+   Step 3's Pull in groups come with it, along with the shared
+   `lib/availability.js` the grid then switches onto (§9).
 7. **Favicon.**
 
 ## 13. Tests
@@ -642,6 +740,12 @@ There is no committed test suite yet; this feature should start one under
   withdrawn.
 - Derived values: slack with and without overrides; `item_start` packed vs
   offset; per-head rounding never changes a row total or the trip total.
+- Availability (`lib/availability.js`, `bandsForMinuteRange`): a window
+  half-open at a band edge (13:00–18:00 is PM, not PM+EVE); a straddling
+  window matching a single-band pin; wrong day; a pin with no rule and a
+  rule with one empty axis both working everywhere; an override flipping a
+  cell in each direction; a pre-06:00 window never yielding an empty band
+  list.
 
 ---
 
@@ -661,3 +765,14 @@ Not in the handoff, decided here, worth a second look before build:
 6. **Expenses counts `locked`, `placed`, and `pencilled` plans only**, and a
    pencilled item's cost is included; if pencilled should read as
    provisional, the summary card needs a second number.
+7. **Availability splits step 3's Pull in list rather than filtering it**,
+   and a ruled-out stop can still be proposed (§5.3). If the group wants a
+   rule to actually *hold*, that is a server-side check in §6.2 and a
+   different decision.
+8. **A pin qualifies on any band the window touches**, not every one
+   (§5.3). The looser rule is right for a block that straddles PM and EVE;
+   it does also mean a PM-only pin can be dragged into the block's evening
+   hours in the stop list, where nothing re-checks it.
+9. **Fixing `okBase` unhatches the availability grid** for every pin with
+   no rule (§9). Intended, and matches `data/pins.js`, but it changes how
+   an existing screen looks for most of the board.

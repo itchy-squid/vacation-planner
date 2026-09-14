@@ -170,7 +170,16 @@ class AvailabilityOverrideToggle(BaseModel):
     band: str
 
 
-TravelItemKind = Literal["flight", "train", "drive", "lodging", "other"]
+# One "travel" kind rather than flight/train/drive/ferry: the distinction
+# never reached anything — no icon, filter, cost rule or sort has ever read
+# it — while the split was actively wrong in two ways. The day form offered
+# a "ferry" this Literal rejected, so creating one 422'd; and a trip's legs
+# are routinely mixed (the Xiaoliuqiu run is a train *and* a ferry), which
+# forced a single item into whichever half-truth the author picked first.
+# "lodging" stays because it genuinely behaves differently — it spans a
+# night rather than a leg — and "other" stays as the catch-all the custom
+# event form writes.
+TravelItemKind = Literal["travel", "lodging", "other"]
 
 
 class TravelItemCreate(BaseModel):

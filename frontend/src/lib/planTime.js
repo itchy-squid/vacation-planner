@@ -46,6 +46,23 @@ export function bandForMinuteOfDay(minuteOfDay) {
   return "EVE";
 }
 
+// Every band a [startMin, endMin) range touches, in AM/PM/EVE order — the
+// band-shaped question ("which of this pin's bands are in play?") asked of
+// a minute-shaped window, which is what pages/ProposeBlock.jsx's claimed
+// hours are. Half-open on both sides, so a block ending exactly at 18:00
+// is PM alone and not PM+EVE.
+//
+// The ranges above start at 06:00, so a window lying entirely before then
+// touches nothing; rather than return an empty list (which would read as
+// "no band works" and quietly rule every pin out), fall back to the same
+// answer bandForMinuteOfDay already gives that minute.
+export function bandsForMinuteRange(startMin, endMin) {
+  const hit = Object.entries(BAND_MINUTE_RANGES)
+    .filter(([, [lo, hi]]) => startMin < hi && endMin > lo)
+    .map(([band]) => band);
+  return hit.length ? hit : [bandForMinuteOfDay(startMin)];
+}
+
 // {dayIndex, band} for a normalized plan (see state/PlannerContext.jsx
 // normalizePlan, which attaches startDt) — used wherever a plan needs to
 // be shown against the day/band-shaped AvailabilityGrid.
@@ -61,14 +78,27 @@ export function dayIndexAndBandForPlan(plan, startDate) {
 // tzinfo=UTC-tagged wall-clock ISO string the backend writes (see
 // backend/app/seed.py _taiwan_dt) so a round trip through the API lands
 // back on the exact clock time the user tapped.
+//
+// `minuteOfDay` is an offset from that day's 00:00 and is deliberately
+// NOT confined to one day: a plan that crosses midnight — a night
+// crossing, a red-eye, a hotel — ends at minute 1800 of the day it began,
+// and a continuation block dragged on the following day can ask for a
+// negative one. Both carry into the DATE rather than into the hour field.
+// Without the carry this built "…T30:00:00+00:00", which is not a
+// datetime at all: every overnight placement came back from the API as a
+// 422, which is why nothing in the app could hold a night.
 export function isoForDayMinute(startDate, dayIndex, minuteOfDay) {
   const start = parseISODate(startDate);
   if (!start) return null;
   const startUTC = Date.UTC(start.year, start.month - 1, start.day);
-  const dayUTC = startUTC + (dayIndex - 1) * 86400000;
+  // Math.floor, not a truncating divide, so a negative minute rolls back
+  // a whole day rather than towards zero.
+  const dayCarry = Math.floor(minuteOfDay / 1440);
+  const withinDay = minuteOfDay - dayCarry * 1440;
+  const dayUTC = startUTC + (dayIndex - 1 + dayCarry) * 86400000;
   const d = new Date(dayUTC);
-  const hour = Math.floor(minuteOfDay / 60);
-  const minute = minuteOfDay % 60;
+  const hour = Math.floor(withinDay / 60);
+  const minute = withinDay % 60;
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(hour)}:${pad(minute)}:00+00:00`;
 }

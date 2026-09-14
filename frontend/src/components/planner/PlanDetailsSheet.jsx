@@ -5,6 +5,7 @@ import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../../state
 import { getTripDays } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
+import { planDurationMinutes } from "../../lib/dayGrid";
 import Stepper from "../forms/Stepper";
 
 // Calendar item details — a bottom sheet overlaid on pages/DaySchedule.jsx,
@@ -24,14 +25,6 @@ import Stepper from "../forms/Stepper";
 const SNAP_MIN = 15;
 const DAY_END_MIN = 1440;
 const CONFIRM_WINDOW_MS = 3000;
-
-function planDurationMinutes(plan) {
-  if (plan.startDt && plan.endDt) {
-    const d = (plan.endDt.minuteOfDay - plan.startDt.minuteOfDay + 1440) % 1440;
-    if (d > 0) return d;
-  }
-  return plan.totalDurationMinutes || 60;
-}
 
 export default function PlanDetailsSheet({ planId, onClose }) {
   const state = usePlannerState();

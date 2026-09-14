@@ -11,13 +11,15 @@ import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
 import { fmtMin } from "../data/derive";
 import { headcountFor, perHeadCents } from "../data/expenses";
-import { clockLabel, dayIndexForDate, isoForDayMinute } from "../lib/planTime";
+import { bandsForMinuteRange, clockLabel, isoForDayMinute } from "../lib/planTime";
+import { reasonsFor, worksInAnyBand } from "../lib/availability";
 import {
   MIN_SELECTION_MIN,
   contestWindowsFrom,
   overlaps,
   planEndMinute,
   planStartMinute,
+  plansOnDay,
 } from "../lib/dayGrid";
 
 // Steps 2-4 of "propose a block": claim the hours, fill them, send them to
@@ -50,18 +52,18 @@ export default function ProposeBlock() {
   const dayIndex = Number(useParams().day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, plans, pins, travelItems, contributors } = state;
+  const { trip, plans, pins, travelItems, contributors, overrides } = state;
 
   const reopenedDraftId = location.state?.draftPlanId ?? null;
 
-  const dayPlans = useMemo(
-    () =>
-      plans.filter(
-        (p) => p.status !== "draft" && p.startDt && dayIndexForDate(p.startDt, trip.startDate) === dayIndex
-      ),
+  // Entries, not plans: an overnight crossing owns this morning's hours
+  // even though it started yesterday, and the picker has to show it,
+  // count it, and clip a selection at it (lib/dayGrid.js planOnDay).
+  const dayEntries = useMemo(
+    () => plansOnDay(plans.filter((p) => p.status !== "draft"), trip.startDate, dayIndex),
     [plans, trip.startDate, dayIndex]
   );
-  const contestWindows = useMemo(() => contestWindowsFrom(dayPlans), [dayPlans]);
+  const contestWindows = useMemo(() => contestWindowsFrom(dayEntries), [dayEntries]);
   const reopenedDraft = useMemo(
     () => (reopenedDraftId ? plans.find((p) => p.id === reopenedDraftId) : null),
     [plans, reopenedDraftId]
@@ -126,10 +128,10 @@ export default function ProposeBlock() {
   // comparison, and the source of the "N items sit in these hours" count.
   const insidePlans = useMemo(() => {
     if (!selection) return [];
-    return dayPlans.filter(
-      (p) => p.status !== "locked" && overlaps(planStartMinute(p), planEndMinute(p), selection.startMin, selection.endMin)
-    );
-  }, [dayPlans, selection]);
+    return dayEntries
+      .filter((e) => e.plan.status !== "locked" && overlaps(e.startMin, e.endMin, selection.startMin, selection.endMin))
+      .map((e) => e.plan);
+  }, [dayEntries, selection]);
 
   const insideItems = useMemo(
     () => insidePlans.flatMap((p) => p.items.map((item) => ({ plan: p, item }))),
@@ -138,6 +140,18 @@ export default function ProposeBlock() {
 
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
   const travellerCount = trip.travellerCount || contributors.length || 1;
+
+  // The availability question the claimed hours ask, in the currency
+  // AvailabilityRule speaks: a calendar day-of-month and the AM/PM/EVE
+  // bands the window touches. `dayIndex` is trip-relative, so it has to go
+  // through tripDays first — the same conversion pages/EditVisit.jsx makes
+  // for its "placed" cell, and for the same reason (a trip-day number
+  // compared against a day-of-month key silently never matches).
+  const calendarDay = tripDays[dayIndex - 1]?.n ?? null;
+  const windowBands = useMemo(
+    () => (selection ? bandsForMinuteRange(selection.startMin, selection.endMin) : []),
+    [selection]
+  );
 
   // ---- stop sources -------------------------------------------------------
   const pullInOptions = useMemo(() => {
@@ -156,6 +170,19 @@ export default function ProposeBlock() {
         })
       );
 
+    // Does this pin's availability say "works" for the hours being
+    // claimed? Anything with no availability concept at all — a travel
+    // item, or a pin nothing has tied down yet — answers yes, so the
+    // second group below means specifically "ruled out", not "unknown".
+    const availability = (pinId) => {
+      if (pinId == null || calendarDay == null || !windowBands.length) return { works: true, reasons: [] };
+      const rule = pins[pinId]?.availabilityRule;
+      return {
+        works: worksInAnyBand(pinId, rule, overrides, calendarDay, windowBands),
+        reasons: reasonsFor(rule),
+      };
+    };
+
     const options = [];
     // Items already inside the claimed hours: the proposal is about these
     // hours, so what's in them is the most likely thing to want back.
@@ -168,6 +195,7 @@ export default function ProposeBlock() {
         durationMinutes: item.durationMinutes,
         costCents: item.costCents,
         heads: item.heads,
+        ...availability(item.pinId),
       });
     });
     // Then the unplaced tray. Pins in a region this day is already about
@@ -176,7 +204,7 @@ export default function ProposeBlock() {
     // because a day with nothing scheduled yet has no region to sort by
     // and would otherwise offer an empty list.
     const dayRegions = new Set(
-      dayPlans.flatMap((p) => p.items.map((it) => (it.pinId ? pins[it.pinId]?.region : null)).filter(Boolean))
+      dayEntries.flatMap(({ plan }) => plan.items.map((it) => (it.pinId ? pins[it.pinId]?.region : null)).filter(Boolean))
     );
     const unplacedPins = Object.values(pins).filter((pin) => !scheduledPinIds.has(pin.id));
     [...unplacedPins]
@@ -190,6 +218,7 @@ export default function ProposeBlock() {
           durationMinutes: pin.dur,
           costCents: pin.costCents,
           heads: pin.heads,
+          ...availability(pin.id),
         })
       );
     Object.values(travelItems)
@@ -203,6 +232,8 @@ export default function ProposeBlock() {
           durationMinutes: t.dur,
           costCents: t.costCents,
           heads: t.heads,
+          works: true,
+          reasons: [],
         })
       );
 
@@ -213,7 +244,20 @@ export default function ProposeBlock() {
       seen.add(key);
       return true;
     });
-  }, [plans, pins, travelItems, insideItems, dayPlans, stops]);
+  }, [plans, pins, travelItems, insideItems, dayEntries, stops, overrides, calendarDay, windowBands]);
+
+  // Two labelled groups rather than one filtered list. Hiding the
+  // ruled-out pins would make "nothing tied this down yet" and "the ticket
+  // office shuts at 16:30" look identical from in here — both simply
+  // absent — and would hand a day with no matches an empty list, the same
+  // reason the region sort above hides nothing either. Availability is a
+  // strong hint, not a lock: overrides exist precisely so the group can
+  // decide a rule is wrong.
+  const pullInGroups = useMemo(() => {
+    const works = pullInOptions.filter((o) => o.works);
+    const ruledOut = pullInOptions.filter((o) => !o.works);
+    return { works, ruledOut, ruledOutReasons: [...new Set(ruledOut.flatMap((o) => o.reasons))] };
+  }, [pullInOptions]);
 
   function addStop(option) {
     setError("");
@@ -388,7 +432,7 @@ export default function ProposeBlock() {
           dayLabel={dayLabel}
           tripDays={tripDays}
           dayIndex={dayIndex}
-          dayPlans={dayPlans}
+          dayEntries={dayEntries}
           contestWindows={contestWindows}
           selection={selection}
           onChange={(next) => {
@@ -417,7 +461,7 @@ export default function ProposeBlock() {
             const headcount = headcountFor(s, trip, contributors);
             return { ...s, headcount, perHeadCents: perHeadCents(s, headcount) };
           })}
-          pullInOptions={pullInOptions}
+          pullInGroups={pullInGroups}
           onBack={() => setStep(2)}
           onReorder={reorder}
           onChangeDuration={changeDuration}
@@ -541,7 +585,7 @@ function StepTwo({
   dayLabel,
   tripDays,
   dayIndex,
-  dayPlans,
+  dayEntries,
   contestWindows,
   selection,
   onChange,
@@ -600,7 +644,7 @@ function StepTwo({
       </div>
 
       <div className="screen-scroll" style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-        <WindowSelection dayPlans={dayPlans} selection={selection} onChange={onChange} contestWindows={contestWindows} />
+        <WindowSelection dayEntries={dayEntries} selection={selection} onChange={onChange} contestWindows={contestWindows} />
       </div>
 
       <div style={{ flex: "none", background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "14px 16px 22px" }}>
@@ -658,12 +702,37 @@ function StepTwo({
   );
 }
 
+// A ruled-out chip stays tappable, just quieter. Availability is the
+// group's own note about a place, not a constraint the server enforces —
+// someone who knows the shop opens late should be able to pull the pin in
+// and argue for it in the proposal's "Why", rather than finding the chip
+// disabled with no way through.
+function PullInChip({ option, onPullIn, muted = false }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPullIn(option)}
+      title={muted && option.reasons.length ? option.reasons.join(" · ") : undefined}
+      style={{
+        padding: "7px 12px",
+        borderRadius: "var(--radius-xl)",
+        background: muted ? "transparent" : "var(--surface-card)",
+        border: `1px ${muted ? "dashed" : "solid"} var(--border)`,
+        font: "400 12px var(--font-sans)",
+        color: muted ? "var(--text-faint)" : "var(--text-primary)",
+      }}
+    >
+      {option.title} · {fmtMin(option.baseDurationMinutes)}
+    </button>
+  );
+}
+
 function StepThree({
   selection,
   windowMinutes,
   plannedMinutes,
   stops,
-  pullInOptions,
+  pullInGroups,
   onBack,
   onReorder,
   onChangeDuration,
@@ -776,24 +845,14 @@ function StepThree({
         )}
 
         <div>
-          <div className="mono-caption">Pull in</div>
+          {/* Pins the group has said "works" for this day and these bands
+              come first, under their own label; the rest stay visible
+              below it rather than being filtered away. See the
+              pullInGroups comment above for why nothing is hidden. */}
+          <div className="mono-caption">Pull in · works these hours</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-            {pullInOptions.map((option) => (
-              <button
-                key={`${option.kind}-${option.refId}`}
-                type="button"
-                onClick={() => onPullIn(option)}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: "var(--radius-xl)",
-                  background: "var(--surface-card)",
-                  border: "1px solid var(--border)",
-                  font: "400 12px var(--font-sans)",
-                  color: "var(--text-primary)",
-                }}
-              >
-                {option.title} · {fmtMin(option.baseDurationMinutes)}
-              </button>
+            {pullInGroups.works.map((option) => (
+              <PullInChip key={`${option.kind}-${option.refId}`} option={option} onPullIn={onPullIn} />
             ))}
             <button
               type="button"
@@ -811,6 +870,27 @@ function StepThree({
             </button>
           </div>
         </div>
+
+        {pullInGroups.ruledOut.length > 0 && (
+          <div>
+            <div className="mono-caption" style={{ color: "var(--text-faint)" }}>
+              Ruled out these hours
+            </div>
+            {/* Never assert a restriction without explaining it
+                (design_system readme, "Content fundamentals") — the same
+                rule that puts "why" chips under the availability grid. */}
+            {pullInGroups.ruledOutReasons.length > 0 && (
+              <div style={{ marginTop: 4, font: "400 11px/1.4 var(--font-sans)", color: "var(--text-faint)" }}>
+                {pullInGroups.ruledOutReasons.join(" · ")}
+              </div>
+            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              {pullInGroups.ruledOut.map((option) => (
+                <PullInChip key={`${option.kind}-${option.refId}`} option={option} onPullIn={onPullIn} muted />
+              ))}
+            </div>
+          </div>
+        )}
 
         <div
           style={{

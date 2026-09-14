@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faChevronRight, faPlus } from "@fortawesome/free-solid-svg-icons";
 import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
-import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
-import HeadsPicker from "../components/planner/HeadsPicker";
+import AddSheet from "../components/planner/AddSheet";
 import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
@@ -16,6 +17,7 @@ import {
   SNAP_MIN,
   contestWindowsFrom,
   layoutDayPlans,
+  plansOnDay,
   minuteFromOffsetY,
   planDurationMinutes,
   planStartMinute,
@@ -37,7 +39,6 @@ import TripHeader from "../components/core/TripHeader";
 // flow's hour picker renders the same grid with a selection layer over it
 // rather than a lookalike of it (see pages/ProposeBlock.jsx).
 const DRAG_THRESHOLD_PX = 5; // pointer travel (px) before a pointer-down on a block counts as a drag rather than a tap
-const TRAY_DELETE_CONFIRM_WINDOW_MS = 3000; // matches components/planner/PlanDetailsSheet.jsx's double-tap-to-confirm window
 
 export default function DaySchedule() {
   const navigate = useNavigate();
@@ -54,16 +55,17 @@ export default function DaySchedule() {
   // visible to its author alone (feature spec §6.4). The API already
   // filters out *other* people's; this filters out your own, which you're
   // meant to see in the tray rather than on the calendar.
-  const dayPlans = useMemo(
-    () =>
-      plans.filter(
-        (p) => p.status !== "draft" && p.startDt && dayIndexForDate(p.startDt, trip.startDate) === dayIndex
-      ),
+  // Every plan *touching* this day, not every plan starting on it — an
+  // overnight ferry owns tomorrow morning's hours too (lib/dayGrid.js
+  // planOnDay). Entries carry the plan plus its minutes relative to this
+  // day, which is what everything below lays out and tests against.
+  const dayEntries = useMemo(
+    () => plansOnDay(plans.filter((p) => p.status !== "draft"), trip.startDate, dayIndex),
     [plans, trip.startDate, dayIndex]
   );
 
   // "N blocks open" — hours on this day already out for a vote.
-  const openBlocks = useMemo(() => contestWindowsFrom(dayPlans), [dayPlans]);
+  const openBlocks = useMemo(() => contestWindowsFrom(dayEntries), [dayEntries]);
 
   const myDrafts = useMemo(
     () =>
@@ -77,20 +79,20 @@ export default function DaySchedule() {
     [plans, currentUser.id, trip.startDate, dayIndex]
   );
 
-  const laidOut = useMemo(() => layoutDayPlans(dayPlans), [dayPlans]);
+  const laidOut = useMemo(() => layoutDayPlans(dayEntries), [dayEntries]);
 
   // Region(s) this day already has scheduled — derived from the pins
   // behind this day's plan items (travel items have no region).
   const dayRegions = useMemo(() => {
     const set = new Set();
-    dayPlans.forEach((p) =>
-      p.items.forEach((it) => {
+    dayEntries.forEach(({ plan }) =>
+      plan.items.forEach((it) => {
         const pin = it.pinId ? pins[it.pinId] : null;
         if (pin?.region) set.add(pin.region);
       })
     );
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [dayPlans, pins]);
+  }, [dayEntries, pins]);
 
   const region = useMemo(() => {
     if (!dayRegions.length) return "Trip";
@@ -101,22 +103,6 @@ export default function DaySchedule() {
     const set = new Set(Object.values(pins).map((p) => p.region).filter(Boolean));
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [pins]);
-
-  const [trayFilter, setTrayFilter] = useState(dayRegions);
-  const autoFilterDay = useRef(null);
-  useEffect(() => {
-    if (autoFilterDay.current === dayIndex) return;
-    autoFilterDay.current = dayIndex;
-    setTrayFilter(dayRegions);
-  }, [dayIndex, dayRegions]);
-
-  function toggleTrayRegion(r) {
-    setTrayFilter((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
-  }
-  const trayFilterIsDefault = useMemo(
-    () => trayFilter.length === dayRegions.length && trayFilter.every((r) => dayRegions.includes(r)),
-    [trayFilter, dayRegions]
-  );
 
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
 
@@ -180,14 +166,14 @@ export default function DaySchedule() {
   const [moveError, setMoveError] = useState("");
   const [detailsPlanId, setDetailsPlanId] = useState(null);
 
+  // Returns the day *entry* in the way, not the plan — the caller needs
+  // both the plan (to target a proposal at it) and the hours it occupies
+  // on this particular day.
   function findOverlap(startMinute, endMinute, excludePlanId) {
     return (
-      dayPlans.find((p) => {
-        if (p.id === excludePlanId) return false;
-        const s = planStartMinute(p);
-        const e = planEndMinute(p);
-        return startMinute < e && endMinute > s;
-      }) ?? null
+      dayEntries.find(
+        (e) => e.plan.id !== excludePlanId && startMinute < e.endMin && endMinute > e.startMin
+      ) ?? null
     );
   }
 
@@ -205,14 +191,14 @@ export default function DaySchedule() {
       // propose_alternative 403s the same case). Placing stays armed so
       // the person can just tap a different slot instead of losing their
       // in-progress placement over a tap that landed wrong.
-      if (occupying.status === "locked") {
+      if (occupying.plan.status === "locked") {
         setMoveError("That time is locked — ask the owner to reopen it first.");
         return;
       }
       dispatch({
         type: "OPEN_PROPOSE_FOR",
         proposeSheet: {
-          targetPlanId: occupying.id,
+          targetPlanId: occupying.plan.id,
           dayIndex,
           startMinute,
           kind: placing.kind,
@@ -283,19 +269,27 @@ export default function DaySchedule() {
     const deltaMinutes = (clientY - info.startClientY) / PX_PER_MIN;
     const raw = info.originStart + deltaMinutes;
     const snapped = Math.round(raw / SNAP_MIN) * SNAP_MIN;
-    return Math.min(Math.max(snapped, DAY_START_MIN), DAY_END_MIN - info.durationMinutes);
+    // Clamped by the block's START, not by where its end would land: a
+    // 12h item used to be undraggable past noon, and it simply stopped
+    // following your finger with no explanation. Its tail is allowed to
+    // run into tomorrow now (lib/planTime.js isoForDayMinute carries it).
+    return Math.min(Math.max(snapped, DAY_START_MIN), DAY_END_MIN - SNAP_MIN);
   }
 
-  function handlePlanPointerDown(e, plan) {
+  function handlePlanPointerDown(e, plan, entry) {
     if (placing) return;
     if (plan.status !== "placed" && plan.status !== "pencilled") return; // contested/locked aren't draggable
+    // A plan is moved from the day it begins on. Dragging the morning
+    // tail of last night's crossing would be moving a block whose start
+    // isn't on screen, which is not something to reason about mid-drag.
+    if (entry?.continuesBefore) return;
     if (e.button != null && e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragInfoRef.current = {
       pointerId: e.pointerId,
       planId: plan.id,
       startClientY: e.clientY,
-      originStart: planStartMinute(plan),
+      originStart: entry.startMin,
       durationMinutes: planDurationMinutes(plan),
       moved: false,
     };
@@ -377,15 +371,17 @@ export default function DaySchedule() {
     );
   }
 
-  // ---- Tray: unplaced pins + travel items --------------------------------
+  // ---- Unplaced pins + travel items --------------------------------------
+  // Unfiltered: the bar below counts everything not on the calendar, and
+  // the region filter now lives inside the picker that shows them
+  // (components/planner/AddSheet.jsx), not out here.
   const unplacedPins = useMemo(() => {
     const placedIds = new Set();
     plans
       .filter((p) => p.status !== "draft")
       .forEach((p) => p.items.forEach((it) => it.pinId && placedIds.add(it.pinId)));
-    const regionSet = trayFilter.length ? new Set(trayFilter) : null;
-    return Object.values(pins).filter((p) => !placedIds.has(p.id) && (!regionSet || regionSet.has(p.region)));
-  }, [plans, pins, trayFilter]);
+    return Object.values(pins).filter((p) => !placedIds.has(p.id));
+  }, [plans, pins]);
 
   const unplacedTravelItems = useMemo(() => {
     const placedIds = new Set();
@@ -395,68 +391,11 @@ export default function DaySchedule() {
     return Object.values(travelItems).filter((t) => !placedIds.has(t.id));
   }, [plans, travelItems]);
 
-  // Deleting a tray item permanently (not just skipping placement — there
-  // was never a "remove from schedule" version to begin with, since it's
-  // already unplaced) uses the same double-tap-to-confirm language as
-  // components/planner/PlanDetailsSheet.jsx's "Delete permanently": one
-  // armed slot for the whole tray (trayDeleteArmedKey), since only one
-  // item can plausibly be mid-confirm at a time.
-  const [trayDeleteArmedKey, setTrayDeleteArmedKey] = useState(null);
-  const [trayError, setTrayError] = useState("");
-  const trayDeleteTimeoutRef = useRef(null);
-  useEffect(() => () => clearTimeout(trayDeleteTimeoutRef.current), []);
-
-  function trayItemKey(kind, id) {
-    return `${kind}:${id}`;
-  }
-
-  function handleTrayDeleteTap(kind, id) {
-    const key = trayItemKey(kind, id);
-    if (trayDeleteArmedKey !== key) {
-      setTrayDeleteArmedKey(key);
-      clearTimeout(trayDeleteTimeoutRef.current);
-      trayDeleteTimeoutRef.current = setTimeout(() => setTrayDeleteArmedKey(null), TRAY_DELETE_CONFIRM_WINDOW_MS);
-      return;
-    }
-    clearTimeout(trayDeleteTimeoutRef.current);
-    setTrayDeleteArmedKey(null);
-    setTrayError("");
-    dispatch({ type: kind === "pin" ? "DELETE_PIN" : "DELETE_TRAVEL_ITEM", id }).then((result) => {
-      if (result.ok) {
-        // The item might be the one currently armed for placement — clear
-        // that too, or handleTapAt would go on trying to place something
-        // that no longer exists.
-        if (placing?.kind === kind && placing.refId === id) dispatch({ type: "CANCEL_PLACING" });
-      } else {
-        setTrayError("Couldn't delete that item — try again.");
-      }
-    });
-  }
-
-  const [showAddTravel, setShowAddTravel] = useState(false);
-  const [newTravel, setNewTravel] = useState({ title: "", kind: "other", dur: 60, cost: 0, heads: [] });
-
-  async function submitNewTravel(e) {
-    e.preventDefault();
-    if (!newTravel.title.trim()) return;
-    const created = await dispatch({
-      type: "CREATE_TRAVEL_ITEM",
-      payload: {
-        title: newTravel.title.trim(),
-        kind: newTravel.kind,
-        duration_minutes: Math.max(5, Number(newTravel.dur) || 60),
-        cost_cents: Math.round((Number(newTravel.cost) || 0) * 100),
-      },
-    });
-    if (newTravel.heads.length) {
-      // TravelItemCreate doesn't take heads (the API's create shape is
-      // unchanged — see backend/app/schemas.py), so a non-default split is
-      // a follow-up patch rather than part of the create.
-      await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: newTravel.heads } });
-    }
-    setNewTravel({ title: "", kind: "other", dur: 60, cost: 0, heads: [] });
-    setShowAddTravel(false);
-  }
+  // "+ Add" opens components/planner/AddSheet.jsx, which owns everything
+  // the dark tray used to lay out in full: the unplaced items, the region
+  // filter over them, the two-tap delete, and the custom-event form.
+  const [addOpen, setAddOpen] = useState(false);
+  const unplacedCount = unplacedPins.length + unplacedTravelItems.length;
 
   return (
     <div className="screen">
@@ -567,22 +506,33 @@ export default function DaySchedule() {
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
           <DayGrid cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
-            {laidOut.map(({ plan, start, numCols, col }) => {
-                const draggable = plan.status === "placed" || plan.status === "pencilled";
+            {laidOut.map((entry) => {
+                const { plan, numCols, col } = entry;
                 const isDragging = dragPreview?.planId === plan.id;
-                const effectiveStart = isDragging ? dragPreview.previewStart : start;
-                const top = topForMinute(effectiveStart);
-                const height = planDurationMinutes(plan) * PX_PER_MIN;
+                const draggable =
+                  (plan.status === "placed" || plan.status === "pencilled") && !entry.continuesBefore;
+                // The block's span on THIS day, which can start before
+                // 00:00 or end after 24:00. The rectangle is clipped to
+                // the grid; the arrows say which way it runs on.
+                const startMin = isDragging ? dragPreview.previewStart : entry.startMin;
+                const endMin = startMin + planDurationMinutes(plan);
+                const clippedStart = Math.max(startMin, DAY_START_MIN);
+                const clippedEnd = Math.min(endMin, DAY_END_MIN);
+                const top = topForMinute(clippedStart);
+                const height = (clippedEnd - clippedStart) * PX_PER_MIN;
                 const width = `calc(${100 / numCols}% - 4px)`;
                 const left = `calc(${(col / numCols) * 100}% + 2px)`;
                 // While dragging, show the block's live candidate time (not
                 // just its position) — duration is fixed, only the start
-                // (and so the end) moves.
+                // (and so the end) moves. `% 1440` here is the clock face,
+                // not the span: a tail dragged past midnight reads 01:30,
+                // and the arrow below says it belongs to tomorrow.
+                const wrapClock = (m) => ((m % 1440) + 1440) % 1440;
                 const displayPlan = isDragging
                   ? {
                       ...plan,
-                      startDt: plan.startDt ? { ...plan.startDt, minuteOfDay: dragPreview.previewStart } : plan.startDt,
-                      endDt: plan.endDt ? { ...plan.endDt, minuteOfDay: dragPreview.previewStart + dragPreview.durationMinutes } : plan.endDt,
+                      startDt: plan.startDt ? { ...plan.startDt, minuteOfDay: wrapClock(startMin) } : plan.startDt,
+                      endDt: plan.endDt ? { ...plan.endDt, minuteOfDay: wrapClock(endMin) } : plan.endDt,
                     }
                   : plan;
                 return (
@@ -592,7 +542,7 @@ export default function DaySchedule() {
                       e.stopPropagation();
                       handlePlanTap(plan);
                     }}
-                    onPointerDown={(e) => handlePlanPointerDown(e, plan)}
+                    onPointerDown={(e) => handlePlanPointerDown(e, plan, entry)}
                     onPointerMove={(e) => handlePlanPointerMove(e, plan)}
                     onPointerUp={(e) => handlePlanPointerUp(e, plan)}
                     onPointerCancel={(e) => handlePlanPointerCancel(e, plan)}
@@ -602,7 +552,13 @@ export default function DaySchedule() {
                       opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <PlanBlock plan={displayPlan} rect={{ top, height, left, width }} onTap={() => {}} />
+                    <PlanBlock
+                      plan={displayPlan}
+                      rect={{ top, height, left, width }}
+                      continuesBefore={startMin < DAY_START_MIN}
+                      continuesAfter={endMin > DAY_END_MIN}
+                      onTap={() => {}}
+                    />
                   </div>
                 );
             })}
@@ -610,148 +566,64 @@ export default function DaySchedule() {
         </div>
       </div>
 
+      {/* The whole tray, collapsed to one row. It used to stack five
+          things here — a caption, a region-filter rail, a horizontal strip
+          of unplaced cards, "Propose a block", and any drafts — roughly
+          300px of a 874pt phone, which is most of a day's worth of grid.
+          Everything but the drafts moved behind "+ Add"
+          (components/planner/AddSheet.jsx); see
+          docs/features/scheduling-feature-spec.md "Tray". */}
       <div style={{ background: "var(--surface-inverse)", padding: "12px 16px 40px", flex: "none" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <span className="mono-caption" style={{ color: "rgba(255,255,255,.5)" }}>
-            Tray · {unplacedPins.length + unplacedTravelItems.length} unplaced
-          </span>
-          {!trayFilterIsDefault && dayRegions.length > 0 && (
-            <button type="button" onClick={() => setTrayFilter(dayRegions)} style={{ font: "500 11px var(--font-sans)", color: "rgba(255,255,255,.7)" }}>
-              reset filter
-            </button>
-          )}
-        </div>
-
-        {trayError && (
-          <div style={{ marginTop: 8, font: "500 11px var(--font-sans)", color: "#ffb4a8" }}>{trayError}</div>
-        )}
-
-        {allTripRegions.length > 1 && (
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 9 }}>
-            {["All", ...allTripRegions].map((r) => {
-              const selected = r === "All" ? trayFilter.length === 0 : trayFilter.includes(r);
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => (r === "All" ? setTrayFilter([]) : toggleTrayRegion(r))}
-                  style={{
-                    flex: "none",
-                    padding: "5px 11px",
-                    borderRadius: 999,
-                    font: "500 11.5px var(--font-sans)",
-                    background: selected ? "#fff" : "rgba(255,255,255,.08)",
-                    color: selected ? "var(--surface-inverse)" : "rgba(255,255,255,.7)",
-                    border: selected ? "none" : "1px solid rgba(255,255,255,.22)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {r}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 10 }}>
-          {unplacedTravelItems.map((item) => {
-            const armed = placing?.kind === "travel" && placing.refId === item.id;
-            const deleteKey = trayItemKey("travel", item.id);
-            const deleteArmed = trayDeleteArmedKey === deleteKey;
-            return (
-              <div key={`t${item.id}`} style={{ position: "relative", width: 96, flex: "none" }}>
-                <button
-                  type="button"
-                  onClick={() => dispatch({ type: "ARM_PLACE_TRAVEL", travelItemId: item.id })}
-                  style={{ width: "100%", textAlign: "left", opacity: armed ? 0.6 : 1 }}
-                >
-                  <div style={{ height: 54, borderRadius: 11, background: "var(--ink-700)", display: "flex", alignItems: "center", justifyContent: "center", font: "600 18px var(--font-sans)", color: "rgba(255,255,255,.6)" }}>
-                    {travelIcon(item.kind)}
-                  </div>
-                  <div style={{ font: "600 10.5px var(--font-sans)", color: "var(--text-on-dark)", marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.title}</div>
-                  <div className="mono-data-sm" style={{ color: "var(--text-on-dark-muted)", marginTop: 1 }}>{item.dur}m</div>
-                </button>
-                {armed && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleTrayDeleteTap("travel", item.id);
-                    }}
-                    aria-label={deleteArmed ? "Confirm delete" : "Delete"}
-                    style={trayDeleteBadgeStyle(deleteArmed)}
-                  >
-                    {deleteArmed ? "!" : "×"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          {unplacedPins.length ? (
-            unplacedPins.map((pin) => {
-              const armed = placing?.kind === "pin" && placing.refId === pin.id;
-              const deleteKey = trayItemKey("pin", pin.id);
-              const deleteArmed = trayDeleteArmedKey === deleteKey;
-              return (
-                <div key={pin.id} style={{ position: "relative", width: 96, flex: "none" }}>
-                  <button type="button" onClick={() => dispatch({ type: "ARM_PLACE_PIN", pinId: pin.id })} style={{ width: "100%", textAlign: "left", opacity: armed ? 0.6 : 1 }}>
-                    <PhotoPlaceholder height={54} radius={11} dark label="" style={{ background: "var(--ink-700)" }} />
-                    <div style={{ font: "600 10.5px var(--font-sans)", color: "var(--text-on-dark)", marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pin.title}</div>
-                    <div className="mono-data-sm" style={{ color: "var(--text-on-dark-muted)", marginTop: 1 }}>{pin.dur}m</div>
-                  </button>
-                  {armed && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTrayDeleteTap("pin", pin.id);
-                      }}
-                      aria-label={deleteArmed ? "Confirm delete" : "Delete"}
-                      style={trayDeleteBadgeStyle(deleteArmed)}
-                    >
-                      {deleteArmed ? "!" : "×"}
-                    </button>
-                  )}
-                </div>
-              );
-            })
-          ) : null}
-
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
             type="button"
-            onClick={() => setShowAddTravel((v) => !v)}
-            style={{ width: 96, flex: "none", height: 54, borderRadius: 11, border: "1px dashed rgba(255,255,255,.35)", display: "flex", alignItems: "center", justifyContent: "center", font: "400 22px var(--font-sans)", color: "rgba(255,255,255,.6)" }}
+            onClick={() => setAddOpen(true)}
+            style={{
+              flex: 1,
+              height: 46,
+              borderRadius: "var(--radius-lg)",
+              background: "var(--accent)",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              font: "600 14px var(--font-sans)",
+            }}
           >
-            +
+            <FontAwesomeIcon icon={faPlus} style={{ width: 13, height: 13 }} />
+            Add
+          </button>
+          {/* The count was the one genuinely useful thing the tray caption
+              said, so it survives as a second target straight into the
+              picker rather than as dead text. */}
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            disabled={unplacedCount === 0}
+            style={{
+              flex: "none",
+              height: 46,
+              padding: "0 13px",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border-on-dark)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              font: "500 12px var(--font-sans)",
+              color: "var(--text-on-dark-muted)",
+              opacity: unplacedCount === 0 ? 0.45 : 1,
+            }}
+          >
+            {unplacedCount} unplaced
+            <FontAwesomeIcon icon={faChevronRight} style={{ width: 9, height: 9 }} />
           </button>
         </div>
 
-        {/* Below the unplaced chips, above the travel-item form: placing
-            one item is what the chips are for, and this is the other
-            thing you can do with a day — claim a range of hours and fill
-            them (feature spec §5.1). */}
-        <button
-          type="button"
-          onClick={() => navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`)}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            padding: "11px 14px",
-            borderRadius: "var(--radius-md)",
-            background: "var(--accent)",
-            textAlign: "left",
-          }}
-        >
-          <div style={{ font: "600 14px var(--font-sans)", color: "#fff" }}>Propose a block</div>
-          <div className="mono-data-sm" style={{ color: "rgba(255,255,255,.72)", marginTop: 2 }}>
-            Pick hours, then fill them
-          </div>
-        </button>
-
-        {/* Your own unpublished drafts for this day. Nobody else can see
-            these, which is exactly why they need somewhere to be seen —
-            an invisible draft with no way back into it is just lost work. */}
+        {/* Your own unpublished drafts for this day stay on the surface.
+            Nobody else can see these, which is exactly why they need
+            somewhere to be seen — an invisible draft with no way back
+            into it is just lost work. */}
         {myDrafts.map((draft) => (
           <button
             key={draft.id}
@@ -761,7 +633,7 @@ export default function DaySchedule() {
             }
             style={{
               width: "100%",
-              marginTop: 8,
+              marginTop: 10,
               padding: "10px 13px",
               borderRadius: "var(--radius-md)",
               border: "1px dashed rgba(255,255,255,.3)",
@@ -781,61 +653,18 @@ export default function DaySchedule() {
             </span>
           </button>
         ))}
-
-        {showAddTravel && (
-          <form onSubmit={submitNewTravel} style={{ marginTop: 10, padding: 10, borderRadius: "var(--radius-lg)", background: "rgba(255,255,255,.06)", display: "flex", flexDirection: "column", gap: 8 }}>
-            <input
-              value={newTravel.title}
-              onChange={(e) => setNewTravel((t) => ({ ...t, title: e.target.value }))}
-              placeholder="Travel item title (e.g. Flight to Hualien)"
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)", color: "#fff", font: "400 12.5px var(--font-sans)" }}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <select
-                value={newTravel.kind}
-                onChange={(e) => setNewTravel((t) => ({ ...t, kind: e.target.value }))}
-                style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)", color: "#fff", font: "400 12.5px var(--font-sans)" }}
-              >
-                <option value="flight">Flight</option>
-                <option value="train">Train</option>
-                <option value="ferry">Ferry</option>
-                <option value="drive">Drive</option>
-                <option value="other">Other</option>
-              </select>
-              <input
-                type="number"
-                min={5}
-                value={newTravel.dur}
-                onChange={(e) => setNewTravel((t) => ({ ...t, dur: e.target.value }))}
-                placeholder="Minutes"
-                style={{ width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)", color: "#fff", font: "400 12.5px var(--font-sans)" }}
-              />
-              <input
-                type="number"
-                min={0}
-                value={newTravel.cost}
-                onChange={(e) => setNewTravel((t) => ({ ...t, cost: e.target.value }))}
-                placeholder="Cost $"
-                style={{ width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.08)", color: "#fff", font: "400 12.5px var(--font-sans)" }}
-              />
-            </div>
-            {/* Who this cost is split between, on the one form travel
-                items have. Defaults to everyone, which is what an empty
-                list means (see data/expenses.js). */}
-            <div style={{ background: "rgba(255,255,255,.9)", borderRadius: 8, padding: "9px 10px" }}>
-              <HeadsPicker
-                contributors={state.contributors}
-                value={newTravel.heads}
-                onChange={(heads) => setNewTravel((t) => ({ ...t, heads }))}
-                travellerCount={trip.travellerCount || state.contributors.length || 1}
-              />
-            </div>
-            <button type="submit" style={{ padding: "8px 0", borderRadius: 8, background: "#fff", color: "var(--surface-inverse)", font: "600 12.5px var(--font-sans)" }}>
-              Add to tray
-            </button>
-          </form>
-        )}
       </div>
+
+      {addOpen && (
+        <AddSheet
+          dayIndex={dayIndex}
+          onClose={() => setAddOpen(false)}
+          unplacedPins={unplacedPins}
+          unplacedTravelItems={unplacedTravelItems}
+          dayRegions={dayRegions}
+          allTripRegions={allTripRegions}
+        />
+      )}
 
       <PlanDetailsSheet planId={detailsPlanId} onClose={() => setDetailsPlanId(null)} />
 
@@ -868,38 +697,6 @@ export default function DaySchedule() {
       )}
     </div>
   );
-}
-
-function trayDeleteBadgeStyle(armed) {
-  // Sized to var(--hit-min) (44px) rather than a decorative corner dot —
-  // this badge only renders while the item is armed for placing, so it's
-  // the one thing on the card the user is likely to deliberately tap next,
-  // and it needs a real touch target rather than a tiny 20px circle.
-  return {
-    position: "absolute",
-    top: -10,
-    right: -10,
-    width: "var(--hit-min, 44px)",
-    height: "var(--hit-min, 44px)",
-    borderRadius: "50%",
-    background: armed ? "var(--danger, #b3261e)" : "rgba(0,0,0,.55)",
-    border: "2px solid var(--surface-inverse)",
-    color: "#fff",
-    font: "700 18px var(--font-sans)",
-    lineHeight: "1",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
-  };
-}
-
-function travelIcon(kind) {
-  if (kind === "flight") return "✈";
-  if (kind === "train") return "🚆";
-  if (kind === "ferry") return "⛴";
-  if (kind === "drive") return "🚗";
-  return "•";
 }
 
 function navButtonStyle(edge) {

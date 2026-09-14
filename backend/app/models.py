@@ -182,13 +182,13 @@ class AvailabilityOverride(Base):
 
 
 class TravelItem(Base):
-    """A logistics leg — a flight, train, drive, lodging stay, or other
-    travel-related item — as distinct from a Pin (a place to visit). Not
-    tied to any particular day until it's placed into a Plan; `kind` is a
-    free string (not a DB enum) since the spec's own set of suggested
-    values ("flight"/"train"/"drive"/"lodging"/"other") is a UI affordance,
-    not a hard constraint — see schemas.py TravelItemCreate for where that
-    suggested set is actually validated."""
+    """A logistics leg — a journey, a lodging stay, or anything else on the
+    schedule that isn't a Pin (a place to visit). Not tied to any
+    particular day until it's placed into a Plan; `kind` is a free string
+    (not a DB enum) since the spec's own set of suggested values
+    ("travel"/"lodging"/"other") is a UI affordance, not a hard constraint
+    — see schemas.py TravelItemKind for where that set is validated, and
+    for why the old flight/train/drive split collapsed into "travel"."""
 
     __tablename__ = "travel_items"
 
