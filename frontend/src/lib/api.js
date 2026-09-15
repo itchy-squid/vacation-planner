@@ -181,6 +181,14 @@ export const api = {
   // hours went out for a vote while the draft sat unpublished.
   publishPlan: (planId) => request(`/api/plans/${planId}/publish`, { method: "POST" }),
   getContest: (contestId) => request(`/api/contests/${contestId}`),
+  // Rewrite one candidate plan — its stops, their times, its name and its
+  // case: { label, rationale, items: [...] }, the same item shape
+  // proposeBlock takes, minus the window (an option always spans its
+  // contest's hours). Returns the whole contest, because saving clears the
+  // votes cast for that plan and the tally on screen has to change with it
+  // (see backend/app/routers/contests.py::update_proposal).
+  updateProposal: (planId, payload) => request(`/api/plans/${planId}/stops`, { method: "PUT", body: payload }),
+
   toggleContestVote: (contestId, planId) =>
     request(`/api/contests/${contestId}/vote`, { method: "POST", body: { plan_id: planId } }),
   lockContest: (contestId, planId) =>

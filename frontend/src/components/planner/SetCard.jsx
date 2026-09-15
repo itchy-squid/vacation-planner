@@ -26,7 +26,8 @@ export default function SetCard({
   selected,
   onSelect,
   stops,
-  onEditStop,
+  canEdit,
+  onEdit,
   voted,
   onVote,
   onLock,
@@ -87,20 +88,46 @@ export default function SetCard({
 
       {selected ? (
         <div style={{ padding: "0 12px 12px" }}>
-          <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+          {/* One action for the whole set, not one per stop. A set is an
+              arrangement — which places, in which order, at which times —
+              and every part of it is edited on the screen it was built on.
+              Only offered to someone who can actually change it: the
+              option already on the board has no author, and nor is
+              somebody else's proposal yours unless you own the trip. */}
+          {canEdit ? (
+            <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 10, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+              <span className="mono-data-sm" style={{ color: "var(--text-muted)" }}>
+                THE DAY
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                style={{ font: "600 11px var(--font-sans)", color: "var(--accent)", flex: "none" }}
+              >
+                Edit this set
+              </button>
+            </div>
+          ) : null}
+          <div style={{ borderTop: canEdit ? "none" : "1px solid var(--hairline)", paddingTop: canEdit ? 6 : 10, display: "flex", flexDirection: "column", gap: 7 }}>
+            {/* Read-only rows. These used to carry an "Edit" that opened
+                the pin's own screen, which took someone comparing two
+                sets out of the comparison entirely — and then edited the
+                pin itself, changing it in every set at once rather than
+                in the one they were looking at. Changing this set is the
+                action above. */}
             {stops.map((s) => (
               <div
                 key={s.id}
-                className="tap"
-                onClick={() => onEditStop(s.id)}
-                style={{ display: "flex", gap: 9, alignItems: "center", background: "var(--surface-inset)", border: "1px solid rgba(27,26,31,.07)", borderRadius: "var(--radius-md)", padding: "8px 9px", cursor: "pointer" }}
+                style={{ display: "flex", gap: 9, alignItems: "center", background: "var(--surface-inset)", border: "1px solid rgba(27,26,31,.07)", borderRadius: "var(--radius-md)", padding: "8px 9px" }}
               >
                 <PhotoPlaceholder height={34} radius={8} label="" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ font: "600 11.5px var(--font-sans)", lineHeight: 1.25, color: "var(--text-primary)" }}>{s.title}</div>
                   <div className="mono-data-sm" style={{ color: "var(--text-muted)", marginTop: 2 }}>{s.meta}</div>
                 </div>
-                <span style={{ font: "500 10px var(--font-sans)", color: "var(--accent)", flex: "none" }}>Edit</span>
               </div>
             ))}
             {stops.length === 0 ? (

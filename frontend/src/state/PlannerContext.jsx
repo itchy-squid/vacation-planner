@@ -180,6 +180,17 @@ function proposalConflict(err) {
   return null;
 }
 
+// What the server said, when it said something worth repeating. Refusals
+// from the planning endpoints carry a written sentence — "Vase Rock runs
+// past the end of the block" — and dropping it in favour of the generic
+// "PUT /api/… → 400" would throw away the only part a reader can act on.
+function apiMessage(err) {
+  const detail = err.body?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail?.message) return detail.message;
+  return err.message;
+}
+
 function phaseProgress(phase) {
   if (phase === "locked") return 1;
   if (phase === "scheduling") return 0.55;
@@ -626,7 +637,27 @@ export function PlannerProvider({ children }) {
             const conflict = proposalConflict(err);
             if (conflict) return { ok: false, ...conflict };
             console.error("propose block failed", err);
-            return { ok: false, error: err.message };
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        // Rewrite one candidate plan in an open vote: its stops, their
+        // times, its name, its case. The plan's own hours never move —
+        // every option spans exactly the contest's window — and the votes
+        // cast for it are cleared server side
+        // (backend/app/routers/contests.py::update_proposal).
+        case "EDIT_PROPOSAL": {
+          try {
+            const contest = await api.updateProposal(action.planId, {
+              label: action.label ?? "",
+              rationale: action.rationale ?? "",
+              items: action.items,
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, contest };
+          } catch (err) {
+            console.error("edit proposal failed", err);
+            return { ok: false, error: apiMessage(err) };
           }
         }
 
@@ -664,7 +695,7 @@ export function PlannerProvider({ children }) {
             return { ok: true, planId: plan.id };
           } catch (err) {
             console.error("save draft failed", err);
-            return { ok: false, error: err.message };
+            return { ok: false, error: apiMessage(err) };
           }
         }
 
@@ -677,7 +708,7 @@ export function PlannerProvider({ children }) {
             const conflict = proposalConflict(err);
             if (conflict) return { ok: false, ...conflict };
             console.error("publish draft failed", err);
-            return { ok: false, error: err.message };
+            return { ok: false, error: apiMessage(err) };
           }
         }
 

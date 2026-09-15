@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import MapPlaceholder from "../components/planner/MapPlaceholder";
 import MapPin from "../components/planner/MapPin";
 import RouteSegment from "../components/planner/RouteSegment";
@@ -33,6 +33,7 @@ import { coordsForPin } from "../lib/mapLayout";
 export default function CompareSets() {
   const navigate = useNavigate();
   const { contestId } = useParams();
+  const location = useLocation();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const currentUser = useCurrentUser();
@@ -42,6 +43,12 @@ export default function CompareSets() {
   const [loadError, setLoadError] = useState(null);
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Set by the propose screen on its way back here after a set was added
+  // or edited. It lives in navigation state rather than being raised here
+  // because the sentence it carries is about the vote tally, and editing
+  // a set clears the votes for it — a tally that drops to zero with no
+  // explanation reads as a bug.
+  const [notice, setNotice] = useState(location.state?.notice ?? "");
 
   const refetch = useCallback(async () => {
     try {
@@ -87,6 +94,7 @@ export default function CompareSets() {
         setLetter: p.set_letter,
         rationale: p.rationale,
         status: p.status,
+        createdById: p.created_by_id ?? null,
         cost: Math.round(p.total_cost_cents / 100),
         slack: p.slack_minutes,
         votes: p.vote_count,
@@ -102,6 +110,34 @@ export default function CompareSets() {
   const windowLabel = contest
     ? `${clockLabel(minuteOfDay(contest.starts_at))}–${clockLabel(minuteOfDay(contest.ends_at))}`
     : "";
+
+  // Who may change an option. The set already on the board has no author —
+  // it is the capture of what was scheduled before anyone proposed
+  // anything (backend/app/routers/contests.py _capture_into_incumbent),
+  // and editing it would change the status quo under the people being
+  // asked whether to keep it. Everything else is its proposer's, with the
+  // owner able to act on any of them, the same way they can lock any of
+  // them.
+  const canEdit = useCallback(
+    (set) =>
+      contest?.status === "open" &&
+      set.createdById != null &&
+      (set.createdById === currentUser.id || currentUser.isOwner),
+    [contest, currentUser]
+  );
+
+  // Both of these go to the same screen the set was built on
+  // (pages/ProposeBlock.jsx): a set is a set whether it exists yet or not,
+  // and giving editing its own screen would mean two places to change
+  // every time a set grows a field. The window travels as the contest id
+  // rather than as hours, so an added set matches this decision's hours
+  // exactly and joins it instead of opening a second one (feature spec
+  // §6.2).
+  function openProposeScreen(state) {
+    if (!contest) return;
+    const dayIndex = dayIndexOf(contest.starts_at, trip.startDate);
+    navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`, { state: { contestId: contest.id, ...state } });
+  }
 
   const leadingId = useMemo(
     () => displaySets.reduce((best, s) => (best == null || s.votes > (best.votes ?? -1) ? s : best), null)?.id ?? null,
@@ -128,6 +164,7 @@ export default function CompareSets() {
 
   async function handleVote(planId) {
     if (busy) return;
+    setNotice("");
     setBusy(true);
     try {
       await api.toggleContestVote(contestId, planId);
@@ -139,6 +176,7 @@ export default function CompareSets() {
 
   async function handleLock(planId) {
     if (busy) return;
+    setNotice("");
     setBusy(true);
     try {
       await api.lockContest(contestId, planId);
@@ -269,10 +307,8 @@ export default function CompareSets() {
                 selected={selectedPlanId === s.id}
                 onSelect={() => setSelectedPlanId(s.id)}
                 stops={s.stops}
-                onEditStop={(stopId) => {
-                  const stop = s.stops.find((x) => x.id === stopId);
-                  if (stop) openEdit(stop);
-                }}
+                canEdit={canEdit(s)}
+                onEdit={() => openProposeScreen({ editPlanId: s.id })}
                 voted={s.voted}
                 onVote={() => handleVote(s.id)}
                 onLock={() => handleLock(s.id)}
@@ -281,6 +317,35 @@ export default function CompareSets() {
               />
             ))}
           </div>
+
+          {/* A further candidate for the same hours. Dashed and quiet —
+              it is an addition to a decision in progress, not the
+              decision. Hidden once the owner has locked one: a resolved
+              contest has nothing left to add a set to. */}
+          {!isResolved && (
+            <button
+              type="button"
+              onClick={() => openProposeScreen({})}
+              style={{
+                width: "100%",
+                marginTop: 9,
+                padding: "11px 12px",
+                borderRadius: "var(--radius-2xl)",
+                border: "1px dashed var(--border-strong)",
+                background: "transparent",
+                font: "600 13px var(--font-sans)",
+                color: "var(--accent)",
+              }}
+            >
+              + Add a set for these hours
+            </button>
+          )}
+
+          {notice && (
+            <div style={{ marginTop: 10, font: "400 11.5px/1.5 var(--font-sans)", color: "var(--accent-press)" }}>
+              {notice}
+            </div>
+          )}
 
           {isResolved ? (
             <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>

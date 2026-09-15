@@ -7,8 +7,8 @@ from ..auth import Principal, get_current_contributor, get_current_principal, ge
 from ..db import get_db
 from ..derive import item_start_minutes, plan_range_minutes, plan_totals
 from ..events import bus
-from ..models import Contributor, Plan, PlanItem, PlanStatus
-from ..schemas import PinOut, PlanCreate, PlanItemOut, PlanMove, PlanOut, TravelItemOut
+from ..models import Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem
+from ..schemas import PinOut, PlanCreate, PlanItemCreate, PlanItemOut, PlanMove, PlanOut, TravelItemOut
 
 router = APIRouter(prefix="/api", tags=["plans"])
 
@@ -142,8 +142,85 @@ def _add_items(db: Session, plan: Plan, items) -> None:
                 travel_item_id=item.travel_item_id,
                 position=position,
                 duration_minutes=getattr(item, "duration_minutes", None),
+                offset_minutes=getattr(item, "offset_minutes", None),
             )
         )
+
+
+def ensure_unique_stops(items: list[PlanItemCreate]) -> None:
+    """A pin or travel item may appear at most once in a plan (feature
+    spec §11). Twice would mean two placements of one thing inside hours
+    that are meant to be a single sequence, and every screen that resolves
+    a stop back to its pin would have to pick one."""
+    seen: set[tuple[str, int]] = set()
+    for item in items:
+        key = ("pin", item.pin_id) if item.pin_id is not None else ("travel", item.travel_item_id)
+        if key in seen:
+            raise HTTPException(status_code=400, detail="A block can only hold each item once")
+        seen.add(key)
+
+
+def stop_layout(db: Session, items: list[PlanItemCreate]) -> list[tuple[int, int, str]]:
+    """(offset, duration, title) for each submitted stop, in the order
+    given, with both nullable fields resolved exactly the way app/derive.py
+    resolves the stored columns: a stop's own trim or the item's duration,
+    an explicit offset or a packed one. Two resolutions of the same rule
+    would be one too many — the number the client is shown while building a
+    set has to be the number the server measures it by."""
+    layout: list[tuple[int, int, str]] = []
+    packed = 0
+    for item in items:
+        source = (
+            db.get(Pin, item.pin_id) if item.pin_id is not None else db.get(TravelItem, item.travel_item_id)
+        )
+        if source is None:
+            raise HTTPException(status_code=404, detail="One of those stops no longer exists")
+        duration = item.duration_minutes if item.duration_minutes is not None else source.duration_minutes
+        offset = item.offset_minutes if item.offset_minutes is not None else packed
+        layout.append((offset, duration, source.title))
+        # Packing counts durations only, never the gaps before them — same
+        # as item_start_minutes, which sums the durations of earlier
+        # positions and nothing else.
+        packed += duration
+    return layout
+
+
+def validate_stop_layout(db: Session, items: list[PlanItemCreate], window_minutes: int) -> None:
+    """Refuse a set of stops that can't happen: two at once, or one running
+    past the end of the block.
+
+    A block built by the propose screen can't express either — every stop
+    sits after the one before it, with free time in between if it was asked
+    for — so this is the backstop for a client that sends something else,
+    and the single place the rule is written down for every path that
+    builds a plan (a fresh proposal, a published draft, an edited set).
+
+    Walked in the order submitted, not in clock order, so the list must
+    also *be* in clock order. That is not pedantry: a stop with no time of
+    its own follows the stops before it *by position* (app/derive.py), so a
+    list whose order and times disagree has two answers for when it
+    happens."""
+    previous_end = 0
+    previous_title = ""
+    for offset, duration, title in stop_layout(db, items):
+        if offset < previous_end:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"{title} starts before {previous_title} has finished.",
+                    "stop_title": title,
+                },
+            )
+        if offset + duration > window_minutes:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"{title} runs past the end of the block.",
+                    "stop_title": title,
+                },
+            )
+        previous_end = offset + duration
+        previous_title = title
 
 
 @router.get("/trips/{trip_id}/plans", response_model=list[PlanOut])

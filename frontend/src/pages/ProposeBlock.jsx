@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import WindowSelection from "../components/planner/WindowSelection";
 import StopList from "../components/planner/StopList";
@@ -7,6 +7,7 @@ import ComparisonColumns, { summariseStops } from "../components/planner/Compari
 import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
 import { fmtMin } from "../data/derive";
@@ -26,6 +27,28 @@ import {
 // a vote. Step 1 is the tray button on pages/DaySchedule.jsx that gets you
 // here.
 //
+// There are three other ways in, and all of them skip step 2 because the
+// hours are already settled:
+//
+//   - reopening your own draft            (state.draftPlanId)
+//   - adding a set to a running decision  (state.contestId)
+//   - editing a set already in one        (state.contestId + state.editPlanId)
+//
+// The third is the reason this file is the only place a block gets built.
+// Editing a proposal is not a different job from making one: the same
+// stops, the same pull-in chips, the same times, the same name and case
+// for it — so it is the same two screens, and the only thing that changes
+// is whether the footer creates a plan or rewrites one. A second screen
+// that could only edit what already existed would drift from this one the
+// first time either grew a field.
+//
+// Adding a set is not a special server path either: a proposal whose
+// window matches an open contest's exactly joins it as another option,
+// which is the rule that has always made a SET C possible (feature spec
+// §6.2). What was missing was a way to ask for that without dragging out
+// the same hours by hand and hoping they landed on the same two
+// 15-minute boundaries.
+//
 // The step lives in component state rather than the URL. Backing out of
 // "Review" has to land on the hour picker with the drag still there, and a
 // URL step would mean rebuilding the selection from nothing every time —
@@ -37,6 +60,16 @@ const DISCARD_PROMPT = {
   body: "You've claimed hours and started filling them. Leaving now throws that away.",
   stayLabel: "Keep going",
   leaveLabel: "Discard",
+};
+
+// Editing an existing set is the same screen doing a different thing, and
+// the prompt has to say which: nothing is being thrown away except the
+// changes, and the set itself stays in the vote either way.
+const DISCARD_EDITS_PROMPT = {
+  title: "Discard these changes?",
+  body: "Your set stays in the vote as it was. The changes you've made here are lost.",
+  stayLabel: "Keep editing",
+  leaveLabel: "Discard changes",
 };
 
 let stopKeySeed = 0;
@@ -55,6 +88,20 @@ export default function ProposeBlock() {
   const { trip, plans, pins, travelItems, contributors, overrides } = state;
 
   const reopenedDraftId = location.state?.draftPlanId ?? null;
+  const contestId = location.state?.contestId ?? null;
+  const editPlanId = location.state?.editPlanId ?? null;
+  const editing = Boolean(editPlanId);
+  const joining = Boolean(contestId) && !editing;
+  // The decision in play, fetched rather than passed through navigation
+  // state: it carries the window, the option already on the board to
+  // compare against, how many options exist (which is what the next set
+  // letter is), and — when editing — the set being rewritten.
+  const [contest, setContest] = useState(null);
+  const [contestError, setContestError] = useState("");
+  // What the set looked like when it was loaded, so "has anything changed"
+  // is a real question on the edit path rather than "does it have stops",
+  // which is always yes.
+  const [baseline, setBaseline] = useState(null);
 
   // Entries, not plans: an overnight crossing owns this morning's hours
   // even though it started yesterday, and the picker has to show it,
@@ -69,9 +116,10 @@ export default function ProposeBlock() {
     [plans, reopenedDraftId]
   );
 
-  // Reopening a draft drops you straight into step 3 with its window and
-  // stops — there's nothing to claim again.
-  const [step, setStep] = useState(reopenedDraft ? 3 : 2);
+  // Reopening a draft, or joining a running decision, drops you straight
+  // into step 3 — in both cases the hours are already settled and there is
+  // nothing to claim again.
+  const [step, setStep] = useState(reopenedDraft || contestId ? 3 : 2);
   const [selection, setSelection] = useState(() =>
     reopenedDraft
       ? { startMin: planStartMinute(reopenedDraft), endMin: planEndMinute(reopenedDraft) }
@@ -79,16 +127,19 @@ export default function ProposeBlock() {
   );
   const [stops, setStops] = useState(() =>
     reopenedDraft
-      ? reopenedDraft.items.map((item) => ({
-          key: nextStopKey(),
-          kind: item.pinId ? "pin" : "travel",
-          refId: item.pinId ?? item.travelItemId,
-          title: item.title,
-          baseDurationMinutes: item.baseDurationMinutes,
-          durationMinutes: item.durationMinutes,
-          costCents: item.costCents,
-          heads: item.heads,
-        }))
+      ? withGaps(
+          reopenedDraft.items.map((item) => ({
+            key: nextStopKey(),
+            kind: item.pinId ? "pin" : "travel",
+            refId: item.pinId ?? item.travelItemId,
+            title: item.title,
+            baseDurationMinutes: item.baseDurationMinutes,
+            durationMinutes: item.durationMinutes,
+            offsetMinutes: item.offsetMinutes,
+            costCents: item.costCents,
+            heads: item.heads,
+          }))
+        )
       : []
   );
   const [name, setName] = useState(reopenedDraft?.label ?? "");
@@ -98,11 +149,48 @@ export default function ProposeBlock() {
   const [addingStop, setAddingStop] = useState(false);
   const [newStop, setNewStop] = useState({ title: "", dur: 60, cost: 0, heads: [] });
 
-  const dirty = Boolean(selection) || stops.length > 0;
-  useNavGuard(dirty && !busy, DISCARD_PROMPT);
+  // The contest's own window becomes the selection, to the minute —
+  // anything less exact would land in the partial-overlap 409 rather than
+  // on the decision it was meant for — and, when editing, its set becomes
+  // the stops on screen.
+  useEffect(() => {
+    if (!contestId) return;
+    let live = true;
+    api
+      .getContest(contestId)
+      .then((c) => {
+        if (!live) return;
+        setContest(c);
+        setSelection({ startMin: minuteOfIso(c.starts_at), endMin: minuteOfIso(c.starts_at) + contestWindowMinutes(c) });
+        const target = editPlanId ? c.plans.find((p) => p.id === editPlanId) : null;
+        if (!target) return;
+        const loaded = stopsFromOption(target);
+        setStops(loaded);
+        setName(target.label ?? "");
+        setRationale(target.rationale ?? "");
+        setBaseline(signature(loaded, target.label ?? "", target.rationale ?? ""));
+      })
+      .catch((err) => live && setContestError(err.message || "Couldn't load that vote."));
+    return () => {
+      live = false;
+    };
+  }, [contestId, editPlanId]);
 
   const windowMinutes = selection ? selection.endMin - selection.startMin : 0;
   const plannedMinutes = stops.reduce((sum, s) => sum + s.durationMinutes, 0);
+  // Where the last stop ends. Not the same as `plannedMinutes` once free
+  // time is in play, and it is this one that has to fit inside the window.
+  const spanMinutes = stops.reduce((sum, s) => sum + (s.gapBefore ?? 0) + s.durationMinutes, 0);
+
+  // What counts as unsaved work depends on how you got here. A selection
+  // you dragged is yours; one handed to you by the contest you are joining
+  // is not. And a set you are editing arrives already full of stops, so
+  // "are there stops" answers nothing — only a change from what was loaded
+  // does.
+  const dirty = baseline
+    ? signature(stops, name, rationale) !== baseline
+    : stops.length > 0 || (Boolean(selection) && !contestId);
+  useNavGuard(dirty && !busy, editing ? DISCARD_EDITS_PROMPT : DISCARD_PROMPT);
 
   // The hours in the drag that are already out for a vote. An exactly
   // matching window is fine — that's how a further set joins an existing
@@ -261,7 +349,9 @@ export default function ProposeBlock() {
 
   function addStop(option) {
     setError("");
-    setStops((current) => [...current, { ...option, key: nextStopKey() }]);
+    // A stop pulled in lands straight after the last one. Free time in
+    // front of it is something to ask for, not something to inherit.
+    setStops((current) => [...current, { ...option, gapBefore: 0, key: nextStopKey() }]);
   }
 
   function reorder(from, to) {
@@ -275,6 +365,14 @@ export default function ProposeBlock() {
 
   function changeDuration(index, minutes) {
     setStops((current) => current.map((s, i) => (i === index ? { ...s, durationMinutes: minutes } : s)));
+  }
+
+  // Editing a stop's start time is editing the free time in front of it,
+  // which is what keeps two stops from ever being able to overlap — see
+  // components/planner/StopList.jsx.
+  function changeGap(index, minutes) {
+    setError("");
+    setStops((current) => current.map((s, i) => (i === index ? { ...s, gapBefore: Math.max(0, minutes) } : s)));
   }
 
   function removeStop(index) {
@@ -321,12 +419,26 @@ export default function ProposeBlock() {
 
   // ---- submission ---------------------------------------------------------
   function payloadItems() {
-    return stops.map((s) => ({
-      ...(s.kind === "pin" ? { pin_id: s.refId } : { travel_item_id: s.refId }),
-      // Only send a trim when there is one: an untrimmed stop should keep
-      // tracking its pin's duration rather than freezing today's value.
-      ...(s.durationMinutes !== s.baseDurationMinutes ? { duration_minutes: s.durationMinutes } : {}),
-    }));
+    let cursor = 0; // where this stop actually starts, free time included
+    let packed = 0; // where it would start if nothing had free time in front
+    return stops.map((s) => {
+      cursor += s.gapBefore ?? 0;
+      const offset = cursor;
+      cursor += s.durationMinutes;
+      const packedOffset = packed;
+      packed += s.durationMinutes;
+      return {
+        ...(s.kind === "pin" ? { pin_id: s.refId } : { travel_item_id: s.refId }),
+        // Only send a trim when there is one: an untrimmed stop should keep
+        // tracking its pin's duration rather than freezing today's value.
+        ...(s.durationMinutes !== s.baseDurationMinutes ? { duration_minutes: s.durationMinutes } : {}),
+        // And only send a time when it isn't simply "after the one before".
+        // A set with no free time in it stays NULL-offset all the way
+        // down, which is what lets it reflow if a pin's own duration
+        // changes later.
+        ...(offset !== packedOffset ? { offset_minutes: offset } : {}),
+      };
+    });
   }
 
   function windowIso() {
@@ -337,6 +449,13 @@ export default function ProposeBlock() {
   }
 
   function handleConflict(result) {
+    // Backing out to step 2 only makes sense when there is a step 2 to go
+    // back to. On the contest paths the hours were never up for
+    // negotiation, so the message belongs where the reader already is.
+    if (contestId && (result.conflict === "contest" || result.conflict === "locked")) {
+      setError(result.message || "Those hours are no longer available.");
+      return true;
+    }
     if (result.conflict === "contest") {
       setStep(2);
       setError(
@@ -360,6 +479,37 @@ export default function ProposeBlock() {
     if (busy || !selection) return;
     setBusy(true);
     setError("");
+
+    if (editing) {
+      const votesCleared = editedOption?.vote_count ?? 0;
+      const result = await dispatch({
+        type: "EDIT_PROPOSAL",
+        planId: editPlanId,
+        label: name.trim(),
+        rationale: rationale.trim(),
+        items: payloadItems(),
+      });
+      setBusy(false);
+      if (!result.ok) {
+        setError(result.error || "Couldn't save those changes.");
+        return;
+      }
+      // The notice travels with the navigation rather than being raised
+      // here: the sentence is about the vote tally, and the vote tally is
+      // on the screen being returned to.
+      navigate(`/trips/${trip.id}/contests/${contestId}`, {
+        replace: true,
+        state: {
+          notice: votesCleared
+            ? `Set updated. The ${votesCleared} vote${votesCleared === 1 ? "" : "s"} for it ${
+                votesCleared === 1 ? "was" : "were"
+              } cleared, so everyone votes on it as it now stands.`
+            : "Set updated.",
+        },
+      });
+      return;
+    }
+
     const { startsAt, endsAt } = windowIso();
     const result = reopenedDraftId
       ? await publishExistingDraft(startsAt, endsAt)
@@ -418,12 +568,35 @@ export default function ProposeBlock() {
   }
 
   function cancel() {
-    guardedNavigate(`/trips/${trip.id}/schedule/${dayIndex}`);
+    // Back where you came from: the decision you were adding to, or the
+    // day you were looking at.
+    guardedNavigate(
+      contestId ? `/trips/${trip.id}/contests/${contestId}` : `/trips/${trip.id}/schedule/${dayIndex}`
+    );
   }
 
   const dayLabel = `Day ${dayIndex}`;
   const canFill = Boolean(selection) && windowMinutes >= MIN_SELECTION_MIN && !clashingContest;
-  const canReview = stops.length > 0 && plannedMinutes <= windowMinutes;
+  // The last stop has to end inside the block — which, once free time
+  // exists, is a stricter question than whether the stops add up to less
+  // than the window.
+  const canReview = stops.length > 0 && spanMinutes <= windowMinutes;
+  const editedOption = editing ? contest?.plans.find((p) => p.id === editPlanId) ?? null : null;
+
+  if (contestId && !contest) {
+    return (
+      <div className="screen" style={{ padding: 24 }}>
+        <p style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}>
+          {contestError ? `Couldn't open that vote — ${contestError}` : "Loading those hours…"}
+        </p>
+        {contestError && (
+          <button type="button" onClick={cancel} style={{ marginTop: 12, font: "600 13px var(--font-sans)", color: "var(--accent)" }}>
+            ‹ Back
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="screen">
@@ -462,9 +635,12 @@ export default function ProposeBlock() {
             return { ...s, headcount, perHeadCents: perHeadCents(s, headcount) };
           })}
           pullInGroups={pullInGroups}
-          onBack={() => setStep(2)}
+          title={editing ? "Edit this set" : "Your block"}
+          backLabel={contestId ? "Cancel" : "‹ Hours"}
+          onBack={() => (contestId ? cancel() : setStep(2))}
           onReorder={reorder}
           onChangeDuration={changeDuration}
+          onChangeGap={changeGap}
           onRemove={removeStop}
           onAdd={() => setAddingStop(true)}
           onPullIn={addStop}
@@ -493,13 +669,28 @@ export default function ProposeBlock() {
           setName={setName}
           rationale={rationale}
           setRationale={setRationale}
-          setLetter={predictSetLetter(matchingContest, insidePlans)}
-          board={boardColumn(insideItems, selection, windowMinutes)}
+          setLetter={editedOption ? editedOption.set_letter : predictSetLetter(contest, matchingContest, insidePlans)}
+          board={
+            // With a contest in hand, "on the board" is the option already
+            // on it — the one the group would be keeping — and, when
+            // editing, explicitly not the set being edited. Falling back to
+            // every stop in the window would merge every candidate's stops
+            // into one unreadable column.
+            contest
+              ? boardColumnFromOption(
+                  contest.plans.find((p) => p.id !== editPlanId) ?? null,
+                  windowMinutes
+                )
+              : boardColumn(insideItems, selection, windowMinutes)
+          }
           yours={yoursColumn(stops, selection, windowMinutes)}
           contributors={contributors}
           busy={busy}
           error={error}
           isDraft={Boolean(reopenedDraftId)}
+          joining={joining}
+          editing={editing}
+          votesAtStake={editedOption?.vote_count ?? 0}
           onBack={() => setStep(3)}
           onSaveDraft={saveDraft}
           onDiscardDraft={discardDraft}
@@ -522,9 +713,115 @@ function minuteOfIso(iso) {
 // existing decision means taking the letter after its current options; a
 // fresh contest means A (the incumbent) then B, or A alone on an empty
 // stretch of day.
-function predictSetLetter(matchingContest, insidePlans) {
-  if (matchingContest) return null; // the server counts existing options; don't guess
+//
+// `matchingContest` — hours that happen to coincide with a running vote,
+// spotted from the day's plans rather than fetched — stays a "don't
+// guess": all it knows is that a contest is there, not how many options
+// it holds. `contest` is that same situation with the decision in hand,
+// so the letter is simply the next one.
+function predictSetLetter(contest, matchingContest, insidePlans) {
+  if (contest) return setLetter(contest.plans.length);
+  if (matchingContest) return null;
   return insidePlans.length > 0 ? "B" : "A";
+}
+
+// A, B, C … then AA, AB — the same spreadsheet-style run the server uses
+// (backend/app/routers/contests.py::_set_letter), so the letter shown on
+// the review card is the letter the card comes back with.
+function setLetter(index) {
+  let letter = "";
+  let n = index;
+  for (;;) {
+    letter = String.fromCharCode(65 + (n % 26)) + letter;
+    n = Math.floor(n / 26) - 1;
+    if (n < 0) return letter;
+  }
+}
+
+// An ordered stop list, re-expressed as "how much free time sits in front
+// of each one". That is the form the editor works in (see
+// components/planner/StopList.jsx): it keeps overlap unwritable while
+// still letting a stop be given a time, and it survives a reorder, which
+// an absolute offset would not.
+//
+// A stop with no offset of its own simply follows the one before it, which
+// is the same rule backend/app/derive.py packs by. The clamp at zero is
+// for data this editor could not have produced — two captured plans can't
+// overlap, so it should never fire, and if it ever did, silently showing a
+// negative gap would be worse than closing it.
+function withGaps(items) {
+  let cursor = 0;
+  let packed = 0;
+  return items.map((item) => {
+    const offset = item.offsetMinutes ?? packed;
+    const gapBefore = Math.max(0, offset - cursor);
+    cursor += gapBefore + item.durationMinutes;
+    packed += item.durationMinutes;
+    return { ...item, gapBefore };
+  });
+}
+
+// One option from a fetched contest, in the shape the editor holds stops
+// in. The API's own item shape is read here rather than PlannerContext's
+// normalized one because a contest is fetched fresh on this screen — it
+// carries vote counts and set letters that the trip-wide plan list has no
+// reason to hold (see pages/CompareSets.jsx's header comment).
+function stopsFromOption(option) {
+  return withGaps(
+    [...option.items]
+      .sort((a, b) => a.position - b.position)
+      .map((it) => {
+        const source = it.pin ?? it.travel_item;
+        return {
+          key: nextStopKey(),
+          kind: it.pin ? "pin" : "travel",
+          refId: source?.id,
+          title: source?.title ?? "Untitled",
+          baseDurationMinutes: source?.duration_minutes ?? 0,
+          durationMinutes: it.duration_minutes ?? source?.duration_minutes ?? 0,
+          offsetMinutes: it.offset_minutes,
+          costCents: source?.cost_cents ?? 0,
+          heads: source?.heads ?? [],
+        };
+      })
+  );
+}
+
+// Everything about a set that a person could have changed, as one string.
+// Cheaper to compare than to diff, and it is only ever asked "is this
+// still what was loaded" — which is the question the discard prompt needs
+// answered, and the one `stops.length > 0` cannot answer on a set that
+// arrived with stops in it.
+function signature(stops, name, rationale) {
+  return JSON.stringify([
+    stops.map((s) => [s.kind, s.refId, s.gapBefore ?? 0, s.durationMinutes]),
+    name.trim(),
+    rationale.trim(),
+  ]);
+}
+
+// A contest's window, in minutes. Both ends are wall-clock on the same
+// day — a claimed window may not cross midnight (feature spec §11) — so
+// this is a plain subtraction, with the wrap only there to keep a bad row
+// from producing a negative window.
+function contestWindowMinutes(contest) {
+  const minutes = minuteOfIso(contest.ends_at) - minuteOfIso(contest.starts_at);
+  return minutes > 0 ? minutes : minutes + 1440;
+}
+
+// The "on the board" column when joining a running decision: the option
+// already on it, read off the server's own start_minute_of_day so the
+// column agrees with the compare screen it was just read from.
+function boardColumnFromOption(option, windowMinutes) {
+  if (!option) return { lines: [], summary: summariseStops(0, windowMinutes), totalCents: 0 };
+  const lines = [...option.items]
+    .sort((a, b) => a.start_minute_of_day - b.start_minute_of_day)
+    .map((it) => `${clockLabel(it.start_minute_of_day)} · ${(it.pin ?? it.travel_item)?.title ?? "Untitled"}`);
+  return {
+    lines,
+    summary: summariseStops(option.items.length, option.slack_minutes),
+    totalCents: option.total_cost_cents,
+  };
 }
 
 function boardColumn(insideItems, selection, windowMinutes) {
@@ -545,6 +842,7 @@ function yoursColumn(stops, selection, windowMinutes) {
   // glance can't be measuring from different zeroes.
   let cursor = selection.startMin;
   const lines = stops.map((s) => {
+    cursor += s.gapBefore ?? 0;
     const at = cursor;
     cursor += s.durationMinutes;
     return `${clockLabel(at)} · ${s.title}`;
@@ -733,9 +1031,12 @@ function StepThree({
   plannedMinutes,
   stops,
   pullInGroups,
+  title,
+  backLabel,
   onBack,
   onReorder,
   onChangeDuration,
+  onChangeGap,
   onRemove,
   onAdd,
   onPullIn,
@@ -756,10 +1057,10 @@ function StepThree({
       <ModalHeader
         left={
           <button type="button" onClick={onBack} style={{ font: "500 14px var(--font-sans)", color: "var(--accent)" }}>
-            ‹ Hours
+            {backLabel}
           </button>
         }
-        title="Your block"
+        title={title}
         right={
           <span className="mono-caption" style={{ color: "var(--accent)" }}>
             {clockLabel(selection.startMin)}–{clockLabel(selection.endMin)}
@@ -775,6 +1076,7 @@ function StepThree({
           windowMinutes={windowMinutes}
           onReorder={onReorder}
           onChangeDuration={onChangeDuration}
+          onChangeGap={onChangeGap}
           onRemove={onRemove}
           onAdd={onAdd}
         />
@@ -906,7 +1208,8 @@ function StepThree({
               a claimed window at all — the hour picker clips at one — so
               that wording would promise something about a case that can't
               arise (feature spec §6.5). */}
-          Stops snap end to end inside the block, so they can never overlap. Pinned times stay put.
+          Tap a stop to set when it starts and how long it runs. A stop always begins after the one before
+          it, so two of them can never overlap — drag the handle to change the order.
         </div>
 
         {error && <div style={{ font: "500 12px var(--font-sans)", color: "var(--warn)" }}>{error}</div>}
@@ -947,6 +1250,9 @@ function StepFour({
   busy,
   error,
   isDraft,
+  joining,
+  editing,
+  votesAtStake,
   onBack,
   onSaveDraft,
   onDiscardDraft,
@@ -1032,9 +1338,32 @@ function StepFour({
               majority is shown as a state rather than an outcome (feature
               spec decision 4). */}
           <div style={{ marginTop: 10, font: "400 12px var(--font-sans)", color: "var(--text-muted)" }}>
-            The block shows as proposed on {dayLabel.toLowerCase()} until the trip owner picks a set.
+            {editing
+              ? "Your set stays in the vote already running for these hours. Nothing changes on the calendar until the trip owner picks one."
+              : joining
+              ? "Your set joins the vote already running for these hours. Nothing changes on the calendar until the trip owner picks one."
+              : `The block shows as proposed on ${dayLabel.toLowerCase()} until the trip owner picks a set.`}
           </div>
         </div>
+
+        {/* Said before the save, not after it: a vote is someone else's,
+            and clearing it is the kind of thing to be warned about while
+            there is still the option of not doing it. */}
+        {editing && votesAtStake > 0 && (
+          <div
+            style={{
+              background: "var(--plum-tint)",
+              border: "1px solid var(--plum-tint-strong)",
+              borderRadius: "var(--radius-md)",
+              padding: "11px 13px",
+              font: "400 12px/1.5 var(--font-sans)",
+              color: "var(--accent-press)",
+            }}
+          >
+            {votesAtStake} {votesAtStake === 1 ? "person has" : "people have"} voted for this set. Saving changes
+            clears {votesAtStake === 1 ? "that vote" : "those votes"}, so nobody ends up backing a set they never saw.
+          </div>
+        )}
 
         {error && <div style={{ font: "500 12px var(--font-sans)", color: "var(--warn)" }}>{error}</div>}
 
@@ -1051,21 +1380,27 @@ function StepFour({
       </div>
 
       <div style={{ flex: "none", background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "14px 16px 22px", display: "flex", gap: 10 }}>
-        <button
-          type="button"
-          onClick={onSaveDraft}
-          disabled={busy}
-          style={{
-            padding: "14px 16px",
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--border-strong)",
-            font: "600 15px var(--font-sans)",
-            color: "var(--text-secondary)",
-            opacity: busy ? 0.5 : 1,
-          }}
-        >
-          Save draft
-        </button>
+        {/* No draft on this path. A draft is hours nobody has claimed yet;
+            these hours are already out for a vote, and saving a private
+            copy of a set for a decision that may be locked before you
+            publish it is a way to lose work, not to keep it. */}
+        {!joining && !editing && (
+          <button
+            type="button"
+            onClick={onSaveDraft}
+            disabled={busy}
+            style={{
+              padding: "14px 16px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border-strong)",
+              font: "600 15px var(--font-sans)",
+              color: "var(--text-secondary)",
+              opacity: busy ? 0.5 : 1,
+            }}
+          >
+            Save draft
+          </button>
+        )}
         <button
           type="button"
           onClick={onSend}
@@ -1079,7 +1414,7 @@ function StepFour({
             opacity: busy ? 0.5 : 1,
           }}
         >
-          {busy ? "Sending…" : "Send to vote"}
+          {busy ? "Saving…" : editing ? "Save changes" : joining ? "Add to the vote" : "Send to vote"}
         </button>
       </div>
     </>

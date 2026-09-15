@@ -223,6 +223,11 @@ class PlanItemCreate(BaseModel):
     # is untouched (feature spec decision 2). Floor of 15m matches the
     # stepper everywhere else in the app.
     duration_minutes: int | None = Field(default=None, ge=15)
+    # Start, in minutes from the plan's own start. NULL packs this stop end
+    # to end behind the ones before it, which is what a stop nobody has
+    # given a time to means — see app/derive.py item_start_minutes, which
+    # resolves the stored column by the same rule.
+    offset_minutes: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> "PlanItemCreate":
@@ -267,6 +272,24 @@ class PlanCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
+
+
+class ProposalUpdate(BaseModel):
+    """Rewrite a candidate plan — PUT /api/plans/{id}/stops.
+
+    The whole set, not a patch of it: a proposal is a window plus an
+    ordered list of stops with times, and there is no partial edit of that
+    worth an endpoint. It is also exactly what the propose screen holds
+    while someone is working, so the screen that builds a set and the one
+    that edits a set can be the same screen sending the same body.
+
+    The window is deliberately absent. Every option in a contest spans
+    exactly the contest's hours, so editing a set never moves them.
+    """
+
+    label: str = ""
+    rationale: str = ""
+    items: list[PlanItemCreate] = Field(min_length=1)
 
 
 class PlanMove(BaseModel):

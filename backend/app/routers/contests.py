@@ -17,15 +17,18 @@ from ..schemas import (
     LockRequest,
     PlanItemCreate,
     PlanOut,
+    ProposalUpdate,
     VoteToggle,
 )
 from .plans import (
     _add_items,
     contributor_for_request,
+    ensure_unique_stops,
     find_overlapping_plan,
     find_overlapping_plans,
     occupied_detail,
     plan_schema_kwargs,
+    validate_stop_layout,
 )
 
 router = APIRouter(prefix="/api", tags=["contests"])
@@ -210,21 +213,11 @@ def open_block_contest(
     if not items:
         raise HTTPException(status_code=400, detail="A block needs at least one stop")
 
-    seen: set[tuple[str, int]] = set()
-    for item in items:
-        key = ("pin", item.pin_id) if item.pin_id is not None else ("travel", item.travel_item_id)
-        if key in seen:
-            raise HTTPException(status_code=400, detail="A block can only hold each item once")
-        seen.add(key)
-
-    window_minutes = minutes_between(ends_at, starts_at)
-    planned = sum(item.duration_minutes or 0 for item in items)
-    # Only checkable for stops that carry an explicit trim; an untrimmed
-    # stop's duration lives on the pin, and is validated client-side where
-    # the whole list is in hand. The structural guarantee — stops pack end
-    # to end, so they can't overlap each other — holds either way.
-    if planned > window_minutes:
-        raise HTTPException(status_code=400, detail="Those stops don't fit in the hours you claimed")
+    ensure_unique_stops(items)
+    # Stops now carry their own start times, so "do they fit" is no longer
+    # a sum against the window — it is a layout, and it is checked the same
+    # way here, on a published draft, and on an edited set.
+    validate_stop_layout(db, items, minutes_between(ends_at, starts_at))
 
     # A locked plan is a fixed hour, not a proposal: the ferry leaves when
     # it leaves. Step 2's drag clips the selection at one rather than
@@ -304,9 +297,9 @@ def open_block_contest(
     )
     db.add(proposal)
     db.flush()
-    # offset_minutes stays NULL on every stop: a proposal's stops pack end
-    # to end from the window start, which is what makes overlap between
-    # them structurally impossible (feature spec §5.3).
+    # Stops keep whatever times the propose screen gave them: NULL where
+    # they simply follow the stop before, an explicit offset where free
+    # time was asked for in front of them.
     _add_items(db, proposal, items)
     db.flush()
     bus.publish(trip_id, "plan.placed", {"plan_id": proposal.id, "contest_id": contest.id})
@@ -366,6 +359,7 @@ def publish_plan(
             pin_id=item.pin_id,
             travel_item_id=item.travel_item_id,
             duration_minutes=item.duration_minutes,
+            offset_minutes=item.offset_minutes,
         )
         for item in plan.items
     ]
@@ -392,6 +386,88 @@ def get_contest(contest_id: int, request: Request, db: Session = Depends(get_db)
     contest = db.get(Contest, contest_id)
     if not contest:
         raise HTTPException(status_code=404, detail="Contest not found")
+    return _contest_to_schema(contest, db, request)
+
+
+@router.put("/plans/{plan_id}/stops", response_model=ContestOut)
+def update_proposal(
+    plan_id: int,
+    payload: ProposalUpdate,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    """Rewrite one candidate plan: its stops, their times, its name and its
+    case. The body is the same shape open_block_contest takes, minus the
+    window, because editing a set and building one are the same act — the
+    propose screen sends this instead of POST /contests when it was opened
+    on an option that already exists.
+
+    The window is not editable here and is not in the body. Every option in
+    a contest spans exactly the contest's hours; an option that moved them
+    would no longer be an answer to the same question, and the hours
+    themselves are already claimed against the rest of the calendar.
+
+    Votes cast for this plan are cleared. Someone voting for "ruins first,
+    beach after" voted for a list of places in an arrangement of hours;
+    silently keeping the tally after either changes would leave their vote
+    attached to a plan they never saw."""
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    if plan.status != PlanStatus.contested or plan.contest_id is None:
+        # A placed plan is moved with PATCH /api/plans/{id}; a locked one is
+        # reopened first. This endpoint is only about options inside a live
+        # decision.
+        raise HTTPException(status_code=409, detail="Only a candidate plan in an open vote can be edited")
+    contest = db.get(Contest, plan.contest_id)
+    if contest is None or contest.status != ContestStatus.open:
+        raise HTTPException(status_code=409, detail="That decision is already locked")
+    if plan.created_by_id is None:
+        # The incumbent is not a proposal anyone wrote — it is the board as
+        # it stood when the hours were claimed, assembled by the capture in
+        # _capture_into_incumbent. Editing it would change the status quo
+        # under the people being asked whether to keep it.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "The set already on the board can't be edited. Add a set of your own to suggest something else.",
+                "plan_id": plan.id,
+            },
+        )
+
+    contributor = get_current_contributor(trip_id=plan.trip_id, principal=principal, db=db)
+    if plan.created_by_id != contributor.id and not contributor.is_owner:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who proposed this set, or the trip owner, can edit it",
+        )
+
+    ensure_unique_stops(payload.items)
+    validate_stop_layout(db, payload.items, minutes_between(plan.ends_at, plan.starts_at))
+
+    plan.label = payload.label
+    plan.rationale = payload.rationale
+    # Replaced wholesale rather than reconciled: the submitted list is the
+    # set, and matching rows up to preserve ids would buy nothing — a
+    # PlanItem holds no state of its own beyond what is in the payload, and
+    # deleting one never touches the pin behind it.
+    for item in list(plan.items):
+        db.delete(item)
+    db.flush()
+    _add_items(db, plan, payload.items)
+
+    stale = db.scalars(select(Vote).where(Vote.contest_id == contest.id, Vote.plan_id == plan.id)).all()
+    for vote in stale:
+        db.delete(vote)
+
+    db.commit()
+    db.refresh(contest)
+    bus.publish(
+        plan.trip_id,
+        "plan.revised",
+        {"plan_id": plan.id, "contest_id": contest.id, "votes_cleared": len(stale)},
+    )
     return _contest_to_schema(contest, db, request)
 
 
