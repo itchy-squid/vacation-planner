@@ -1032,7 +1032,7 @@ function StepFour({
               majority is shown as a state rather than an outcome (feature
               spec decision 4). */}
           <div style={{ marginTop: 10, font: "400 12px var(--font-sans)", color: "var(--text-muted)" }}>
-            The block shows as contested on {dayLabel.toLowerCase()} until the trip owner picks a set.
+            The block shows as proposed on {dayLabel.toLowerCase()} until the trip owner picks a set.
           </div>
         </div>
 

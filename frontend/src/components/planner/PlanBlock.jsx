@@ -72,7 +72,15 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
-            {startLabel}–{endLabel} · contested
+            {/* "proposed", though the status is `contested`. The status
+                names the slot's situation; this label names the block the
+                reader is looking at, and a lone proposal on an empty
+                afternoon is not in a fight with anything — a contest is
+                legal with a single option and no incumbent (proposals
+                spec §6.2). Where there really are several, the grid packs
+                them into side-by-side columns, so the competition is
+                visible without a word for it. */}
+            {startLabel}–{endLabel} · proposed
           </div>
         )}
       </div>

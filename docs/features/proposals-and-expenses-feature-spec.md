@@ -387,11 +387,30 @@ Header: back / `Review` / `DAY N`.
 4. **Vote card** — white, radius 12, padding 14: "Goes to a vote" (14px/600)
    with the planner count right (mono 10px `#8e8e93`), a row of 26px
    `#e4e4e7` initial avatars (reuse `AvatarStack`), and a 12px `#8e8e93`
-   explainer. **Copy amended (decision 4):** "The block shows as contested
-   on Day 3 until the trip owner picks a set."
+   explainer. **Copy amended (decision 4):** "The block shows as proposed
+   on Day 3 until the trip owner picks a set." ("proposed", not
+   "contested" — see §5.5.)
 5. Footer, 10px gap: `Save draft` (1px `#e0e0e3`, radius 10, padding 14/16,
    15px `#54545a`) and a flex-1 `#9d2d63` radius-10 **Send to vote**
    (15px/600 `#fff`).
+
+### 5.5 "Proposed", not "contested", on the calendar
+
+**(amends scheduling spec "Calendar grid")** A plan with status
+`contested` draws on the day grid with the meta line `13:00–18:00 ·
+proposed`. The status name is unchanged — it is the slot's situation, and
+every server rule in §6 still reads it — but it is the wrong word for the
+block a person is looking at: a contest is legal with a **single option
+and no incumbent** (§6.2), so the common case is one lone dashed block on
+an empty afternoon announcing a fight it is not in.
+
+Where a window really does hold several options, each is its own `Plan`
+spanning the same hours, so the grid's column-packing sweep lays them
+side by side. The competition is visible in the layout; it does not need
+a word, and the same word would then have to mean both situations.
+
+The status name still surfaces in one place a reader can reach it — the
+compare screen, where the contest, not the block, is the subject.
 
 ---
 
