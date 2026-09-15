@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..auth import Principal, get_current_contributor, get_current_principal, get_principal
+from ..custom_events import forget_orphaned_travel_items, publish_forgotten, travel_item_ids_of
 from ..db import get_db
 from ..derive import item_start_minutes, plan_range_minutes, plan_totals
 from ..events import bus
@@ -332,10 +333,17 @@ def delete_plan(
 
     trip_id = plan.trip_id
     was_draft = plan.status == PlanStatus.draft
+    # Removing a plan from the calendar (or discarding a draft) takes its
+    # custom events with it rather than dropping them into the unplaced
+    # list — see app/custom_events.py. Pins are untouched and go back to
+    # the tray as before.
+    orphan_candidates = travel_item_ids_of([plan])
     db.delete(plan)
+    forgotten = forget_orphaned_travel_items(db, orphan_candidates)
     db.commit()
     if not was_draft:
         bus.publish(trip_id, "plan.removed", {"plan_id": plan_id})
+    publish_forgotten(forgotten)
     return None
 
 
@@ -348,8 +356,8 @@ def lock_plan(
     """Owner-only. Locks a placed/pencilled plan directly, with no contest
     involved — the reversible companion to reopen_plan
     (routers/contests.py). A contested plan must still go through
-    POST /api/contests/{contest_id}/lock instead, since that's what also
-    resolves the contest and cleans up its losing siblings; this endpoint
+    POST /api/contests/{contest_id}/pick instead, since that's what also
+    settles the contest and cleans up its options; this endpoint
     409s that case away by only ever accepting placed/pencilled (see spec
     "Locking").
 

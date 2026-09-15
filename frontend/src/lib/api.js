@@ -191,8 +191,11 @@ export const api = {
 
   toggleContestVote: (contestId, planId) =>
     request(`/api/contests/${contestId}/vote`, { method: "POST", body: { plan_id: planId } }),
-  lockContest: (contestId, planId) =>
-    request(`/api/contests/${contestId}/lock`, { method: "POST", body: { plan_id: planId } }),
+  // Settles a decision: the chosen set's stops go onto the calendar as
+  // separate placed plans, and the contest is deleted. Returns
+  // { placed_plans }.
+  pickSet: (contestId, planId) =>
+    request(`/api/contests/${contestId}/pick`, { method: "POST", body: { plan_id: planId } }),
   reopenPlan: (planId) => request(`/api/plans/${planId}/reopen`, { method: "POST" }),
 
   listTravelItems: (tripId) => request(`/api/trips/${tripId}/travel-items`),

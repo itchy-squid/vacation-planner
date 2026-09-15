@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..auth import Principal, get_current_contributor, get_current_principal
+from ..custom_events import forget_orphaned_travel_items, publish_forgotten, travel_item_ids_of
 from ..db import get_db
 from ..derive import item_duration_minutes, item_start_minutes
 from ..events import bus
@@ -14,8 +15,9 @@ from ..schemas import (
     ContestOut,
     ContestPlanOut,
     ContestProposeCreate,
-    LockRequest,
+    ContestPicked,
     PlanItemCreate,
+    PickRequest,
     PlanOut,
     ProposalUpdate,
     VoteToggle,
@@ -123,18 +125,19 @@ def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan])
     """Fold every plan already in the window into a single "on the board"
     option spanning the whole window.
 
-    One option, not one per captured plan, because a contest resolves by
-    locking exactly one of its options: if the hours held three plans and
+    One option, not one per captured plan, because a contest is settled by
+    picking exactly one of its options: if the hours held three plans and
     the group votes to keep things as they are, that has to be one thing to
     vote for. Each captured stop keeps its real clock time via an explicit
     offset_minutes, so a 14:00 dinner inside a 13:00–18:00 window still
     reads 14:00 on the compare screen instead of sliding to the window's
     start.
 
-    Destructive in the same way locking already is: the captured plans are
-    deleted, and reopening the contest later does not un-merge them. That
-    matches the existing rule that reopening "does not restore any plans
-    deleted at lock time" — see reopen_plan below."""
+    Destructive: the captured plans are deleted. If the group keeps the
+    board, picking this option puts each captured stop back on the
+    calendar as its own plan (pick_set), so a board of three separate
+    plans comes back as three — not the originals, but the same stops at
+    the same times."""
     if not captured:
         return None
 
@@ -249,7 +252,7 @@ def open_block_contest(
         exact = [c for c in open_contests if same_moment(c.starts_at, starts_at) and same_moment(c.ends_at, ends_at)]
         if len(open_contests) > 1 or not exact:
             # Two contests can't share hours, and a half-overlapping
-            # proposal would mean locking one could invalidate the other.
+            # proposal would mean settling one could invalidate the other.
             # Naming the hours already out for a vote is what lets step 2
             # say which part of the drag is the problem.
             clash = open_contests[0]
@@ -452,10 +455,14 @@ def update_proposal(
     # set, and matching rows up to preserve ids would buy nothing — a
     # PlanItem holds no state of its own beyond what is in the payload, and
     # deleting one never touches the pin behind it.
+    dropped = {item.travel_item_id for item in plan.items if item.travel_item_id is not None}
     for item in list(plan.items):
         db.delete(item)
     db.flush()
     _add_items(db, plan, payload.items)
+    # A custom event taken out of the set, and used nowhere else, goes
+    # rather than lingering in the unplaced list (app/custom_events.py).
+    forgotten = forget_orphaned_travel_items(db, dropped)
 
     stale = db.scalars(select(Vote).where(Vote.contest_id == contest.id, Vote.plan_id == plan.id)).all()
     for vote in stale:
@@ -468,6 +475,7 @@ def update_proposal(
         "plan.revised",
         {"plan_id": plan.id, "contest_id": contest.id, "votes_cleared": len(stale)},
     )
+    publish_forgotten(forgotten)
     return _contest_to_schema(contest, db, request)
 
 
@@ -501,41 +509,83 @@ def toggle_vote(
     return _contest_to_schema(contest, db, request)
 
 
-@router.post("/contests/{contest_id}/lock", response_model=ContestOut)
-def lock_contest(
+@router.post("/contests/{contest_id}/pick", response_model=ContestPicked)
+def pick_set(
     contest_id: int,
-    payload: LockRequest,
-    request: Request,
+    payload: PickRequest,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ):
-    """Owner-only. Locks the given plan and deletes every other plan in
-    the contest — the underlying pins/travel items are untouched and
-    become unplaced again (see spec "Locking"). A majority in the tally is
-    advisory; this is still what resolves the contest."""
+    """Owner-only. Settles the decision by putting the chosen set on the
+    calendar — not as one locked block spanning the whole window, but as
+    one ordinary `placed` plan per stop, at the time that stop had in the
+    set. Each can then be moved, resized or removed like anything else on
+    the calendar. A majority in the tally is advisory; this is still what
+    settles the contest.
+
+    Everything else about the decision goes: every option (the chosen one
+    included, now that its stops have their own plans), the votes, and the
+    contest row itself. Pins from the other sets become unplaced again;
+    custom events only the other sets used are deleted (app/custom_events.py).
+
+    No overlap check is needed: the contest owned its window outright, and
+    every stop in a set lies inside that window (validate_stop_layout)."""
+    from .plans import plan_to_schema  # local import, same as reopen_plan
+
     contest = db.get(Contest, contest_id)
     if not contest:
         raise HTTPException(status_code=404, detail="Contest not found")
+    if contest.status != ContestStatus.open:
+        raise HTTPException(status_code=409, detail="That decision is already settled")
     contributor = get_current_contributor(trip_id=contest.trip_id, principal=principal, db=db)
     if not contributor.is_owner:
-        raise HTTPException(status_code=403, detail="Only the trip owner can lock a contest")
+        raise HTTPException(status_code=403, detail="Only the trip owner can pick a set")
 
-    winning = db.get(Plan, payload.plan_id)
-    if not winning or winning.contest_id != contest_id:
+    chosen = db.get(Plan, payload.plan_id)
+    if not chosen or chosen.contest_id != contest_id:
         raise HTTPException(status_code=404, detail="That plan is not part of this contest")
 
-    for p in list(contest.plans):
-        if p.id == winning.id:
-            p.status = PlanStatus.locked
-        else:
-            db.delete(p)
-    contest.status = ContestStatus.resolved
-    contest.winning_plan_id = winning.id
-    contest.resolved_at = _now()
+    trip_id = contest.trip_id
+    orphan_candidates = travel_item_ids_of(contest.plans)
+
+    placed: list[Plan] = []
+    for item in sorted(chosen.items, key=lambda i: i.position):
+        start = item_start_minutes(chosen, item)
+        duration = item_duration_minutes(item)
+        plan = Plan(
+            trip_id=trip_id,
+            starts_at=chosen.starts_at + timedelta(minutes=start),
+            ends_at=chosen.starts_at + timedelta(minutes=start + duration),
+            color=chosen.color,
+            status=PlanStatus.placed,
+            created_by_id=chosen.created_by_id,
+        )
+        db.add(plan)
+        db.flush()
+        db.add(
+            PlanItem(
+                plan_id=plan.id,
+                pin_id=item.pin_id,
+                travel_item_id=item.travel_item_id,
+                position=0,
+                # A trim made in the set stays a trim; an untrimmed stop keeps
+                # tracking its pin's own duration, as it did in the set.
+                duration_minutes=item.duration_minutes,
+            )
+        )
+        placed.append(plan)
+
+    contest.winning_plan_id = None
+    db.flush()
+    db.delete(contest)  # cascades to its plans, their items, and the votes
+    forgotten = forget_orphaned_travel_items(db, orphan_candidates)
     db.commit()
-    bus.publish(contest.trip_id, "contest.resolved", {"contest_id": contest_id, "plan_id": winning.id})
-    db.refresh(contest)
-    return _contest_to_schema(contest, db, request)
+
+    bus.publish(trip_id, "contest.resolved", {"contest_id": contest_id, "plan_ids": [p.id for p in placed]})
+    publish_forgotten(forgotten)
+    for plan in placed:
+        db.refresh(plan)
+    return ContestPicked(placed_plans=[plan_to_schema(plan) for plan in placed])
 
 
 @router.post("/plans/{plan_id}/reopen", response_model=PlanOut)

@@ -110,6 +110,10 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   // reopening it (routers/contests.py reopen_plan tolerates a null
   // contest_id) is always safe to offer right here.
   const isLocked = plan.status === "locked";
+  const isCustomEvent = plan.items.length > 0 && plan.items.every((i) => i.travelItemId != null);
+  const clearLabel = isCustomEvent
+    ? "Clear start time — deletes this event"
+    : "Clear start time — removes this item from the schedule";
   const endMinute = startMinute + durationMinutes;
   const timeValue = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
 
@@ -212,10 +216,12 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     }
   }
 
-  // The "clear" (x) on Start time — unplaces only, no confirmation needed.
-  // The pin/travel item itself is untouched and lands back in the
-  // unscheduled tray (spec "Moving / unplacing"); you can just place the
-  // same item again, so this behaves like clearing any other field.
+  // The "clear" (x) on Start time — unplaces, no confirmation needed.
+  // A pin is untouched and lands back in the unscheduled tray (spec
+  // "Moving / unplacing"); you can just place it again, so this behaves
+  // like clearing any other field. A custom event has no tray to go back
+  // to — the server deletes it along with the plan
+  // (backend/app/custom_events.py) — so for one of those the ✕ says so.
   function handleClearStart() {
     if (clearing || deleting || !editable) return;
     setClearing(true);
@@ -272,9 +278,11 @@ export default function PlanDetailsSheet({ planId, onClose }) {
       setError("Couldn't delete this item — try again.");
       return;
     }
-    if (!ref) {
-      // No single underlying item to delete (defensive — every plan the
-      // app creates today has exactly one). Unplacing is the best this
+    if (!ref || ref.kind === "travel") {
+      // A custom event is already gone: unplacing deleted it server-side
+      // (backend/app/custom_events.py), so there's nothing left to delete.
+      // And with no single underlying item (defensive — every plan the
+      // app creates today has exactly one), unplacing is the best this
       // sheet can do for a multi-item plan.
       onClose();
       return;
@@ -443,8 +451,8 @@ export default function PlanDetailsSheet({ planId, onClose }) {
                     type="button"
                     onClick={handleClearStart}
                     disabled={clearing || deleting}
-                    aria-label="Clear start time — removes this item from the schedule"
-                    title="Clear — removes this item from the schedule"
+                    aria-label={clearLabel}
+                    title={clearLabel}
                     style={{
                       position: "absolute",
                       top: "50%",

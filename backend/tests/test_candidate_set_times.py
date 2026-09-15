@@ -314,17 +314,18 @@ def test_the_set_already_on_the_board_cannot_be_edited(client, trip):
     assert "already on the board" in res.json()["detail"]["message"]
 
 
-def test_a_locked_decision_cannot_be_edited(client, trip):
+def test_a_settled_decision_cannot_be_edited(client, trip):
     trip.place(start=840, end=900, pin="tide")
     body = propose(client, trip, start=780, end=1080, items=[stop(trip, "vase")]).json()
     mine = option(body, "B")
     client.post(
-        f"/api/contests/{body['id']}/lock",
+        f"/api/contests/{body['id']}/pick",
         json={"plan_id": mine["id"]},
         headers=as_user("mei@example.com"),
     )
 
-    assert edit(client, mine["id"], [stop(trip, "vase", offset=30)]).status_code == 409
+    # The option itself is gone — its stop is a plain plan on the calendar now.
+    assert edit(client, mine["id"], [stop(trip, "vase", offset=30)]).status_code == 404
 
 
 def test_a_placed_plan_is_moved_not_edited(client, trip):
@@ -334,19 +335,21 @@ def test_a_placed_plan_is_moved_not_edited(client, trip):
     assert edit(client, plan.id, [stop(trip, "vase")]).status_code == 409
 
 
-def test_an_edited_set_keeps_its_shape_through_a_lock(client, trip, db):
-    """The winning option keeps its times when it goes onto the board, so
-    the day people agreed to is the day the calendar then shows."""
+def test_an_edited_set_keeps_its_shape_when_picked(client, trip, db):
+    """Each stop goes onto the board at the time it had in the set, so the
+    day people agreed to is the day the calendar then shows."""
     body = propose(client, trip, start=780, end=1080, items=[stop(trip, "vase")]).json()
     mine = option(body, "A")
     edit(client, mine["id"], [stop(trip, "vase", offset=0), stop(trip, "trail", offset=180)])
-    client.post(
-        f"/api/contests/{body['id']}/lock",
+    res = client.post(
+        f"/api/contests/{body['id']}/pick",
         json={"plan_id": mine["id"]},
         headers=as_user("mei@example.com"),
     )
+    assert res.status_code == 200, res.text
 
     reload(db)
-    plan = client.get(f"/api/plans/{mine['id']}").json()
-    assert plan["status"] == PlanStatus.locked.value
-    assert starts(plan) == [780, 960]
+    plans = sorted(client.get(f"/api/trips/{trip.id}/plans").json(), key=lambda p: p["starts_at"])
+    assert [p["status"] for p in plans] == ["placed", "placed"]
+    assert [p["starts_at"][11:16] for p in plans] == ["13:00", "16:00"]
+    assert [len(p["items"]) for p in plans] == [1, 1]

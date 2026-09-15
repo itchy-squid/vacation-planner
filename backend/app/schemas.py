@@ -357,7 +357,7 @@ class ContestOut(BaseModel):
     contributor_count: int
     # The plan holding strictly more than half of contributor_count, or
     # None. Advisory only — nothing resolves automatically; the owner still
-    # locks (feature spec decision 4).
+    # picks a set (feature spec decision 4).
     majority_plan_id: int | None = None
     # Which plan the requesting principal has voted for in this contest, if
     # any — lets the frontend show "Voted ✓" without a separate lookup. See
@@ -369,8 +369,15 @@ class VoteToggle(BaseModel):
     plan_id: int
 
 
-class LockRequest(BaseModel):
+class PickRequest(BaseModel):
     plan_id: int
+
+
+class ContestPicked(BaseModel):
+    """What picking a set leaves behind: one placed plan per stop. The
+    contest itself is gone — see routers/contests.py pick_set."""
+
+    placed_plans: list[PlanOut]
 
 
 class CommentCreate(BaseModel):

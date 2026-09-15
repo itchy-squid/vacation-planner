@@ -21,7 +21,7 @@ import { coordsForPin } from "../lib/mapLayout";
 // "Set C" draft: the backend has a real propose-alternative endpoint now
 // (routers/contests.py propose_alternative), so every competing plan here
 // is a real, persisted Plan. Vote tallies and "did I vote for this" are
-// fetched fresh via api.getContest() on mount and after every vote/lock/
+// fetched fresh via api.getContest() on mount and after every vote/
 // reopen, rather than normalized into the global PlannerContext store —
 // see state/PlannerContext.jsx's header comment for why.
 //
@@ -174,15 +174,21 @@ export default function CompareSets() {
     }
   }
 
-  async function handleLock(planId) {
+  // Picking a set doesn't lock anything: its stops go onto the calendar
+  // as ordinary events, one per stop, and the decision itself is deleted
+  // (routers/contests.py pick_set). There's no contest left to show, so
+  // this goes back to the day those events are now on.
+  async function handlePick(planId) {
     if (busy) return;
     setNotice("");
     setBusy(true);
+    const dayIndex = dayIndexOf(contest.starts_at, trip.startDate);
     try {
-      await api.lockContest(contestId, planId);
-      await refetch();
+      await api.pickSet(contestId, planId);
       await dispatch({ type: "REFRESH_PLANS_AND_ITEMS" });
-    } finally {
+      navigate(`/trips/${trip.id}/schedule/${dayIndex}`, { replace: true });
+    } catch (err) {
+      setNotice(err.message || "Couldn't put that set on the calendar.");
       setBusy(false);
     }
   }
@@ -311,9 +317,10 @@ export default function CompareSets() {
                 onEdit={() => openProposeScreen({ editPlanId: s.id })}
                 voted={s.voted}
                 onVote={() => handleVote(s.id)}
-                onLock={() => handleLock(s.id)}
+                onPick={() => handlePick(s.id)}
                 isOwner={currentUser.isOwner && !isResolved}
                 ownerName={owner?.name}
+                otherSetCount={displaySets.length - 1}
               />
             ))}
           </div>
@@ -370,7 +377,7 @@ export default function CompareSets() {
               ? "This decision is locked. Reopening removes the lock but does not bring back the other option — it would need to be proposed again."
               : contest.majority_plan_id
               ? `More than half the group has picked a set. Nothing changes until ${
-                  owner?.name ? `${owner.name} locks it in` : "the trip owner locks it in"
+                  owner?.name ? `${owner.name} puts it on the calendar` : "the trip owner puts it on the calendar"
                 }.`
               : "Selecting a plan highlights its pins and draws its route on the map above. Nothing else moves."}
           </div>

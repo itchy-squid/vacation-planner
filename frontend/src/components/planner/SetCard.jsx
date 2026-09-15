@@ -1,5 +1,13 @@
+import { useEffect, useRef, useState } from "react";
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
 import MetricTile from "./MetricTile";
+
+// Picking a set puts its stops on the calendar and deletes every other set
+// in the decision, with no way back — so the button takes two taps, the
+// same "confirm?" treatment as "Delete permanently" in
+// PlanDetailsSheet.jsx. The window is longer than that one's because
+// there's a sentence to read in it.
+const PICK_CONFIRM_WINDOW_MS = 5000;
 
 // Only the selected card expands. Selection border/shadow only — never a
 // background change. See handoff README screen 5 "Set cards".
@@ -30,10 +38,36 @@ export default function SetCard({
   onEdit,
   voted,
   onVote,
-  onLock,
+  onPick,
   isOwner,
   ownerName,
+  otherSetCount = 0,
 }) {
+  const [pickArmed, setPickArmed] = useState(false);
+  const disarmRef = useRef(null);
+  useEffect(() => () => clearTimeout(disarmRef.current), []);
+  // Collapsing the card (selecting another) stands the confirm down, so a
+  // stale "confirm?" never waits on a card nobody is looking at.
+  useEffect(() => {
+    if (!selected) {
+      clearTimeout(disarmRef.current);
+      setPickArmed(false);
+    }
+  }, [selected]);
+
+  function handlePickTap(e) {
+    e.stopPropagation();
+    if (!pickArmed) {
+      setPickArmed(true);
+      clearTimeout(disarmRef.current);
+      disarmRef.current = setTimeout(() => setPickArmed(false), PICK_CONFIRM_WINDOW_MS);
+      return;
+    }
+    clearTimeout(disarmRef.current);
+    setPickArmed(false);
+    onPick();
+  }
+
   return (
     <div
       style={{
@@ -166,19 +200,47 @@ export default function SetCard({
             {isOwner ? (
               <button
                 type="button"
-                onClick={onLock}
-                style={{ flex: 1, height: 40, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", font: "600 13px var(--font-sans)" }}
+                onClick={handlePickTap}
+                style={{
+                  flex: 1,
+                  height: 40,
+                  borderRadius: "var(--radius-lg)",
+                  background: pickArmed ? "var(--danger, #b3261e)" : "var(--surface-inverse)",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  font: "600 13px var(--font-sans)",
+                  transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
+                }}
               >
                 {/* A majority doesn't resolve anything by itself — the
                     owner still decides, and the label says which of the
                     two things they're doing. */}
-                {isMajority ? "Lock in the majority" : "Lock this set"}
+                {pickArmed ? "confirm?" : isMajority ? "Go with the majority" : "Pick this set"}
               </button>
             ) : null}
           </div>
+          {isOwner && pickArmed ? (
+            <div
+              role="alert"
+              style={{
+                marginTop: 8,
+                padding: "8px 11px",
+                borderRadius: "var(--radius-md)",
+                background: "var(--warn-tint, #fdf1e6)",
+                font: "500 11.5px/1.45 var(--font-sans)",
+                color: "var(--warn, #a15c1a)",
+              }}
+            >
+              {otherSetCount > 0
+                ? `Tap again to put this set's stops on the calendar. The other ${otherSetCount === 1 ? "set" : `${otherSetCount} sets`} for these hours will be forgotten, along with any custom events only ${otherSetCount === 1 ? "it uses" : "they use"}. This can't be undone.`
+                : "Tap again to put this set's stops on the calendar."}
+            </div>
+          ) : null}
           {!isOwner ? (
             <div style={{ marginTop: 8, font: "400 10.5px var(--font-sans)", color: "var(--text-muted)" }}>
-              {ownerName ? `Only ${ownerName} (owner) can lock.` : "Only the trip owner can lock."} Everyone else can vote and comment.
+              {ownerName ? `Only ${ownerName} (owner) can pick a set.` : "Only the trip owner can pick a set."} Everyone else can vote and comment.
             </div>
           ) : null}
         </div>

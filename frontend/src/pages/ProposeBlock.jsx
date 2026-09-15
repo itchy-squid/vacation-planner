@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import WindowSelection from "../components/planner/WindowSelection";
 import StopList from "../components/planner/StopList";
@@ -6,6 +6,7 @@ import BudgetStrip from "../components/planner/BudgetStrip";
 import ComparisonColumns, { summariseStops } from "../components/planner/ComparisonColumns";
 import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
+import Stepper from "../components/forms/Stepper";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
@@ -71,6 +72,9 @@ const DISCARD_EDITS_PROMPT = {
   stayLabel: "Keep editing",
   leaveLabel: "Discard changes",
 };
+
+const STOP_STEP_MIN = 15;
+const MIN_STOP_MIN = 15;
 
 let stopKeySeed = 0;
 function nextStopKey() {
@@ -146,8 +150,33 @@ export default function ProposeBlock() {
   const [rationale, setRationale] = useState(reopenedDraft?.rationale ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [addingStop, setAddingStop] = useState(false);
-  const [newStop, setNewStop] = useState({ title: "", dur: 60, cost: 0, heads: [] });
+  // The stop form below the list — one form for both ways a stop comes
+  // in. `option` is set when pulling in something that already exists
+  // (its title is fixed; its length, cost and start are still up for
+  // setting here), and null for a new custom event. `gap` is the free time
+  // in front of the new stop, which is what "Starts" edits — the same
+  // reading StopList gives it for a stop already in the list.
+  const [stopForm, setStopForm] = useState(null);
+
+  // Custom events invented on this screen. They exist on the server from
+  // the moment "Add stop" is tapped, so a proposal that is abandoned, or a
+  // stop taken back out before anything was saved, would otherwise leave
+  // them behind in the unplaced list. Anything still in here when the
+  // screen goes away without a save is deleted (the server does the same
+  // for saved plans — backend/app/custom_events.py).
+  const createdHereRef = useRef(new Set());
+  const committedRef = useRef(false);
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
+  useEffect(
+    () => () => {
+      if (committedRef.current) return;
+      const ids = [...createdHereRef.current];
+      createdHereRef.current = new Set();
+      ids.forEach((id) => dispatchRef.current({ type: "DELETE_TRAVEL_ITEM", id }));
+    },
+    []
+  );
 
   // The contest's own window becomes the selection, to the minute —
   // anything less exact would land in the partial-overlap 409 rather than
@@ -347,11 +376,29 @@ export default function ProposeBlock() {
     return { works, ruledOut, ruledOutReasons: [...new Set(ruledOut.flatMap((o) => o.reasons))] };
   }, [pullInOptions]);
 
-  function addStop(option) {
+  function addStop(option, gapBefore = 0) {
     setError("");
-    // A stop pulled in lands straight after the last one. Free time in
-    // front of it is something to ask for, not something to inherit.
-    setStops((current) => [...current, { ...option, gapBefore: 0, key: nextStopKey() }]);
+    // A stop lands straight after the last one unless the form asked for
+    // free time in front of it. Free time is something to ask for, not
+    // something to inherit.
+    setStops((current) => [...current, { ...option, gapBefore: Math.max(0, gapBefore), key: nextStopKey() }]);
+  }
+
+  function openNewStop() {
+    setError("");
+    setStopForm({ option: null, title: "", dur: 60, cost: 0, heads: [], gap: 0 });
+  }
+
+  function openPullIn(option) {
+    setError("");
+    setStopForm({
+      option,
+      title: option.title,
+      dur: option.durationMinutes,
+      cost: (option.costCents ?? 0) / 100,
+      heads: option.heads ?? [],
+      gap: 0,
+    });
   }
 
   function reorder(from, to) {
@@ -376,12 +423,49 @@ export default function ProposeBlock() {
   }
 
   function removeStop(index) {
+    const removed = stops[index];
     setStops((current) => current.filter((_, i) => i !== index));
+    // A custom event made on this screen and taken straight back out has
+    // nothing holding it, so it goes rather than landing in the tray.
+    if (removed?.kind === "travel" && createdHereRef.current.has(removed.refId)) {
+      createdHereRef.current.delete(removed.refId);
+      dispatch({ type: "DELETE_TRAVEL_ITEM", id: removed.refId });
+    }
   }
 
-  async function createInlineStop(e) {
+  async function submitStopForm(e) {
     e.preventDefault();
-    if (!newStop.title.trim()) return;
+    if (!stopForm || busy) return;
+    const durationMinutes = Math.max(MIN_STOP_MIN, Math.round(Number(stopForm.dur) || 0));
+    const costCents = Math.max(0, Math.round((Number(stopForm.cost) || 0) * 100));
+    const gap = stopForm.gap;
+
+    if (stopForm.option) {
+      // Pulling in: the length is this stop's own (a trim, exactly as
+      // StopList's "How long" makes one), but cost belongs to the pin or
+      // event itself, so a changed cost is written back to it.
+      const option = stopForm.option;
+      setBusy(true);
+      try {
+        if (costCents !== (option.costCents ?? 0)) {
+          if (option.kind === "pin") {
+            const result = await dispatch({ type: "PATCH_PIN", id: option.refId, fields: { cost: costCents / 100 } });
+            if (!result.ok) throw new Error(result.error || "Couldn't update that cost.");
+          } else {
+            await dispatch({ type: "PATCH_TRAVEL_ITEM", id: option.refId, fields: { cost_cents: costCents } });
+          }
+        }
+        addStop({ ...option, durationMinutes, costCents }, gap);
+        setStopForm(null);
+      } catch (err) {
+        setError(err.message || "Couldn't add that stop.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (!stopForm.title.trim()) return;
     setBusy(true);
     try {
       // A stop invented here isn't a place anyone pinned, so it's a travel
@@ -390,26 +474,29 @@ export default function ProposeBlock() {
       const created = await dispatch({
         type: "CREATE_TRAVEL_ITEM",
         payload: {
-          title: newStop.title.trim(),
+          title: stopForm.title.trim(),
           kind: "other",
-          duration_minutes: Math.max(15, Number(newStop.dur) || 60),
-          cost_cents: Math.round((Number(newStop.cost) || 0) * 100),
+          duration_minutes: durationMinutes,
+          cost_cents: costCents,
         },
       });
-      if (newStop.heads.length) {
-        await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: newStop.heads } });
+      createdHereRef.current.add(created.id);
+      if (stopForm.heads.length) {
+        await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: stopForm.heads } });
       }
-      addStop({
-        kind: "travel",
-        refId: created.id,
-        title: created.title,
-        baseDurationMinutes: created.dur,
-        durationMinutes: created.dur,
-        costCents: created.costCents ?? Math.round((Number(newStop.cost) || 0) * 100),
-        heads: newStop.heads,
-      });
-      setNewStop({ title: "", dur: 60, cost: 0, heads: [] });
-      setAddingStop(false);
+      addStop(
+        {
+          kind: "travel",
+          refId: created.id,
+          title: created.title,
+          baseDurationMinutes: created.dur,
+          durationMinutes: created.dur,
+          costCents: created.costCents ?? costCents,
+          heads: stopForm.heads,
+        },
+        gap
+      );
+      setStopForm(null);
     } catch (err) {
       setError(err.message || "Couldn't add that stop.");
     } finally {
@@ -494,6 +581,7 @@ export default function ProposeBlock() {
         setError(result.error || "Couldn't save those changes.");
         return;
       }
+      committedRef.current = true;
       // The notice travels with the navigation rather than being raised
       // here: the sentence is about the vote tally, and the vote tally is
       // on the screen being returned to.
@@ -516,6 +604,7 @@ export default function ProposeBlock() {
       : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems() });
     setBusy(false);
     if (result.ok) {
+      committedRef.current = true;
       navigate(`/trips/${trip.id}/contests/${result.contestId}`, { replace: true });
       return;
     }
@@ -555,8 +644,10 @@ export default function ProposeBlock() {
       items: payloadItems(),
     });
     setBusy(false);
-    if (result.ok) navigate(`/trips/${trip.id}/schedule/${dayIndex}`, { replace: true });
-    else setError(result.error || "Couldn't save that draft.");
+    if (result.ok) {
+      committedRef.current = true;
+      navigate(`/trips/${trip.id}/schedule/${dayIndex}`, { replace: true });
+    } else setError(result.error || "Couldn't save that draft.");
   }
 
   async function discardDraft() {
@@ -642,13 +733,13 @@ export default function ProposeBlock() {
           onChangeDuration={changeDuration}
           onChangeGap={changeGap}
           onRemove={removeStop}
-          onAdd={() => setAddingStop(true)}
-          onPullIn={addStop}
-          addingStop={addingStop}
-          newStop={newStop}
-          setNewStop={setNewStop}
-          onCreateStop={createInlineStop}
-          onCancelAdd={() => setAddingStop(false)}
+          onAdd={openNewStop}
+          onPullIn={openPullIn}
+          stopForm={stopForm}
+          setStopForm={setStopForm}
+          onSubmitStop={submitStopForm}
+          onCancelStop={() => setStopForm(null)}
+          nextStartMin={selection.startMin + spanMinutes}
           contributors={contributors}
           travellerCount={travellerCount}
           busy={busy}
@@ -1040,11 +1131,11 @@ function StepThree({
   onRemove,
   onAdd,
   onPullIn,
-  addingStop,
-  newStop,
-  setNewStop,
-  onCreateStop,
-  onCancelAdd,
+  stopForm,
+  setStopForm,
+  onSubmitStop,
+  onCancelStop,
+  nextStartMin,
   contributors,
   travellerCount,
   busy,
@@ -1081,69 +1172,18 @@ function StepThree({
           onAdd={onAdd}
         />
 
-        {addingStop && (
-          <form
-            onSubmit={onCreateStop}
-            style={{
-              background: "var(--surface-card)",
-              border: "1px solid var(--hairline)",
-              borderRadius: "var(--radius-lg)",
-              padding: 13,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            <div className="mono-caption">New stop</div>
-            <input
-              value={newStop.title}
-              autoFocus
-              onChange={(e) => setNewStop((s) => ({ ...s, title: e.target.value }))}
-              placeholder="What is it?"
-              style={{ height: 44, padding: "0 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-strong)", font: "400 13.5px var(--font-sans)" }}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="number"
-                min={15}
-                step={15}
-                value={newStop.dur}
-                onChange={(e) => setNewStop((s) => ({ ...s, dur: e.target.value }))}
-                aria-label="Minutes"
-                style={{ flex: 1, minWidth: 0, height: 44, padding: "0 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-strong)", font: "400 13.5px var(--font-sans)" }}
-              />
-              <input
-                type="number"
-                min={0}
-                value={newStop.cost}
-                onChange={(e) => setNewStop((s) => ({ ...s, cost: e.target.value }))}
-                aria-label="Cost in total"
-                style={{ flex: 1, minWidth: 0, height: 44, padding: "0 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-strong)", font: "400 13.5px var(--font-sans)" }}
-              />
-            </div>
-            <HeadsPicker
-              contributors={contributors}
-              value={newStop.heads}
-              onChange={(heads) => setNewStop((s) => ({ ...s, heads }))}
-              travellerCount={travellerCount}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                onClick={onCancelAdd}
-                style={{ flex: 1, height: 44, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-strong)", font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={busy}
-                style={{ flex: 1, height: 44, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", font: "600 13px var(--font-sans)", opacity: busy ? 0.5 : 1 }}
-              >
-                Add stop
-              </button>
-            </div>
-          </form>
+        {stopForm && (
+          <StopForm
+            form={stopForm}
+            setForm={setStopForm}
+            onSubmit={onSubmitStop}
+            onCancel={onCancelStop}
+            startMin={nextStartMin}
+            windowEndMin={selection.endMin}
+            contributors={contributors}
+            travellerCount={travellerCount}
+            busy={busy}
+          />
         )}
 
         <div>
@@ -1234,6 +1274,139 @@ function StepThree({
         </button>
       </div>
     </>
+  );
+}
+
+const fieldStyle = {
+  width: "100%",
+  height: 46,
+  marginTop: 6,
+  padding: "0 12px",
+  borderRadius: "var(--radius-lg)",
+  border: "1px solid var(--border-strong)",
+  font: "400 13.5px var(--font-sans)",
+};
+
+// Adding a stop, whether it's new or pulled in. "Starts" works the way it
+// does on a stop already in the list (components/planner/StopList.jsx): it
+// edits the free time in front of the stop, so it can never be set earlier
+// than where the last stop ends and two stops still can't overlap.
+function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, contributors, travellerCount, busy }) {
+  const ref = useRef(null);
+  const pulling = Boolean(form.option);
+  const formKey = pulling ? `${form.option.kind}:${form.option.refId}` : "new";
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [formKey]);
+
+  const set = (field) => (value) => setForm((f) => ({ ...f, [field]: value }));
+  const startsAt = startMin + form.gap;
+  const duration = Math.max(MIN_STOP_MIN, Math.round(Number(form.dur) || 0));
+  const endsAt = startsAt + duration;
+  const pastEnd = endsAt > windowEndMin;
+  const canSubmit = !busy && (pulling || form.title.trim());
+
+  return (
+    <form
+      ref={ref}
+      onSubmit={onSubmit}
+      style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--hairline)",
+        borderRadius: "var(--radius-lg)",
+        padding: 13,
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      {pulling ? (
+        <div>
+          <div className="mono-caption">Add stop</div>
+          <div style={{ marginTop: 4, font: "600 14px var(--font-sans)", color: "var(--text-primary)" }}>{form.title}</div>
+        </div>
+      ) : (
+        <label style={{ display: "block" }}>
+          <div className="mono-caption">New stop</div>
+          <input
+            value={form.title}
+            autoFocus
+            onChange={(e) => set("title")(e.target.value)}
+            placeholder="What is it?"
+            style={fieldStyle}
+          />
+        </label>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Stepper
+            label="Starts"
+            valueLabel={clockLabel(startsAt)}
+            onDown={() => set("gap")(Math.max(0, form.gap - STOP_STEP_MIN))}
+            onUp={() => set("gap")(form.gap + STOP_STEP_MIN)}
+          />
+        </div>
+        <label style={{ flex: 1, minWidth: 0 }}>
+          <div className="mono-caption">How long (min)</div>
+          <input
+            type="number"
+            min={MIN_STOP_MIN}
+            step={STOP_STEP_MIN}
+            value={form.dur}
+            onChange={(e) => set("dur")(e.target.value)}
+            style={fieldStyle}
+          />
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <label style={{ flex: 1, minWidth: 0 }}>
+          <div className="mono-caption">Cost, in total ($)</div>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={form.cost}
+            onChange={(e) => set("cost")(e.target.value)}
+            style={fieldStyle}
+          />
+        </label>
+        <div style={{ flex: 1, minWidth: 0 }} />
+      </div>
+
+      <div className="mono-data-sm" style={{ color: pastEnd ? "var(--warn)" : "var(--text-faint)" }}>
+        {pastEnd
+          ? `Ends ${clockLabel(endsAt)} — past the end of the block at ${clockLabel(windowEndMin)}`
+          : `Ends ${clockLabel(endsAt)}`}
+        {form.gap > 0 ? ` · ${fmtMin(form.gap)} free before it` : ""}
+      </div>
+      {pulling && (
+        <div style={{ marginTop: -6, font: "400 11px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+          Changing the cost changes it for this {form.option.kind === "pin" ? "pin" : "event"} everywhere it&rsquo;s used.
+        </div>
+      )}
+
+      {!pulling && (
+        <HeadsPicker contributors={contributors} value={form.heads} onChange={set("heads")} travellerCount={travellerCount} />
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{ flex: 1, height: 44, borderRadius: "var(--radius-lg)", border: "1px solid var(--border-strong)", font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          style={{ flex: 1, height: 44, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", font: "600 13px var(--font-sans)", opacity: canSubmit ? 1 : 0.5 }}
+        >
+          Add stop
+        </button>
+      </div>
+    </form>
   );
 }
 

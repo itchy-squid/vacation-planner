@@ -679,10 +679,15 @@ export function PlannerProvider({ children }) {
         // Re-saving one replaces it rather than PATCHing, because a draft
         // is a whole window plus a whole stop list — there's no partial
         // edit of it worth an endpoint of its own.
+        //
+        // New copy first, old one second. Deleting a plan deletes any
+        // custom event nothing else holds (backend/app/custom_events.py),
+        // so deleting the old draft first would take the custom events
+        // this very save is about to reference with it. Drafts occupy no
+        // time, so the two copies can't collide in between.
         case "SAVE_DRAFT": {
           if (!state.trip) return { ok: false };
           try {
-            if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
             const plan = await api.createPlan(state.trip.id, {
               starts_at: action.startsAt,
               ends_at: action.endsAt,
@@ -691,6 +696,7 @@ export function PlannerProvider({ children }) {
               rationale: action.rationale ?? "",
               items: action.items,
             });
+            if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, planId: plan.id };
           } catch (err) {
@@ -734,10 +740,10 @@ export function PlannerProvider({ children }) {
           }
         }
 
-        // Direct lock/reopen on a plan with no contest attached — the
-        // sheet-driven counterpart to CompareSets.jsx's handleLock/
-        // handleReopen, which go through a contest instead (see
-        // routers/contests.py lock_contest/reopen_plan). Both are
+        // Direct lock/reopen on a plan with no contest attached (picking a
+        // set in CompareSets.jsx doesn't lock anything — see
+        // routers/contests.py pick_set; handleReopen there only matters
+        // for decisions settled before that change). Both are
         // reversible from the same control, so neither needs a
         // confirmation step here, same as UNPLACE_PLAN above.
         case "LOCK_PLAN": {
@@ -791,7 +797,9 @@ export function PlannerProvider({ children }) {
 
         // Permanently deletes the pin itself (backend/app/routers/pins.py) —
         // distinct from UNPLACE_PLAN above, which only removes the Plan/
-        // PlanItem and leaves the pin sitting unscheduled in the tray. The
+        // PlanItem and leaves the pin sitting unscheduled in the tray. (A
+        // custom event doesn't go back to the tray: unplacing deletes it —
+        // backend/app/custom_events.py.) The
         // backend rejects this with 409 while any PlanItem still points at
         // the pin, so callers (components/planner/PlanDetailsSheet.jsx)
         // unplace first when deleting something currently on the calendar.

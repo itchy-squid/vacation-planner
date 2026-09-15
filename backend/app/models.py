@@ -233,11 +233,13 @@ class Plan(Base):
     """One scheduled placement of one or more pins/travel items onto a
     real starts_at/ends_at range. `contest_id` is set only once this plan
     is competing against at least one alternative (see Contest below);
-    a plan with no contest_id is either freely placed/pencilled, or is a
-    `locked` plan that "won" its contest (locking clears its siblings —
-    see routers/contests.py lock_contest — but the winning plan itself
-    keeps contest_id pointing at the now-resolved Contest, since
-    Contest.winning_plan_id needs the reverse lookup too)."""
+    a plan with no contest_id is freely placed/pencilled/locked.
+
+    Picking a set (routers/contests.py pick_set) replaces the whole contest
+    with one plain placed plan per stop, so nothing new carries a
+    contest_id once its decision is settled. Rows from before that change
+    may still be `locked` with contest_id pointing at a `resolved` Contest;
+    reopen_plan still handles those."""
 
     __tablename__ = "plans"
 
@@ -308,8 +310,9 @@ class PlanItem(Base):
 
 class Contest(Base):
     """Created on demand when an alternative is proposed for a range of
-    hours. `winning_plan_id` is set only on resolution (locking) — see
-    routers/contests.py.
+    hours. Picking a set deletes the contest outright (routers/contests.py
+    pick_set); `resolved`/`winning_plan_id` only appear on rows settled by
+    the older lock-the-whole-window behaviour.
 
     The contest owns the window, not its plans: `starts_at`/`ends_at` are
     the hours being decided, and every option in the contest spans exactly
