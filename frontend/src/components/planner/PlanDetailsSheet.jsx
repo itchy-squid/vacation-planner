@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faLock, faLockOpen } from "@fortawesome/free-solid-svg-icons";
+import { faLock, faLockOpen, faArrowUpRightFromSquare } from "@fortawesome/free-solid-svg-icons";
+import { useNavigate } from "react-router-dom";
 import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../../state/PlannerContext";
 import { getTripDays } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
@@ -26,11 +27,20 @@ const SNAP_MIN = 15;
 const DAY_END_MIN = 1440;
 const CONFIRM_WINDOW_MS = 3000;
 
+// Pin links are stored as typed/pasted (often "maps.app/…" with no scheme);
+// window.open would resolve those relative to this app, so add https://
+// when no scheme is present — same test as pages/NewPin.jsx.
+function externalHref(link) {
+  if (!link) return null;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(link) ? link : `https://${link}`;
+}
+
 export default function PlanDetailsSheet({ planId, onClose }) {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const currentUser = useCurrentUser();
-  const { trip, plans } = state;
+  const navigate = useNavigate();
+  const { trip, plans, pins } = state;
 
   const plan = plans.find((p) => p.id === planId);
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
@@ -114,6 +124,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   const clearLabel = isCustomEvent
     ? "Clear start time — deletes this event"
     : "Clear start time — removes this item from the schedule";
+  // The pin behind this plan, when it is a single pin (not a custom event
+  // or a multi-item plan) — drives the "open link" and "pin details"
+  // buttons, which only make sense for pins.
+  const soleItem = plan.items.length === 1 ? plan.items[0] : null;
+  const pinId = soleItem?.pinId ?? null;
+  const pin = pinId != null ? pins[pinId] : null;
+  const pinHref = externalHref(pin?.link);
   const endMinute = startMinute + durationMinutes;
   const timeValue = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
 
@@ -315,8 +332,32 @@ export default function PlanDetailsSheet({ planId, onClose }) {
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
           <div>
             <div className="mono-caption">{isLocked ? "Locked" : plan.status === "pencilled" ? "Unconfirmed" : "Scheduled"}</div>
-            <div className="serif-place" style={{ fontSize: 19, marginTop: 3, color: "var(--text-primary)" }}>
-              {title}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+              <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>
+                {title}
+              </div>
+              {pinHref && (
+                <button
+                  type="button"
+                  onClick={() => window.open(pinHref, "_blank", "noopener,noreferrer")}
+                  aria-label="Open pin link in new tab"
+                  title="Open pin link in new tab"
+                  style={{
+                    flex: "none",
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    background: "var(--surface-page)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <FontAwesomeIcon icon={faArrowUpRightFromSquare} style={{ width: 11, height: 11 }} />
+                </button>
+              )}
             </div>
             <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 3 }}>
               {clockLabel(startMinute)}–{clockLabel(endMinute)}
@@ -480,6 +521,27 @@ export default function PlanDetailsSheet({ planId, onClose }) {
         </div>
 
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          {pinId != null && (
+            // Navigation, not an edit — kept as a neutral full-width button
+            // above the destructive Delete. Routes to pages/EditVisit.jsx,
+            // whose default ("schedule") back destination returns to the
+            // day this pin is placed on.
+            <button
+              type="button"
+              onClick={() => navigate(`/trips/${trip.id}/edit/${pinId}?from=schedule`)}
+              style={{
+                width: "100%",
+                height: 48,
+                borderRadius: "var(--radius-lg)",
+                background: "var(--surface-page)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-primary)",
+                font: "600 14px var(--font-sans)",
+              }}
+            >
+              View pin details
+            </button>
+          )}
           <div>
             <button
               type="button"
