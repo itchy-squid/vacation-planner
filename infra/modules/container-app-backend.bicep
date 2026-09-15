@@ -186,6 +186,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             // two Azure services, no stored credential for either.
             { name: 'AZURE_STORAGE_ACCOUNT_URL', value: storageBlobEndpoint }
             { name: 'AZURE_STORAGE_CONTAINER', value: storageContainerName }
+            // Where app/routers/spa_redirect.py sends non-API navigations
+            // (e.g. Easy Auth's /.auth/login/done "Return to website"
+            // button). The first CORS origin is the SPA by convention.
+            { name: 'FRONTEND_URL', value: corsOriginList[0] == '*' ? '' : corsOriginList[0] }
           ]
           probes: [
             {

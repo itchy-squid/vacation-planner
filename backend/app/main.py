@@ -8,6 +8,7 @@ from .routers import (
     me,
     pins,
     plans,
+    spa_redirect,
     travel_items,
     trips,
 )
@@ -38,3 +39,7 @@ app.include_router(contests.router)
 app.include_router(travel_items.router)
 app.include_router(comments.router)
 app.include_router(events.router)
+
+# Must stay last: it's a catch-all for every GET path the routers above
+# (and FastAPI's own /docs, /redoc, /openapi.json) didn't claim.
+app.include_router(spa_redirect.router)
