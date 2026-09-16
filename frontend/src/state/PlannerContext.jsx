@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { coordsForPin } from "../lib/mapLayout";
 import { formatDateRange, relativeTime } from "../lib/format";
 import { parseApiDateTime } from "../lib/planTime";
+import { roleLabel } from "../lib/roles";
 
 // Remembers which trip was last active so a page refresh reopens it
 // instead of always falling back to the hardcoded "Taiwan" default (see
@@ -49,8 +50,48 @@ function readLastTripId() {
 // calendar picks up a lock/reopen's effect once the user navigates back.
 
 function normalizeContributor(c) {
-  return { id: c.id, name: c.display_name, initial: c.initial, tint: c.tint, isOwner: c.is_owner, email: c.email };
+  return {
+    id: c.id,
+    name: c.display_name,
+    initial: c.initial,
+    tint: c.tint,
+    // owner | planner | companion | reader — see lib/roles.js.
+    role: c.role ?? (c.is_owner ? "owner" : "planner"),
+    isOwner: c.is_owner,
+    email: c.email,
+  };
 }
+
+// A cost the caller isn't allowed to see (no costs:read) arrives as null,
+// which is different from a free item's 0. Keep it null all the way to the
+// screen so nothing renders "$0" for a price the viewer simply can't see.
+function dollarsOrNull(cents) {
+  return cents == null ? null : Math.round(cents / 100);
+}
+
+// Everything the trip screens need to know about the viewer's standing on
+// the active trip, from the trip payload itself (backend TripOut).
+function accessFromTrip(t) {
+  return {
+    role: t.my_role,
+    scopes: t.my_scopes ?? [],
+    owner: t.owner
+      ? { id: t.owner.id, name: t.owner.display_name, email: t.owner.email, initial: t.owner.initial, tint: t.owner.tint }
+      : null,
+    memberCount: t.member_count ?? 0,
+  };
+}
+
+
+// "Your trip" / "Kenji's trip · Reader" — the ownership line on Trips Home.
+export function ownershipLine(trip) {
+  if (!trip) return "";
+  if (trip.role === "owner") return "Your trip";
+  const owner = trip.owner?.name ? `${trip.owner.name}'s trip` : "Shared with you";
+  return `${owner} · ${roleLabel(trip.role)}`;
+}
+
+export { roleLabel };
 
 function normalizePin(p, contributorsById) {
   const addedBy = p.added_by_id ? contributorsById[p.added_by_id] : null;
@@ -65,13 +106,24 @@ function normalizePin(p, contributorsById) {
     cx,
     cy,
     dur: p.duration_minutes,
-    cost: Math.round(p.cost_cents / 100),
+    cost: dollarsOrNull(p.cost_cents),
+    costCents: p.cost_cents ?? null,
+    // Contributor ids sharing this cost; [] means everyone on the trip.
+    // Kept as raw ids rather than resolved contributors so a head who has
+    // since left the trip doesn't silently vanish from the split.
+    heads: p.heads ?? [],
     who: addedBy?.id ?? null,
     whoName: addedBy?.name ?? "Someone",
     addedAgo: relativeTime(p.added_at),
     notes: p.notes,
     link: p.link,
     tags: p.tags,
+    // Chosen from the linked page when the pin was added (see
+    // pages/NewPin.jsx). Null for every pin added before that flow
+    // existed, and for anyone who picked "No image" — surfaces fall back
+    // to the striped placeholder.
+    photoUrl: p.photo_url,
+    photoSourceUrl: p.photo_source_url,
     availabilityRule: p.availability_rule
       ? { days: p.availability_rule.days, bands: p.availability_rule.bands, why: p.availability_rule.reasons }
       : { days: null, bands: null, why: [] },
@@ -86,7 +138,9 @@ function normalizeTravelItem(t, contributorsById) {
     title: t.title,
     kind: t.kind,
     dur: t.duration_minutes,
-    cost: Math.round(t.cost_cents / 100),
+    cost: dollarsOrNull(t.cost_cents),
+    costCents: t.cost_cents ?? null,
+    heads: t.heads ?? [],
     notes: t.notes,
     link: t.link,
     who: addedBy?.id ?? null,
@@ -96,12 +150,25 @@ function normalizeTravelItem(t, contributorsById) {
 }
 
 function normalizePlanItem(it) {
+  const source = it.pin ?? it.travel_item;
   return {
     pinId: it.pin?.id ?? null,
     travelItemId: it.travel_item?.id ?? null,
-    title: it.pin?.title ?? it.travel_item?.title ?? "Untitled",
-    durationMinutes: (it.pin ?? it.travel_item)?.duration_minutes ?? 0,
-    costCents: (it.pin ?? it.travel_item)?.cost_cents ?? 0,
+    title: source?.title ?? "Untitled",
+    // What this placement is actually as long as — the trim if there is
+    // one, the item's own duration otherwise. Same resolution order as
+    // backend/app/derive.py's item_duration.
+    durationMinutes: it.duration_minutes ?? source?.duration_minutes ?? 0,
+    // Kept separately so a screen can tell "trimmed to 90m" from "the pin
+    // is 90m" — that's the difference between the stops list reading
+    // "1H 30M · SHORTENED FROM 3H" and just "1H 30M".
+    durationOverrideMinutes: it.duration_minutes ?? null,
+    baseDurationMinutes: source?.duration_minutes ?? 0,
+    offsetMinutes: it.offset_minutes ?? null,
+    // Served pre-computed by the API so no screen re-derives packing.
+    startMinuteOfDay: it.start_minute_of_day ?? null,
+    costCents: source ? source.cost_cents ?? null : 0,
+    heads: source?.heads ?? [],
     position: it.position,
   };
 }
@@ -116,14 +183,53 @@ function normalizePlan(p) {
     endDt: parseApiDateTime(p.ends_at),
     label: p.label,
     color: p.color,
-    status: p.status, // "placed" | "pencilled" | "contested" | "locked"
+    status: p.status, // "draft" | "placed" | "pencilled" | "contested" | "locked"
     contestId: p.contest_id,
+    createdById: p.created_by_id ?? null,
+    // The proposer's case for this plan, shown to voters on the compare
+    // screen. Empty for anything not proposed through the block flow.
+    rationale: p.rationale ?? "",
     items: (p.items ?? []).map(normalizePlanItem),
     totalDurationMinutes: p.total_duration_minutes,
-    totalCostCents: p.total_cost_cents,
-    movingMinutes: p.moving_minutes,
+    totalCostCents: p.total_cost_cents ?? null,
+    // No movingMinutes: there is one definition of slack now, and it
+    // doesn't subtract a guess at travel time. See backend/app/derive.py.
     slackMinutes: p.slack_minutes,
   };
+}
+
+// The two ways a proposal can be refused, unpacked into something a
+// screen can say out loud. `contest` carries the hours already out for a
+// vote so step 2 can name them; `locked` carries the pinned item the
+// selection should have clipped at. Anything else is a real failure.
+function proposalConflict(err) {
+  if (err.status !== 409) return null;
+  const detail = err.body?.detail;
+  if (!detail || typeof detail === "string") return null;
+  if (detail.contest_id) {
+    return {
+      conflict: "contest",
+      contestId: detail.contest_id,
+      contestStartsAt: detail.starts_at,
+      contestEndsAt: detail.ends_at,
+      message: detail.message,
+    };
+  }
+  if (detail.locked_plan_id) {
+    return { conflict: "locked", lockedPlanId: detail.locked_plan_id, message: detail.message };
+  }
+  return null;
+}
+
+// What the server said, when it said something worth repeating. Refusals
+// from the planning endpoints carry a written sentence — "Vase Rock runs
+// past the end of the block" — and dropping it in favour of the generic
+// "PUT /api/… → 400" would throw away the only part a reader can act on.
+function apiMessage(err) {
+  const detail = err.body?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail?.message) return detail.message;
+  return err.message;
 }
 
 function phaseProgress(phase) {
@@ -193,11 +299,13 @@ async function loadTripView(tripId, trips) {
 
   const otherTrips = await Promise.all(
     otherTripRows.map(async (t) => {
-      const [c, p] = await Promise.all([api.listContributors(t.id), api.listPins(t.id)]);
+      const p = await api.listPins(t.id);
+      const access = accessFromTrip(t);
       return {
         id: t.id,
         name: t.name,
-        meta: `${p.length} pin${p.length === 1 ? "" : "s"} · ${c.length} planning`,
+        meta: `${p.length} pin${p.length === 1 ? "" : "s"} · ${access.memberCount} planning`,
+        ownership: ownershipLine(access),
         progress: phaseProgress(t.phase),
         phase: t.phase,
       };
@@ -225,7 +333,12 @@ async function loadTripView(tripId, trips) {
     return ordered;
   };
   const scheduledPinIds = new Set(
-    plans.flatMap((plan) => plan.items.map((item) => item.pinId)).filter(Boolean)
+    plans
+      // A draft claims nothing — not a slot on the calendar, and not a
+      // region on the home card either.
+      .filter((plan) => plan.status !== "draft")
+      .flatMap((plan) => plan.items.map((item) => item.pinId))
+      .filter(Boolean)
   );
   const scheduledRegionNames = distinctRegionsInOrder(pinsList.filter((p) => scheduledPinIds.has(p.id)));
   const pinnedRegionNames = distinctRegionsInOrder(pinsList);
@@ -252,10 +365,19 @@ async function loadTripView(tripId, trips) {
     endDate: trip.end_date,
     phase: trip.phase,
     contributorCount: contributors.length,
+    // How many people the trip is *costed* for, which is not how many are
+    // planning it. null means "as many as there are contributors" — see
+    // headcountFor below, the one place that fallback is spelled out.
+    travellerCount: trip.traveller_count ?? null,
     metrics: { pins: pinsList.length, regions: regionCount, toDecide: toDecideCount },
+    // The viewer's role and scopes on this trip, plus who owns it. Used to
+    // hide controls the server would refuse anyway — see useCan below.
+    ...accessFromTrip(trip),
   };
 
-  const currentUserId = contributors.find((c) => c.isOwner)?.id ?? contributors[0]?.id ?? null;
+  // The signed-in person's own row on this trip, straight from the server
+  // (TripOut.my_contributor_id) rather than guessed from the roster.
+  const currentUserId = trip.my_contributor_id ?? null;
 
   return {
     trip: tripView,
@@ -351,6 +473,14 @@ function reducer(state, action) {
     case "SET_CURRENT_USER":
       return { ...state, currentUserId: action.id };
 
+    case "SET_MEMBERS":
+      return {
+        ...state,
+        contributors: action.contributors,
+        contributorOverflowCount: Math.max(0, action.contributors.length - 4),
+        trip: state.trip ? { ...state.trip, ...action.trip } : state.trip,
+      };
+
     default:
       return state;
   }
@@ -400,7 +530,9 @@ export function PlannerProvider({ children }) {
         // compare as strings rather than `t.id === tripIdFromUrl`.
         const linkedTrip = tripIdFromUrl ? trips.find((t) => String(t.id) === tripIdFromUrl) : null;
         if (tripIdFromUrl && !linkedTrip) {
-          throw new Error("That link doesn't match a trip we have — it may have been deleted, or the link is wrong.");
+          throw new Error(
+            "That trip isn't in your list. If someone shared it with you, open the invite link they sent to add it."
+          );
         }
         // No trip in the URL: fall back to whichever trip was last active
         // (see rememberLastTripId/readLastTripId above) so a plain
@@ -455,6 +587,78 @@ export function PlannerProvider({ children }) {
             placing: { kind: "travel", refId: item.id, durationMinutes: item.dur, label: item.title },
           });
           return;
+        }
+
+        // Who's on the trip and the viewer's own role changed (someone
+        // joined, left, or had their role changed). Re-reads the roster and
+        // the trip's access fields, then the rest of the trip, since a role
+        // change can change which costs come back.
+        case "REFRESH_MEMBERS": {
+          if (!state.trip) return;
+          const trips = await api.listTrips();
+          if (!trips.some((t) => t.id === state.trip.id)) {
+            // No longer on this trip (removed by the owner).
+            const payload = trips.length ? await loadTripView(trips[0].id, trips) : emptyTripView();
+            dispatch({ type: "LOADED", payload });
+            return { ok: true, removed: true };
+          }
+          const payload = await loadTripView(state.trip.id, trips);
+          dispatch({ type: "LOADED", payload });
+          return { ok: true };
+        }
+
+        // Accept an invite link and make that trip the active one.
+        case "JOIN_TRIP": {
+          try {
+            const joined = await api.acceptInvite(action.token);
+            const trips = await api.listTrips();
+            const payload = await loadTripView(joined.id, trips);
+            dispatch({ type: "LOADED", payload });
+            return { ok: true, tripId: joined.id, tripName: joined.name };
+          } catch (err) {
+            console.error("join failed", err);
+            return { ok: false, error: apiMessage(err), gone: err.status === 404 };
+          }
+        }
+
+        case "LEAVE_TRIP": {
+          if (!state.trip) return { ok: false };
+          try {
+            await api.leaveTrip(state.trip.id);
+            const trips = await api.listTrips();
+            const payload = trips.length ? await loadTripView(trips[0].id, trips) : emptyTripView();
+            dispatch({ type: "LOADED", payload });
+            return { ok: true };
+          } catch (err) {
+            console.error("leave failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "CHANGE_ROLE":
+        case "REMOVE_MEMBER": {
+          if (!state.trip) return { ok: false };
+          try {
+            if (action.type === "CHANGE_ROLE") {
+              await api.changeRole(state.trip.id, action.contributorId, action.role);
+            } else {
+              await api.removeContributor(state.trip.id, action.contributorId);
+            }
+            const [contributorsRaw, tripRaw] = await Promise.all([
+              api.listContributors(state.trip.id),
+              api.getTrip(state.trip.id),
+            ]);
+            const contributors = contributorsRaw.map(normalizeContributor);
+            dispatch({
+              type: "SET_MEMBERS",
+              contributors,
+              trip: { ...accessFromTrip(tripRaw), contributorCount: contributors.length },
+            });
+            return { ok: true };
+          } catch (err) {
+            console.error("member update failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
         }
 
         case "REFRESH_PLANS_AND_ITEMS": {
@@ -543,21 +747,114 @@ export function PlannerProvider({ children }) {
           return;
         }
 
+        // Both proposal entry points land here. The quick sheet is the
+        // degenerate case of the four-step flow: a window exactly one
+        // stop long, no name, no rationale (feature spec §6.6). Keeping
+        // them on one action means the 409 handling below is written once.
+        case "PROPOSE_BLOCK": {
+          if (!state.trip) return { ok: false };
+          try {
+            const contest = await api.proposeBlock(state.trip.id, {
+              starts_at: action.startsAt,
+              ends_at: action.endsAt,
+              label: action.label ?? "",
+              rationale: action.rationale ?? "",
+              items: action.items,
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, contestId: contest.id };
+          } catch (err) {
+            const conflict = proposalConflict(err);
+            if (conflict) return { ok: false, ...conflict };
+            console.error("propose block failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        // Rewrite one candidate plan in an open vote: its stops, their
+        // times, its name, its case. The plan's own hours never move —
+        // every option spans exactly the contest's window — and the votes
+        // cast for it are cleared server side
+        // (backend/app/routers/contests.py::update_proposal).
+        case "EDIT_PROPOSAL": {
+          try {
+            const contest = await api.updateProposal(action.planId, {
+              label: action.label ?? "",
+              rationale: action.rationale ?? "",
+              items: action.items,
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, contest };
+          } catch (err) {
+            console.error("edit proposal failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
         case "CONFIRM_PROPOSE": {
           const sheet = state.proposeSheet;
           if (!sheet || !state.trip) return { ok: false };
+          const result = await dispatchRef.current({
+            type: "PROPOSE_BLOCK",
+            startsAt: action.startsAt,
+            endsAt: action.endsAt,
+            items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
+          });
+          if (result.ok) dispatch({ type: "CLOSE_PROPOSE" });
+          return result;
+        }
+
+        // A draft block: the author's own, occupying no time, invisible to
+        // everyone else until it's published (feature spec §6.4).
+        // Re-saving one replaces it rather than PATCHing, because a draft
+        // is a whole window plus a whole stop list — there's no partial
+        // edit of it worth an endpoint of its own.
+        //
+        // New copy first, old one second. Deleting a plan deletes any
+        // custom event nothing else holds (backend/app/custom_events.py),
+        // so deleting the old draft first would take the custom events
+        // this very save is about to reference with it. Drafts occupy no
+        // time, so the two copies can't collide in between.
+        case "SAVE_DRAFT": {
+          if (!state.trip) return { ok: false };
           try {
-            const contest = await api.proposeAlternative(state.trip.id, {
-              against_plan_id: sheet.targetPlanId,
+            const plan = await api.createPlan(state.trip.id, {
               starts_at: action.startsAt,
               ends_at: action.endsAt,
-              items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
+              status: "draft",
+              label: action.label ?? "",
+              rationale: action.rationale ?? "",
+              items: action.items,
             });
+            if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
-            dispatch({ type: "CLOSE_PROPOSE" });
+            return { ok: true, planId: plan.id };
+          } catch (err) {
+            console.error("save draft failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "PUBLISH_DRAFT": {
+          try {
+            const contest = await api.publishPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, contestId: contest.id };
           } catch (err) {
-            console.error("propose alternative failed", err);
+            const conflict = proposalConflict(err);
+            if (conflict) return { ok: false, ...conflict };
+            console.error("publish draft failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "DISCARD_DRAFT": {
+          try {
+            await api.deletePlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("discard draft failed", err);
             return { ok: false, error: err.message };
           }
         }
@@ -569,6 +866,34 @@ export function PlannerProvider({ children }) {
             return { ok: true };
           } catch (err) {
             console.error("unplace failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        // Direct lock/reopen on a plan with no contest attached (picking a
+        // set in CompareSets.jsx doesn't lock anything — see
+        // routers/contests.py pick_set; handleReopen there only matters
+        // for decisions settled before that change). Both are
+        // reversible from the same control, so neither needs a
+        // confirmation step here, same as UNPLACE_PLAN above.
+        case "LOCK_PLAN": {
+          try {
+            await api.lockPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("lock failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
+        case "REOPEN_PLAN": {
+          try {
+            await api.reopenPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            console.error("reopen failed", err);
             return { ok: false, error: err.message };
           }
         }
@@ -602,7 +927,9 @@ export function PlannerProvider({ children }) {
 
         // Permanently deletes the pin itself (backend/app/routers/pins.py) —
         // distinct from UNPLACE_PLAN above, which only removes the Plan/
-        // PlanItem and leaves the pin sitting unscheduled in the tray. The
+        // PlanItem and leaves the pin sitting unscheduled in the tray. (A
+        // custom event doesn't go back to the tray: unplacing deletes it —
+        // backend/app/custom_events.py.) The
         // backend rejects this with 409 while any PlanItem still points at
         // the pin, so callers (components/planner/PlanDetailsSheet.jsx)
         // unplace first when deleting something currently on the calendar.
@@ -646,6 +973,7 @@ export function PlannerProvider({ children }) {
               id: trip.id,
               name: trip.name,
               meta: "0 pins · 1 planning",
+              ownership: "Your trip",
               progress: phaseProgress(trip.phase),
               phase: trip.phase,
             },
@@ -669,6 +997,7 @@ export function PlannerProvider({ children }) {
               startDate: updated.start_date,
               endDate: updated.end_date,
               phase: updated.phase,
+              travellerCount: updated.traveller_count ?? null,
             },
           });
           return updated;
@@ -710,21 +1039,41 @@ export function PlannerProvider({ children }) {
           const backendFields = {};
           const f = action.fields;
           if ("title" in f) backendFields.title = f.title;
+          if ("region" in f) backendFields.region = f.region;
           if ("dur" in f) backendFields.duration_minutes = f.dur;
           if ("cost" in f) backendFields.cost_cents = Math.round(f.cost * 100);
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;
+          if ("heads" in f) backendFields.heads = f.heads;
+          // A pasted replacement URL, or a cleared field going back to
+          // "no photo" — either way sent as photo_url, same as create
+          // (pages/NewPin.jsx); routers/pins.py re-mirrors it into blob
+          // storage whenever this lands a new external link.
+          if ("photoUrl" in f) backendFields.photo_url = f.photoUrl.trim() || null;
+          // Returns a result rather than swallowing the failure: an
+          // explicit Save (pages/EditVisit.jsx) has to be able to keep the
+          // user on the form and say so when the write didn't land, instead
+          // of navigating away as if it had. Callers that only fire off a
+          // background sync (components/planner/PlanDetailsSheet.jsx) can
+          // still ignore what comes back.
           try {
             const updated = await api.patchPin(action.id, backendFields);
             const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
-            dispatch({ type: "APPLY_PIN", pin: normalizePin(updated, contributorsById) });
+            const pin = normalizePin(updated, contributorsById);
+            dispatch({ type: "APPLY_PIN", pin });
+            return { ok: true, pin };
           } catch (err) {
             console.error("pin update failed", err);
+            return { ok: false, error: err.message };
           }
-          return;
         }
 
+        // Flips one availability cell for one pin. The endpoint is a
+        // toggle, not a set, so a caller holding a draft of the grid
+        // (pages/EditVisit.jsx) sends one of these per cell that actually
+        // differs from what's stored — see its commitOverrides. Reports
+        // ok/error for the same reason PATCH_PIN does.
         case "TOGGLE_OVERRIDE": {
           try {
             const result = await api.toggleAvailabilityOverride(action.pinId, action.day, action.band);
@@ -735,10 +1084,11 @@ export function PlannerProvider({ children }) {
               band: action.band,
               overridden: result.overridden,
             });
+            return { ok: true, overridden: result.overridden };
           } catch (err) {
             console.error("availability override failed", err);
+            return { ok: false, error: err.message };
           }
-          return;
         }
 
         default:
@@ -809,6 +1159,37 @@ export function usePlannerDispatch() {
   const ctx = useContext(PlannerDispatchContext);
   if (!ctx) throw new Error("usePlannerDispatch must be used within PlannerProvider");
   return ctx;
+}
+
+// Whether the viewer holds `scope` on the active trip — e.g.
+// can("ideas:write"), can("costs:read"). The server enforces every one of
+// these on its own; this is only for not offering what would be refused.
+export function useCan() {
+  const { trip } = usePlannerState();
+  const scopes = trip?.scopes;
+  return useMemo(() => {
+    const set = new Set(scopes ?? []);
+    return (scope) => set.has(scope);
+  }, [scopes]);
+}
+
+// Per-item access for pins and travel items, on top of useCan(): a
+// companion (ideas:add, costs:own) may change, and see the cost of, only
+// what they added themselves; a planner (ideas:write, costs:read/write)
+// any of it. `item` is a normalized pin or travel item — pass null for
+// one the viewer is about to create, which will be theirs.
+export function useIdeaAccess() {
+  const can = useCan();
+  const { currentUserId } = usePlannerState();
+  return useMemo(() => {
+    const mine = (item) => item == null || (item.who != null && item.who === currentUserId);
+    return {
+      canAddIdeas: can("ideas:add"),
+      canEditIdea: (item) => can("ideas:write") || (can("ideas:add") && mine(item)),
+      canSeeCost: (item) => can("costs:read") || (can("costs:own") && mine(item)),
+      canSetCost: (item) => can("costs:write") || (can("costs:own") && mine(item)),
+    };
+  }, [can, currentUserId]);
 }
 
 export function useCurrentUser() {

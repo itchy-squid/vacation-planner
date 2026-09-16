@@ -1,11 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import Principal, get_current_principal
-from ..db import get_db
+from .. import photo_storage
+from ..db import SessionLocal, get_db
 from ..events import bus
-from ..models import AvailabilityOverride, AvailabilityRule, Contributor, Pin, PlanItem
+from ..models import AvailabilityOverride, AvailabilityRule, Pin, PlanItem
+from ..permissions import IDEAS_ADD, IDEAS_READ, Access, require
+from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import (
     AvailabilityOverrideToggle,
     AvailabilityRuleIn,
@@ -15,14 +19,50 @@ from ..schemas import (
 )
 
 router = APIRouter(tags=["pins"])
+logger = logging.getLogger(__name__)
 
 
-def _contributor_for(trip_id: int, principal: Principal, db: Session) -> Contributor | None:
-    return db.scalar(select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == principal.email))
+_COST_FIELDS = ("cost_cents", "heads")
+
+
+def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:
+    """Setting a price or a cost split is costs:write (or costs:own on
+    something the caller added), on top of whatever the edit itself needs.
+    Shared with routers/travel_items.py."""
+    if any(f in fields for f in _COST_FIELDS):
+        access.ensure_may_set_costs(added_by_id)
+
+
+def _mirror_pin_photo(pin_id: int, trip_id: int, source_url: str) -> None:
+    """Runs after the response for create_pin/update_pin has already gone
+    out (see BackgroundTasks below) — a slow or large source image never
+    delays "Add to board". Opens its own DB session because the
+    request's session (from get_db) is already closed by the time a
+    background task runs.
+
+    Re-checks the pin's photo_url before writing back, in case it moved
+    on while the copy was in flight — someone re-edited the pin, or
+    picked "No image" — so a slow mirror can never resurrect a photo the
+    pin no longer has."""
+    mirrored_url = photo_storage.mirror_photo_to_blob(source_url, trip_id=trip_id, pin_id=pin_id)
+    if not mirrored_url:
+        return
+    db = SessionLocal()
+    try:
+        pin = db.get(Pin, pin_id)
+        if pin is None or pin.photo_url != source_url:
+            return
+        pin.photo_url = mirrored_url
+        db.commit()
+        bus.publish(trip_id, "pin.updated", {"pin_id": pin_id})
+    except Exception:
+        logger.exception("Couldn't save the mirrored photo for pin %s", pin_id)
+    finally:
+        db.close()
 
 
 @router.get("/api/trips/{trip_id}/pins", response_model=list[PinOut])
-def list_pins(trip_id: int, db: Session = Depends(get_db)):
+def list_pins(trip_id: int, _: Access = Depends(require(IDEAS_READ)), db: Session = Depends(get_db)):
     return db.scalars(select(Pin).where(Pin.trip_id == trip_id)).all()
 
 
@@ -30,20 +70,27 @@ def list_pins(trip_id: int, db: Session = Depends(get_db)):
 def create_pin(
     trip_id: int,
     payload: PinCreate,
-    principal: Principal = Depends(get_current_principal),
+    background_tasks: BackgroundTasks,
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
-    contributor = _contributor_for(trip_id, principal, db)
-    pin = Pin(trip_id=trip_id, added_by_id=contributor.id if contributor else None, **payload.model_dump())
+    ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True), access.member.id)
+    pin = Pin(trip_id=trip_id, added_by_id=access.member.id, **payload.model_dump())
     db.add(pin)
     db.commit()
     db.refresh(pin)
     bus.publish(trip_id, "pin.created", {"pin_id": pin.id})
+    # Chosen from the link-preview picker (pages/NewPin.jsx) — still just
+    # hotlinked at this point (that's what's in pin.photo_url right now,
+    # and what this response returns). Copying it into our own storage is
+    # not this request's problem to wait on — see _mirror_pin_photo.
+    if pin.photo_url:
+        background_tasks.add_task(_mirror_pin_photo, pin.id, trip_id, pin.photo_url)
     return pin
 
 
 @router.get("/api/pins/{pin_id}", response_model=PinOut)
-def get_pin(pin_id: int, db: Session = Depends(get_db)):
+def get_pin(pin_id: int, _: Access = Depends(require(IDEAS_READ)), db: Session = Depends(get_db)):
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
@@ -51,23 +98,39 @@ def get_pin(pin_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/api/pins/{pin_id}", response_model=PinOut)
-def update_pin(pin_id: int, payload: PinUpdate, db: Session = Depends(get_db)):
+def update_pin(
+    pin_id: int,
+    payload: PinUpdate,
+    background_tasks: BackgroundTasks,
+    access: Access = Depends(require(IDEAS_ADD)),
+    db: Session = Depends(get_db),
+):
     """Edits are immediate — no local draft, matching the handoff README's
     "Editing" behaviour. Every change is visible to the whole group via the
     trip's SSE stream."""
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    access.ensure_may_edit_idea(pin.added_by_id)
+    fields = payload.model_dump(exclude_unset=True)
+    ensure_may_set_costs(access, fields, pin.added_by_id)
+    for field, value in fields.items():
         setattr(pin, field, value)
     db.commit()
     db.refresh(pin)
     bus.publish(pin.trip_id, "pin.updated", {"pin_id": pin.id})
+    # Only when this request is the one that actually set photo_url to a
+    # new external link — not on every edit, and not when photo_url is
+    # already one of our own mirrored blobs (photo_storage.mirror_photo_
+    # to_blob would just skip it, but there's no reason to schedule the
+    # task at all in that case).
+    if "photo_url" in fields and pin.photo_url and not photo_storage.is_our_blob_url(pin.photo_url):
+        background_tasks.add_task(_mirror_pin_photo, pin.id, pin.trip_id, pin.photo_url)
     return pin
 
 
 @router.delete("/api/pins/{pin_id}", status_code=204)
-def delete_pin(pin_id: int, db: Session = Depends(get_db)):
+def delete_pin(pin_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Session = Depends(get_db)):
     """Permanently deletes the pin itself — distinct from unplacing it
     (DELETE /api/plans/{plan_id}, which only removes its Plan/PlanItem and
     leaves the pin in the unscheduled tray). Rejected the same way
@@ -77,9 +140,10 @@ def delete_pin(pin_id: int, db: Session = Depends(get_db)):
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
     referenced = db.scalar(select(PlanItem).where(PlanItem.pin_id == pin_id))
     if referenced is not None:
-        raise HTTPException(status_code=409, detail="This pin is scheduled in a plan — remove it from the schedule first")
+        raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, referenced, "pin"))
 
     trip_id = pin.trip_id
     db.delete(pin)
@@ -89,10 +153,16 @@ def delete_pin(pin_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/api/pins/{pin_id}/availability-rule")
-def set_availability_rule(pin_id: int, payload: AvailabilityRuleIn, db: Session = Depends(get_db)):
+def set_availability_rule(
+    pin_id: int,
+    payload: AvailabilityRuleIn,
+    access: Access = Depends(require(IDEAS_ADD)),
+    db: Session = Depends(get_db),
+):
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
     rule = pin.availability_rule
     if not rule:
         rule = AvailabilityRule(pin_id=pin_id)
@@ -108,7 +178,7 @@ def set_availability_rule(pin_id: int, payload: AvailabilityRuleIn, db: Session 
 def toggle_availability_override(
     pin_id: int,
     payload: AvailabilityOverrideToggle,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
     """A tap flips one cell in the availability grid — see handoff README
@@ -116,6 +186,7 @@ def toggle_availability_override(
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
 
     existing = db.scalar(
         select(AvailabilityOverride).where(
@@ -124,7 +195,6 @@ def toggle_availability_override(
             AvailabilityOverride.band == payload.band,
         )
     )
-    contributor = _contributor_for(pin.trip_id, principal, db)
     if existing:
         db.delete(existing)
         db.commit()
@@ -135,7 +205,7 @@ def toggle_availability_override(
         pin_id=pin_id,
         day=payload.day,
         band=payload.band,
-        created_by_id=contributor.id if contributor else None,
+        created_by_id=access.member.id,
     )
     db.add(override)
     db.commit()

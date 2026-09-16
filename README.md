@@ -8,7 +8,11 @@ places on a shared map, with per-set votes, comments, and an owner lock.
 
 Design source: the handoff in `.claude/claude-design.zip` (design system
 tokens + two `.dc.html` prototypes) — see that bundle's own README for the
-full screen-by-screen spec.
+full screen-by-screen spec. A second handoff,
+`.claude/Vacation planning site features.zip`, adds the Expenses screen,
+the four-step proposal flow and the favicon; its implementation contract
+is `docs/features/proposals-and-expenses-feature-spec.md`, which wins
+wherever the two differ.
 
 ## Stack
 
@@ -23,8 +27,10 @@ full screen-by-screen spec.
 
 ## Current state — read this before assuming something works
 
-1. **Frontend**: the 7 design-handoff screens are implemented, plus a few
-   added since (see "Added beyond the design handoff"). Trips,
+1. **Frontend**: the 7 design-handoff screens are implemented, plus
+   Expenses and the four-step "propose a block" flow from the second
+   handoff, plus a few added since (see "Added beyond the design
+   handoff"). Trips,
    contributors, pins, votes, locks, and comments persist to the real API
    (`frontend/src/state/PlannerContext.jsx`, `frontend/src/lib/api.js`).
    `frontend/src/data/*.js` is no longer live: `pins.js`/`contributors.js`
@@ -45,6 +51,11 @@ timeline (only drop targets are drawn), a real comment-thread view
 (comments are counts + one quoted line today), the photo-picker flow, and
 invite/permissions/login screens.
 
+The **Lasso Map** (`frontend/src/pages/LassoMap.jsx`) is out of the main
+flow: `/trips/:tripId/map` is still routed and works if you type the URL,
+but nothing links to it — it's in neither the bottom nav nor the Board
+header, whose Board/Map segmented switch was removed.
+
 ### Added beyond the design handoff
 
 Engineering additions, not design-reviewed screens:
@@ -58,6 +69,12 @@ Engineering additions, not design-reviewed screens:
   `POST /api/trips/{id}/pins`) — hands off to Edit Visit for
   duration/cost/notes/tags. Board region filter chips derive from the
   active trip's real pins now.
+- **Bottom navigation** (`frontend/src/components/core/BottomNav.jsx`) —
+  a fixed strip linking Home, Board, Schedule, Compare (when a contest is
+  open) and Final. Started as the dev-only `src/dev/DevNav.jsx` jump strip
+  and is now the app's permanent trip-level navigation; its styling is
+  still the scaffold's and hasn't been through design. The Lasso Map is
+  intentionally not in it — see below.
 - **Trip settings** (`frontend/src/pages/TripSettings.jsx`,
   `PATCH /api/trips/{id}`) — name, regions, start/end dates, reachable
   from the Board/Map/Schedule header (`components/core/SettingsButton.jsx`).
@@ -84,10 +101,6 @@ cd frontend
 npm install
 npm run dev        # http://localhost:5173
 ```
-`frontend/src/dev/DevNav.jsx` is a bottom strip for jumping between the 7
-screens — not part of the design, just review scaffolding. Delete once real
-trip-level navigation exists.
-
 **Backend — requires Docker Desktop running** (for local Postgres; or point
 `DATABASE_URL` at a Postgres instance you already have)
 
@@ -129,6 +142,15 @@ backend + GitHub Actions. To change it: `.github/workflows/deploy.yml`'s
 4. **Photo picker** — not designed yet; flag to design before building.
 5. **Harden infra for real user data** — `infra/README.md`'s "Known
    simplifications".
-6. **Tests** — `backend-ci.yml` runs `pytest` but there's no suite yet
-   (`continue-on-error: true` — remove once tests exist).
+6. **Widen the test suite** — `backend/tests/` now covers the scheduling
+   rules (window contests, capture, drafts, locking, derived values) and
+   `backend-ci.yml` treats a failure as a failure. Nothing covers the
+   frontend yet.
+7. **Real currency** — Expenses hardcodes `USD` (see
+   `docs/features/proposals-and-expenses-feature-spec.md` decision 10);
+   the schema has nowhere to put a trip's currency.
+8. **A pinned item inside a claimed window** — the proposal flow's hour
+   picker clips at a locked plan rather than packing stops around one
+   (decision/§6.5). Supporting it would make "stops pack end to end"
+   conditional, which is why v1 doesn't.
 

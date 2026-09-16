@@ -1,6 +1,18 @@
 from fastapi import FastAPI
 
-from .routers import comments, contests, events, health, me, pins, plans, travel_items, trips
+from .routers import (
+    comments,
+    contests,
+    events,
+    health,
+    me,
+    pins,
+    plans,
+    sharing,
+    spa_redirect,
+    travel_items,
+    trips,
+)
 
 app = FastAPI(
     title="Vacation Planner API",
@@ -27,4 +39,9 @@ app.include_router(plans.router)
 app.include_router(contests.router)
 app.include_router(travel_items.router)
 app.include_router(comments.router)
+app.include_router(sharing.router)
 app.include_router(events.router)
+
+# Must stay last: it's a catch-all for every GET path the routers above
+# (and FastAPI's own /docs, /redoc, /openapi.json) didn't claim.
+app.include_router(spa_redirect.router)

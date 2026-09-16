@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faAnglesDown, faAnglesUp, faLock } from "@fortawesome/free-solid-svg-icons";
 import { clockLabel } from "../../lib/planTime";
 
 // Renders one Plan absolutely positioned on the DaySchedule calendar grid
@@ -8,7 +10,21 @@ import { clockLabel } from "../../lib/planTime";
 // plans) and passes them in via `rect`; this component only renders the
 // plan's own content for each status. See docs/features/scheduling-
 // feature-spec.md "Calendar grid" + "Plan.status".
-export default function PlanBlock({ plan, rect, onTap }) {
+// `continuesBefore` / `continuesAfter` mark a plan that crosses midnight,
+// drawn on each day it touches: the rectangle is clipped to the grid by
+// the caller, and the squared-off edge plus a double-chevron says the
+// block runs on past it. The chevron rides inline with the title for the
+// same reason the lock does — a compact block (under ~34px, so under 34
+// minutes on this day) hides the subtitle entirely, and the tail end of
+// an overnight plan is exactly the case that can be a few minutes long.
+// The times in the subtitle are always the plan's real start and end, not
+// the clipped ones, so a 22:00–10:00 crossing reads "22:00–10:00" on both
+// days rather than lying about where it stops.
+function ContinuationMark({ icon, color }) {
+  return <FontAwesomeIcon icon={icon} style={{ width: 8, height: 8, flexShrink: 0, opacity: 0.75, color }} />;
+}
+
+export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false }) {
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
   const startLabel = plan.startDt ? clockLabel(plan.startDt.minuteOfDay) : "";
   const endLabel = plan.endDt ? clockLabel(plan.endDt.minuteOfDay) : "";
@@ -25,6 +41,15 @@ export default function PlanBlock({ plan, rect, onTap }) {
     boxSizing: "border-box",
   };
 
+  // A clipped edge is square: a rounded one would read as the block
+  // ending there, which is the one thing it must not say.
+  const clipRadius = {
+    borderTopLeftRadius: continuesBefore ? 0 : undefined,
+    borderTopRightRadius: continuesBefore ? 0 : undefined,
+    borderBottomLeftRadius: continuesAfter ? 0 : undefined,
+    borderBottomRightRadius: continuesAfter ? 0 : undefined,
+  };
+
   if (plan.status === "contested") {
     return (
       <div
@@ -33,18 +58,29 @@ export default function PlanBlock({ plan, rect, onTap }) {
         style={{
           ...base,
           borderRadius: "var(--radius-md)",
+          ...clipRadius,
           border: "2px dashed var(--accent)",
           background: "var(--plum-tint)",
           padding: compact ? "3px 7px" : "6px 8px",
           transition: `background var(--dur-base) var(--ease-standard)`,
         }}
       >
-        <div style={{ font: "600 11.5px var(--font-sans)", color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {title}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: "var(--accent)", overflow: "hidden" }}>
+          {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--accent)" />}
+          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+          {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--accent)" />}
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
-            {startLabel}–{endLabel} · contested
+            {/* "proposed", though the status is `contested`. The status
+                names the slot's situation; this label names the block the
+                reader is looking at, and a lone proposal on an empty
+                afternoon is not in a fight with anything — a contest is
+                legal with a single option and no incumbent (proposals
+                spec §6.2). Where there really are several, the grid packs
+                them into side-by-side columns, so the competition is
+                visible without a word for it. */}
+            {startLabel}–{endLabel} · proposed
           </div>
         )}
       </div>
@@ -59,13 +95,24 @@ export default function PlanBlock({ plan, rect, onTap }) {
         style={{
           ...base,
           borderRadius: "var(--radius-md)",
+          ...clipRadius,
           background: "var(--surface-page)",
           borderLeft: "3px solid var(--accent)",
           padding: compact ? "3px 7px" : "6px 8px",
         }}
       >
-        <div style={{ font: "600 12px var(--font-sans)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {title}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 12px var(--font-sans)", color: "var(--text-primary)", overflow: "hidden" }}>
+          {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
+          {/* Font Awesome Free's solid lock — flat, monochrome (fill:
+              currentColor, no color of its own), rides inline with the
+              title rather than only in the subtitle below, because
+              compact blocks (rect.height < 34, any stop under ~45min)
+              hide that subtitle entirely — without this a short locked
+              plan would render indistinguishably from an unlocked one.
+              Same icon as the lock toggle in PlanDetailsSheet.jsx. */}
+          <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
+          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+          {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
@@ -85,13 +132,16 @@ export default function PlanBlock({ plan, rect, onTap }) {
       style={{
         ...base,
         borderRadius: "var(--radius-md)",
+        ...clipRadius,
         background: isPencilled ? "var(--surface-page)" : "var(--teal-50)",
         borderLeft: `3px solid ${isPencilled ? "var(--stone-250)" : "var(--geo)"}`,
         padding: compact ? "3px 7px" : "6px 8px",
       }}
     >
-      <div style={{ font: "600 11.5px var(--font-sans)", color: isPencilled ? "var(--text-secondary)" : "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: isPencilled ? "var(--text-secondary)" : "var(--text-primary)", overflow: "hidden" }}>
+        {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
+        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+        {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
       </div>
       {!compact && (
         <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>

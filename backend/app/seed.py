@@ -104,6 +104,12 @@ def seed_taiwan(db: Session) -> None:
         start_date=TAIWAN_TRIP_START,
         end_date=date(2026, 10, 10),
         phase=TripPhase.scheduling,
+        # Deliberately not 6: six people are *planning* this trip, four are
+        # going. Keeping the two numbers different in the seed is the only
+        # way the Expenses screen's "× 4 travellers" and the vote card's
+        # "6 planners" can be seen not to be the same field by accident —
+        # see the feature spec's decision 9.
+        traveller_count=4,
     )
     db.add(trip)
     db.flush()
@@ -178,9 +184,16 @@ def seed_taiwan(db: Session) -> None:
 
     # ---- Travel items — the trip's two logistics legs, as TravelItems
     # rather than Pins (see docs/features/scheduling-feature-spec.md). ----
-    arrival = TravelItem(trip_id=trip.id, title="Arrive Taipei · check in", kind="flight", duration_minutes=60, cost_cents=0, added_by_id=None)
-    ferry = TravelItem(trip_id=trip.id, title="Ferry to Xiaoliuqiu", kind="other", duration_minutes=75, cost_cents=0, added_by_id=None)
-    db.add_all([arrival, ferry])
+    arrival = TravelItem(trip_id=trip.id, title="Arrive Taipei · check in", kind="travel", duration_minutes=60, cost_cents=0, added_by_id=None)
+    ferry = TravelItem(trip_id=trip.id, title="Ferry to Xiaoliuqiu", kind="travel", duration_minutes=75, cost_cents=0, added_by_id=None)
+    # The return crossing, seeded as a locked plan below. Taiwan has no
+    # cruise gangway, but the ferry timetable plays the same part the
+    # handoff's "gangway up / gangway down" does: a fixed hour on an
+    # island day that a proposal is not allowed to claim. Seeding one per
+    # island day is what makes the step-2 selection's clip-at-a-locked-plan
+    # rule (feature spec §6.5) reachable in local dev.
+    ferry_back = TravelItem(trip_id=trip.id, title="Ferry back to Donggang", kind="travel", duration_minutes=75, cost_cents=0, added_by_id=None)
+    db.add_all([arrival, ferry, ferry_back])
     db.flush()
 
     # Availability rules — the seven Xiaoliuqiu pins the day 5 contest is
@@ -197,12 +210,28 @@ def seed_taiwan(db: Session) -> None:
     for local_id, (days, bands, reasons) in availability.items():
         db.add(AvailabilityRule(pin_id=pins_by_local_id[local_id].id, days=days, bands=bands, reasons=reasons))
 
+    # Two pins whose cost is shared by a subset rather than the whole trip.
+    # This is what puts the "· A, M" initials suffix and the magenta accent
+    # bar on the Expenses screen (feature spec §4) into the seeded data,
+    # instead of every row taking the "everyone, × traveller_count" path.
+    # Din Tai Fung is the one that matters for that: it's scheduled below,
+    # so it shows up on Expenses immediately. Shaved ice is still in the
+    # tray, and demonstrates the same thing the moment it's placed.
+    pins_by_local_id["p13"].heads = [contributors["jae"].id, contributors["mei"].id]
+    pins_by_local_id["p3"].heads = [contributors["ana"].id, contributors["mei"].id]
+    db.flush()
+
     # ---- Day 5's contest: "the core screen" (handoff README screen 5) —
     # two competing Plans for the same 13:00-16:00 slot, matching the exact
     # pin groupings and base vote counts the frontend mock hardcoded, now
     # expressed as a real Contest instead of two pre-seeded CandidateSets
     # on a fixed Block. ----
-    contest = Contest(trip_id=trip.id, status=ContestStatus.open)
+    contest = Contest(
+        trip_id=trip.id,
+        status=ContestStatus.open,
+        starts_at=_taiwan_dt(5, 780),
+        ends_at=_taiwan_dt(5, 960),
+    )
     db.add(contest)
     db.flush()
 
@@ -259,10 +288,13 @@ def seed_taiwan(db: Session) -> None:
 
     _placed_plan(db, trip, day_index=4, start_minute=600, end_minute=690, status=PlanStatus.placed, pin=p["p14"])
 
-    _placed_plan(db, trip, day_index=5, start_minute=480, end_minute=555, status=PlanStatus.placed, travel_item=ferry)
+    # Both crossings are locked, not merely placed: the boat leaves when it
+    # leaves. See the ferry_back comment above.
+    _placed_plan(db, trip, day_index=5, start_minute=480, end_minute=555, status=PlanStatus.locked, travel_item=ferry)
     _placed_plan(db, trip, day_index=5, start_minute=570, end_minute=720, status=PlanStatus.placed, pin=p["p27"])
 
     _placed_plan(db, trip, day_index=6, start_minute=570, end_minute=615, status=PlanStatus.pencilled, pin=p["p7"])
+    _placed_plan(db, trip, day_index=6, start_minute=1020, end_minute=1095, status=PlanStatus.locked, travel_item=ferry_back)
 
     _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"])
 
@@ -277,17 +309,25 @@ def seed_light_trip(
     end_date: date | None,
     phase: TripPhase,
     pin_titles: list[tuple[str, str]],
+    mei_role: str,
+    owner_name: str,
 ) -> None:
     """A lighter trip for the Trips Home "Also planning" rail — just enough
     real rows (a couple of contributors + pins) that its card reads from
-    actual counts instead of hand-typed copy."""
+    actual counts instead of hand-typed copy.
+
+    Mei (the local dev user) is added with `mei_role`, so the rail shows a
+    trip someone else owns in each of the roles she can hold there — and so
+    she can see these trips at all, since the trips list only returns the
+    caller's own."""
     trip = Trip(name=name, region_line=region_line, start_date=start_date, end_date=end_date, phase=phase)
     db.add(trip)
     db.flush()
 
-    owner = Contributor(trip_id=trip.id, email=f"{name.split(',')[0].split()[0].lower()}.owner@example.com", display_name="Owner", initial="O", tint="var(--who-1)", is_owner=True)
+    owner = Contributor(trip_id=trip.id, email=f"{name.split(',')[0].split()[0].lower()}.owner@example.com", display_name=owner_name, initial=owner_name[:1], tint="var(--who-1)", role="owner")
     guest = Contributor(trip_id=trip.id, email=f"{name.split(',')[0].split()[0].lower()}.guest@example.com", display_name="Guest", initial="G", tint="var(--who-2)", is_owner=False)
-    db.add_all([owner, guest])
+    mei = Contributor(trip_id=trip.id, email="mei@example.com", display_name="Mei", initial="M", tint="var(--who-3)", role=mei_role)
+    db.add_all([owner, guest, mei])
     db.flush()
 
     for i, (title, region) in enumerate(pin_titles):
@@ -315,6 +355,8 @@ def run() -> None:
             None,
             TripPhase.ideation,
             [("Shinjuku Gyoen", "Tokyo"), ("Fushimi Inari", "Kyoto"), ("Nishiki Market", "Kyoto")],
+            mei_role="planner",
+            owner_name="Kenji",
         )
         seed_light_trip(
             db,
@@ -324,6 +366,8 @@ def run() -> None:
             date(2026, 6, 25),
             TripPhase.locked,
             [("Golden Circle", "Reykjavik"), ("Diamond Beach", "Vik"), ("Godafoss", "Akureyri"), ("Blue Lagoon", "Reykjavik")],
+            mei_role="reader",
+            owner_name="Sigrid",
         )
         print("Seeded:", ", ".join(SEEDED_TRIP_NAMES))
     finally:

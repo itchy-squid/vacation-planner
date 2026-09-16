@@ -41,6 +41,25 @@ class Settings(BaseSettings):
     # attributed to this fake user instead of being rejected.
     dev_user_email: str = "mei@example.com"
 
+    # Blob storage a chosen pin photo gets mirrored into (see
+    # app/photo_storage.py) — the account's blob endpoint, e.g.
+    # https://vacationplannerdevpinphotos.blob.core.windows.net (see
+    # infra/modules/storage-account.bicep's blobEndpoint output). Left
+    # unset for local dev, which has no storage account: photo_storage's
+    # functions all no-op in that case, so pins just keep the hotlinked
+    # photo they already had (see photo_storage.py's module docstring).
+    azure_storage_account_url: str | None = None
+    azure_storage_container: str = "pin-photos"
+
+    # The SPA's origin, e.g. https://vacations.dev.amandasanti.com. Any
+    # non-API GET that reaches this backend is redirected there (see
+    # app/routers/spa_redirect.py) -- chiefly Easy Auth's
+    # /.auth/login/done page, whose "Return to website" button links to
+    # this API host's "/". Set from the first corsOrigins entry in
+    # infra/modules/container-app-backend.bicep. Unset locally, where the
+    # Vite dev server serves the SPA and those paths just 404.
+    frontend_url: str | None = None
+
     @property
     def is_development(self) -> bool:
         return self.environment.lower() in {"development", "dev", "local"}

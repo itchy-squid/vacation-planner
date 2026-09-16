@@ -4,7 +4,7 @@
 
 Contributors place pins and travel items onto a trip's calendar at a
 specific date/time with a specific duration. Placement happens by tapping an
-item in the unscheduled tray, then tapping a target time on the calendar.
+item in the day's add sheet, then tapping a target time on the calendar.
 When someone wants to schedule something else against a time that's already
 occupied, they propose it as an alternative; the group votes, and the trip
 owner locks one option, which becomes final until explicitly reopened.
@@ -25,7 +25,7 @@ owner locks one option, which becomes final until explicitly reopened.
 TravelItem
   id, trip_id
   title: string
-  kind: string                     # "flight" | "train" | "drive" | "lodging" | "other"
+  kind: string                     # "travel" | "lodging" | "other"
   duration_minutes: int (default 60)
   cost_cents: int (default 0)
   notes: text
@@ -121,7 +121,9 @@ pins/travel items to the unscheduled tray.
 - `POST /api/plans/{plan_id}/reopen` — owner-only.
 - `GET /api/trips/{trip_id}/travel-items` — all travel items for the trip.
 - `POST /api/trips/{trip_id}/travel-items` — create.
-  Body: `{ title, kind, duration_minutes, cost_cents, notes, link }`
+  Body: `{ title, kind, duration_minutes, cost_cents, notes, link }`.
+  `kind` is validated against `"travel" | "lodging" | "other"` and
+  defaults to `"other"`; anything else is a `422`.
 - `PATCH /api/travel-items/{id}` — edit.
 - `DELETE /api/travel-items/{id}` — reject with `409` if referenced by any
   `PlanItem`.
@@ -149,6 +151,13 @@ TravelItemOut:
 ```
 
 ## Derived values
+
+Every span is measured across real dates, never within one day. A plan may
+cross midnight — a night crossing, a red-eye, a lodging stay — so
+`range_minutes` is the true difference between `starts_at` and `ends_at`,
+and a client that computes it from clock times alone has to carry whole
+days into the date rather than wrapping at 24:00. See "Overnight plans"
+below.
 
 For a plan spanning `range_minutes` total minutes:
 
@@ -179,21 +188,56 @@ Publish on the trip's event channel: `plan.placed`, `plan.moved`,
 `lockContest`, `reopenPlan`, `listTravelItems`, `createTravelItem`,
 `patchTravelItem`, `deleteTravelItem`.
 
-**Tray**: lists every pin and travel item not currently referenced by any
-`PlanItem`, each with a type icon. Tapping a card arms it for placement
-(enters "Placing <item> — tap the calendar" mode for that card). Only
-while a card is armed does a delete badge appear on its corner — sized to
-the app's `--hit-min` (44px) touch target, not a decorative dot — which
-deletes that item outright instead (`DELETE /api/pins/{id}` / `DELETE
-/api/travel-items/{id}`), with the same double-tap-to-confirm behavior as
-the details sheet's "Delete permanently" (one armed item at a time across
-the whole tray). Deleting the item currently armed for placement also
-cancels placing mode. Includes an affordance to create a new travel item
-on the spot (opens a small form: title, kind, duration, notes, link).
+**Add bar**: the dark strip under the grid, one row. A full-width
+**+ Add** opens the add sheet below; beside it a **"N unplaced"** button
+counts every pin and travel item not currently referenced by any
+`PlanItem` and opens the same sheet on its picker. Under the row, the
+viewer's own `draft` blocks for this day (proposals spec §6.4) — nobody
+else can see a draft, which is why it needs somewhere to be seen.
+
+This replaced a tray that laid its contents out in full: a caption, a
+region-filter rail, a horizontal strip of item cards, a "Propose a block"
+button and the drafts. On a 402x874 phone that stack ran to roughly 300px
+against a 60px/hour grid — about five hours of the day, permanently spent
+on a panel that is only touched at the moment something is being added.
+The bar costs ~100px, and browsing moved behind the tap that was already
+there.
+
+**Add sheet**: a bottom sheet with three modes; back from either sub-mode
+returns to the menu with the sheet still open, so it reads as one panel
+rather than three.
+
+- *Menu* — three rows: **Propose a block** (routes to the proposals
+  spec's hour picker), **Add a pin** (the picker, disabled at zero
+  unplaced), **Custom event** (the form). Tints follow the app's
+  one-hue-per-meaning rule: plum for the block, teal for the pin, stone
+  for the custom event.
+- *Picker* — the unplaced items, travel items in their own section above
+  the pins (they carry no region, so the filter says nothing about them,
+  and an unplaced ferry buried among twenty pins is one that gets
+  forgotten). The region filter lives here, defaulting to the regions
+  this day is already about. Tapping a row arms it for placement (enters
+  "Placing <item> — tap the calendar") and closes the sheet. Each row
+  also carries a trailing delete button at `--hit-min` (44px), which
+  deletes the item outright (`DELETE /api/pins/{id}` / `DELETE
+  /api/travel-items/{id}`) with the same double-tap-to-confirm behavior as
+  the details sheet's "Delete permanently" — one armed row at a time
+  across the list. Deleting the item currently armed for placement also
+  cancels placing mode.
+
+  The delete badge used to appear only on a card already armed for
+  placement. In a list, tapping a row arms placement *and* closes the
+  sheet, so there is no armed state left to hang it on; it becomes a
+  persistent second target instead, separable by thumb from the row body.
+- *Custom event* — title, kind, duration, cost and the `heads` split,
+  creating a `TravelItem`. It is the only way to create one, so it
+  carries the whole `kind` set, not just `other`. On success the new item
+  is armed for placement, since the sheet was opened from a day.
 
 **Calendar grid**: a vertical time axis for the selected day, with plans
 positioned and sized by real minute-to-pixel mapping (not fixed-height
-rows). Tapping a tray item enters placing mode — a banner pinned to the
+rows). Tapping an item in the add sheet's picker enters placing mode — a
+banner pinned to the
 header (not scrolled with the grid, so it and its Cancel button stay
 visible no matter how far down the day the target time is) reads "Placing
 <item> — tap the calendar" — which highlights valid 15-minute-increment
@@ -239,6 +283,33 @@ currently placed on a placed/pencilled plan, resizes that plan's window the
 same way. Either direction reverts/no-ops instead of updating the other
 value if the resize would overlap another plan.
 
+**Overnight plans**: a plan may start on one day and end on another. The
+model has always allowed it — `starts_at`/`ends_at` are real datetimes and
+every overlap check is a datetime comparison — and the day views have to
+follow:
+
+- A day shows every plan **touching** it, not every plan starting on it.
+  One helper turns a plan into its minutes relative to a given day, which
+  may be negative (it began the night before) or past 1440 (it runs into
+  tomorrow); the grid, the column-packing sweep, the placement overlap
+  check, the open-contest windows and the proposal flow's hour picker all
+  read those entries.
+- A block is **clipped to the grid** and marks which way it runs on: the
+  clipped edge is square, and a double-chevron rides inline with the title
+  (like the lock, and for the same reason — a compact block hides its
+  subtitle, and the tail of a crossing is exactly the case that can be a
+  few minutes long). The subtitle always shows the plan's real start and
+  end, so a 22:00–10:00 crossing reads `22:00–10:00` on both days.
+- A plan is **dragged from the day it begins on**. Its continuation is not
+  draggable — moving a block whose start is off-screen is not something to
+  reason about mid-drag — and the drag clamps the block's *start* to the
+  day, letting its tail run past midnight.
+- A **selection still may not cross midnight** (proposals spec §11): a
+  proposal is one day. It does now clip at a locked plan that began the
+  night before, which it previously could not see.
+- Expenses and the final itinerary group by **start** day: a cost belongs
+  to one row, and an itinerary entry to where it begins.
+
 **Contest / compare screen**: shows every plan in a contest, each rendered
 as an ordered stop list with per-stop time, duration, and cost, plus the
 plan's totals (cost, moving time, slack) and vote count. Only pin-backed
@@ -253,8 +324,17 @@ A locked contest's screen shows a reopen action for the owner.
 1. Backend: models, migration, schemas, `plans` and `travel-items` routers,
    derived-values logic, seed data, SSE event publishing.
 2. Frontend data layer: API client functions, state shape, normalization.
-3. Placement: tray, placing mode, calendar grid, tap-to-place, move/unplace.
-4. Travel items: create/edit UI, tray integration.
+3. Placement: the add bar and its sheet, placing mode, calendar grid,
+   tap-to-place, move/unplace.
+4. Travel items: the custom-event form and the edit UI.
 5. Contests: propose-alternative sheet, compare screen, vote/lock/reopen.
 6. Tests for all new endpoints and the contest-resolution logic in
-   particular (locking mid-contest, reopening, overlap rejection).
+   particular (locking mid-contest, reopening, overlap rejection), plus
+   the `kind` set: `travel`/`lodging`/`other` accepted, the old
+   flight/train/drive/ferry values rejected with a `422`, and the
+   migration mapping existing rows onto `travel` while leaving `lodging`
+   and `other` alone. Overnight spans too: a crossing accepted and its
+   slack measured across the date boundary, the next morning occupied by
+   it, a shared midnight edge not counting as a clash, a move across
+   midnight, a multi-night stay holding its middle day, and an hour field
+   past 24 rejected as the malformed datetime it is.

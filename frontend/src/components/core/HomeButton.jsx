@@ -1,12 +1,16 @@
-import { useNavigate } from "react-router-dom";
+import { useGuardedNavigate } from "../../state/NavGuard";
 
-// Persistent way back to Trips Home from every screen. The design handoff
-// doesn't specify trip-level navigation yet (see README "Not yet
-// designed"), so this small corner affordance fills that gap without
-// blocking on a full nav bar design — see DevNav for the dev-only jump
-// strip this is NOT a replacement for.
+// Persistent way back to Trips Home from every screen — a small corner
+// affordance on the modal-style flows (EditVisit, NewPin, NewTrip,
+// TripSettings) that sit outside the main trip screens. Trip-level
+// navigation proper lives in components/core/BottomNav.jsx.
+//
+// Goes through useGuardedNavigate rather than useNavigate: on those same
+// modal-style flows this is one tap from a half-finished edit, so a screen
+// holding an unsaved draft (see state/NavGuard.jsx) gets to ask before this
+// throws it away. With no guard armed it behaves exactly like navigate().
 export default function HomeButton({ style, size = 36 }) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   return (
     <button
       type="button"

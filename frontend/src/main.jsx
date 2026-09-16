@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import SignedOut from "./pages/SignedOut.jsx";
-import { ensureSignedIn, isSignedOutLanding } from "./lib/api";
+import { ensureSignedIn, isSignInLanding, isSignedOutLanding } from "./lib/api";
 import "./styles/styles.css";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
@@ -11,10 +11,14 @@ const root = ReactDOM.createRoot(document.getElementById("root"));
 // the signed-out screen for them *without* calling ensureSignedIn() —
 // calling it would find no session and bounce them straight back into
 // Entra, i.e. undo the logout they just asked for.
-if (isSignedOutLanding()) {
+//
+// "/?signin=1" is where lib/api.js sends a signed-out user when more than
+// one sign-in provider is on and it can't tell which one they use. Same
+// screen, same reason not to call ensureSignedIn().
+if (isSignedOutLanding() || isSignInLanding()) {
   root.render(
     <React.StrictMode>
-      <SignedOut />
+      <SignedOut mode={isSignedOutLanding() ? "signedOut" : "signIn"} />
     </React.StrictMode>
   );
 } else {

@@ -1,10 +1,13 @@
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import Badge from "../components/core/Badge";
 import Button from "../components/core/Button";
 import AvatarStack from "../components/planner/AvatarStack";
 import MetricTile from "../components/planner/MetricTile";
-import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, roleLabel } from "../state/PlannerContext";
+import RoleTag from "../components/core/RoleTag";
+import { logout } from "../lib/api";
 
 // Screen 1 — "pick a trip; read its phase at a glance." Handoff README
 // screen 1. "Add trip" opens the new-trip form (see pages/NewTrip.jsx);
@@ -16,7 +19,18 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 // navigate away from this screen.
 export default function TripsHome() {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = usePlannerDispatch();
+  // "Taiwan added to your trips" — set by pages/JoinTrip.jsx when it
+  // lands here after a join. Read once, then cleared from history so a
+  // refresh or back-navigation doesn't show it again.
+  const [joinedName, setJoinedName] = useState(location.state?.joinedTripName ?? null);
+  const dismissJoined = useCallback(() => setJoinedName(null), []);
+  useEffect(() => {
+    if (location.state?.joinedTripName) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, navigate]);
   const {
     trip: TRIP,
     otherTrips: OTHER_TRIPS,
@@ -52,7 +66,7 @@ export default function TripsHome() {
   }
 
   return (
-    <div className="screen">
+    <div className="screen" style={{ position: "relative" }}>
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "20px var(--gutter-text) 14px" }}>
           <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
@@ -71,7 +85,7 @@ export default function TripsHome() {
               overflow: "hidden",
             }}
           >
-            <PhotoPlaceholder height={158} label="cover photo — Taipei skyline">
+            <PhotoPlaceholder height={158} label="">
               <div style={{ position: "absolute", bottom: 10, right: 10 }}>
                 <Badge>{TRIP.phase === "ideation" ? "IDEATION" : "SCHEDULING"}</Badge>
               </div>
@@ -86,6 +100,28 @@ export default function TripsHome() {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
                 <AvatarStack contributors={CONTRIBUTORS} overflowCount={CONTRIBUTOR_OVERFLOW_COUNT} />
                 <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-muted)" }}>{TRIP.contributorCount} planning</span>
+              </div>
+
+              {/* Whose trip this is, and where the viewer stands on it. */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: "1px solid var(--hairline)",
+                }}
+              >
+                <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)" }}>
+                  {TRIP.role === "owner" ? "Your trip" : `${TRIP.owner?.name ?? "Someone"}'s trip`}
+                </span>
+                {TRIP.role === "owner" ? (
+                  <RoleTag role="owner" />
+                ) : (
+                  <RoleTag role={TRIP.role}>You&rsquo;re a {roleLabel(TRIP.role).toLowerCase()}</RoleTag>
+                )}
               </div>
 
               <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
@@ -142,7 +178,7 @@ export default function TripsHome() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="serif-place" style={{ fontSize: 18, color: "var(--text-primary)" }}>{t.name}</div>
                   <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>
-                    {isOpening ? "Opening…" : t.meta}
+                    {isOpening ? "Opening…" : [t.meta, t.ownership].filter(Boolean).join(" · ")}
                   </div>
                   <div style={{ marginTop: 6, width: 64, height: 5, borderRadius: 999, background: t.phase === "ideation" ? "var(--plum-tint-strong)" : "var(--surface-sunken)", overflow: "hidden" }}>
                     <div style={{ width: `${t.progress * 100}%`, height: "100%", background: t.phase === "ideation" ? "var(--accent)" : "var(--geo)" }} />
@@ -152,24 +188,91 @@ export default function TripsHome() {
             );
           })}
         </div>
+
+        <SignOut />
       </div>
+      {joinedName ? <JoinedToast name={joinedName} onDismiss={dismissJoined} /> : null}
     </div>
   );
 }
 
-// The no-trips screen. Keeps the same header as the populated screen —
-// same title, same "+" in the same place — so the affordance the user
-// will reach for doesn't move once they have trips, and the card below is
-// a second, larger route to the same destination.
+function JoinedToast({ name, onDismiss }) {
+  useEffect(() => {
+    const t = window.setTimeout(onDismiss, 5000);
+    return () => window.clearTimeout(t);
+  }, [onDismiss]);
+  return (
+    <div
+      role="status"
+      style={{
+        position: "absolute",
+        left: "var(--gutter-screen)",
+        right: "var(--gutter-screen)",
+        bottom: 28,
+        background: "var(--surface-inverse)",
+        color: "var(--text-on-dark)",
+        borderRadius: "var(--radius-lg)",
+        padding: "0 6px 0 16px",
+        minHeight: 46,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        boxShadow: "var(--shadow-select)",
+        zIndex: 20,
+      }}
+    >
+      <span style={{ font: "500 13px var(--font-sans)" }}>{name} added to your trips</span>
+      <button
+        type="button"
+        className="hit-target"
+        onClick={onDismiss}
+        style={{ padding: "0 10px", height: 44, font: "600 12.5px var(--font-sans)", color: "var(--text-on-dark-muted)" }}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+// Signing out used to live in the ☰ menu on the trip screens (see
+// components/core/TripHeader.jsx, which replaced it with a back chevron and
+// a gear). It belongs here instead: leaving the app is something you do
+// when you're done with a trip, not mid-way through arranging one, and this
+// is the only screen that isn't about a particular trip. Quiet on purpose —
+// it's the rarest thing on the screen and the only irreversible one.
+function SignOut() {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "28px 0 4px" }}>
+      <button
+        type="button"
+        className="tap hit-target"
+        onClick={logout}
+        style={{
+          padding: "0 16px",
+          background: "none",
+          border: "none",
+          font: "500 12.5px var(--font-sans)",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+        }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
+// The no-trips screen. The header keeps only the title: with no trips
+// there is nothing for a second, smaller "add" affordance to sit
+// alongside, and the "New trip" button on the card below is the one
+// obvious thing to do. The "+" returns to the header as soon as there is
+// a first trip.
 function NoTripsYet({ onCreate }) {
   return (
     <div className="screen">
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "20px var(--gutter-text) 14px" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", padding: "20px var(--gutter-text) 14px" }}>
           <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
-          <div style={{ display: "flex", gap: 8 }}>
-            <CircleGlyph glyph="+" label="Add trip" onClick={onCreate} />
-          </div>
         </div>
 
         <div style={{ padding: "0 var(--gutter-screen)" }}>
@@ -203,6 +306,8 @@ function NoTripsYet({ onCreate }) {
             </div>
           </div>
         </div>
+
+        <SignOut />
       </div>
     </div>
   );

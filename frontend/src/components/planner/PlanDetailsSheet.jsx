@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faLock, faLockOpen, faArrowUpRightFromSquare } from "@fortawesome/free-solid-svg-icons";
+import { useNavigate } from "react-router-dom";
+import { usePlannerState, usePlannerDispatch, useCan } from "../../state/PlannerContext";
 import { getTripDays } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
+import { planDurationMinutes } from "../../lib/dayGrid";
 import Stepper from "../forms/Stepper";
 
 // Calendar item details — a bottom sheet overlaid on pages/DaySchedule.jsx,
@@ -23,18 +27,24 @@ const SNAP_MIN = 15;
 const DAY_END_MIN = 1440;
 const CONFIRM_WINDOW_MS = 3000;
 
-function planDurationMinutes(plan) {
-  if (plan.startDt && plan.endDt) {
-    const d = (plan.endDt.minuteOfDay - plan.startDt.minuteOfDay + 1440) % 1440;
-    if (d > 0) return d;
-  }
-  return plan.totalDurationMinutes || 60;
+// Pin links are stored as typed/pasted (often "maps.app/…" with no scheme);
+// window.open would resolve those relative to this app, so add https://
+// when no scheme is present — same test as pages/NewPin.jsx.
+function externalHref(link) {
+  if (!link) return null;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(link) ? link : `https://${link}`;
 }
 
 export default function PlanDetailsSheet({ planId, onClose }) {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, plans } = state;
+  const can = useCan();
+  // Moving, clearing and deleting are plans:write; locking is the owner's
+  // plans:decide. Readers get the sheet for looking only.
+  const canPlan = can("plans:write");
+  const canDecide = can("plans:decide");
+  const navigate = useNavigate();
+  const { trip, plans, pins } = state;
 
   const plan = plans.find((p) => p.id === planId);
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
@@ -58,6 +68,12 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   const [deleting, setDeleting] = useState(false);
   const deleteDisarmTimeoutRef = useRef(null);
 
+  // Lock/reopen — a reversible toggle (see components/planner/PlanBlock.jsx
+  // "locked" status + backend/app/routers/plans.py lock_plan), so unlike
+  // "Delete permanently" it needs no armed/confirm state, just a busy flag
+  // to keep the tap from double-firing while the request is in flight.
+  const [lockBusy, setLockBusy] = useState(false);
+
   // Reset local editing state whenever a *different* plan's data arrives —
   // same convention the routed version used, just keyed off the prop
   // instead of a URL param.
@@ -78,6 +94,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     setError("");
     setClearing(false);
     setDeleteArmed(false);
+    setLockBusy(false);
     setDeleting(false);
     clearTimeout(deleteDisarmTimeoutRef.current);
   }, [planId]);
@@ -99,7 +116,25 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   if (!planId || !plan) return null;
 
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
-  const editable = plan.status === "placed" || plan.status === "pencilled";
+  const editable = canPlan && (plan.status === "placed" || plan.status === "pencilled");
+  // Only reachable here for a plan with no contest — pages/DaySchedule.jsx
+  // routes a contested/locked-via-contest plan to the compare screen
+  // instead (see handlePlanTap there), so "locked" in this sheet always
+  // means a direct lock (backend/app/routers/plans.py lock_plan), and
+  // reopening it (routers/contests.py reopen_plan tolerates a null
+  // contest_id) is always safe to offer right here.
+  const isLocked = plan.status === "locked";
+  const isCustomEvent = plan.items.length > 0 && plan.items.every((i) => i.travelItemId != null);
+  const clearLabel = isCustomEvent
+    ? "Clear start time — deletes this event"
+    : "Clear start time — removes this item from the schedule";
+  // The pin behind this plan, when it is a single pin (not a custom event
+  // or a multi-item plan) — drives the "open link" and "pin details"
+  // buttons, which only make sense for pins.
+  const soleItem = plan.items.length === 1 ? plan.items[0] : null;
+  const pinId = soleItem?.pinId ?? null;
+  const pin = pinId != null ? pins[pinId] : null;
+  const pinHref = externalHref(pin?.link);
   const endMinute = startMinute + durationMinutes;
   const timeValue = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
 
@@ -181,10 +216,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     if (ref) {
       try {
         if (ref.kind === "pin") {
-          // PATCH_PIN swallows its own errors (see state/PlannerContext.jsx)
+          // PATCH_PIN reports failure in its result rather than throwing
+          // (see state/PlannerContext.jsx) — nothing to catch, and nothing
+          // worth interrupting this sheet for: the move above is what the
+          // user asked for, and this is the follow-on sync.
           await dispatch({ type: "PATCH_PIN", id: ref.id, fields: { dur: clampedDuration } });
         } else {
-          // ...PATCH_TRAVEL_ITEM doesn't, so guard it here instead.
+          // ...PATCH_TRAVEL_ITEM does throw, so guard it here instead.
           await dispatch({ type: "PATCH_TRAVEL_ITEM", id: ref.id, fields: { duration_minutes: clampedDuration } });
         }
       } catch (err) {
@@ -199,10 +237,12 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     }
   }
 
-  // The "clear" (x) on Start time — unplaces only, no confirmation needed.
-  // The pin/travel item itself is untouched and lands back in the
-  // unscheduled tray (spec "Moving / unplacing"); you can just place the
-  // same item again, so this behaves like clearing any other field.
+  // The "clear" (x) on Start time — unplaces, no confirmation needed.
+  // A pin is untouched and lands back in the unscheduled tray (spec
+  // "Moving / unplacing"); you can just place it again, so this behaves
+  // like clearing any other field. A custom event has no tray to go back
+  // to — the server deletes it along with the plan
+  // (backend/app/custom_events.py) — so for one of those the ✕ says so.
   function handleClearStart() {
     if (clearing || deleting || !editable) return;
     setClearing(true);
@@ -215,6 +255,20 @@ export default function PlanDetailsSheet({ planId, onClose }) {
         setError("Couldn't remove this item from the schedule — try again.");
       }
     });
+  }
+
+  // Lock/reopen toggle — reversible either direction from this same
+  // control, so (like the ✕-clear above) it needs no confirmation step,
+  // unlike "Delete permanently" below.
+  async function handleToggleLock() {
+    if (lockBusy) return;
+    setLockBusy(true);
+    setError("");
+    const result = await dispatch(isLocked ? { type: "REOPEN_PLAN", planId: plan.id } : { type: "LOCK_PLAN", planId: plan.id });
+    setLockBusy(false);
+    if (!result.ok) {
+      setError(isLocked ? "Couldn't reopen this item — try again." : "Couldn't lock this item — try again.");
+    }
   }
 
   // "Delete permanently" — actually deletes the underlying pin or travel
@@ -245,9 +299,11 @@ export default function PlanDetailsSheet({ planId, onClose }) {
       setError("Couldn't delete this item — try again.");
       return;
     }
-    if (!ref) {
-      // No single underlying item to delete (defensive — every plan the
-      // app creates today has exactly one). Unplacing is the best this
+    if (!ref || ref.kind === "travel") {
+      // A custom event is already gone: unplacing deleted it server-side
+      // (backend/app/custom_events.py), so there's nothing left to delete.
+      // And with no single underlying item (defensive — every plan the
+      // app creates today has exactly one), unplacing is the best this
       // sheet can do for a multi-item plan.
       onClose();
       return;
@@ -279,27 +335,99 @@ export default function PlanDetailsSheet({ planId, onClose }) {
 
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
           <div>
-            <div className="mono-caption">{plan.status === "pencilled" ? "Unconfirmed" : "Scheduled"}</div>
-            <div className="serif-place" style={{ fontSize: 19, marginTop: 3, color: "var(--text-primary)" }}>
-              {title}
+            <div className="mono-caption">{isLocked ? "Locked" : plan.status === "pencilled" ? "Unconfirmed" : "Scheduled"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+              <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>
+                {title}
+              </div>
+              {pinHref && (
+                <button
+                  type="button"
+                  onClick={() => window.open(pinHref, "_blank", "noopener,noreferrer")}
+                  aria-label="Open pin link in new tab"
+                  title="Open pin link in new tab"
+                  style={{
+                    flex: "none",
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    background: "var(--surface-page)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <FontAwesomeIcon icon={faArrowUpRightFromSquare} style={{ width: 11, height: 11 }} />
+                </button>
+              )}
             </div>
             <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 3 }}>
               {clockLabel(startMinute)}–{clockLabel(endMinute)}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{ flex: "none", width: 28, height: 28, borderRadius: "50%", background: "var(--surface-page)", border: "1px solid var(--border)", font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}
-          >
-            ✕
-          </button>
+          <div style={{ display: "flex", gap: 6, flex: "none" }}>
+            {canDecide && (
+              // Lock icon lives in the header, next to the status it
+              // changes — not in the destructive-action footer below,
+              // since this is a routine, reversible toggle rather than a
+              // "you can't undo this" action like Delete permanently.
+              <button
+                type="button"
+                onClick={handleToggleLock}
+                disabled={lockBusy}
+                aria-label={isLocked ? "Reopen — unlock this item" : "Lock this item in place"}
+                title={isLocked ? "Reopen — unlock this item" : "Lock this item in place"}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: isLocked ? "var(--accent)" : "var(--surface-page)",
+                  border: isLocked ? "none" : "1px solid var(--border)",
+                  font: "400 13px var(--font-sans)",
+                  color: isLocked ? "#fff" : "var(--text-secondary)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {lockBusy ? (
+                  "…"
+                ) : (
+                  // Open padlock when not locked (tap to lock), closed
+                  // when locked (tap to reopen) — this toggle is the one
+                  // place in the app that shows the unlocked state at
+                  // all, so it's the only spot that needs faLockOpen;
+                  // PlanBlock.jsx only ever renders a locked plan, so it
+                  // stays on the closed faLock alone. Flat, monochrome
+                  // (fill: currentColor), inheriting this button's own
+                  // color (white when locked/filled, --text-secondary
+                  // when outline).
+                  <FontAwesomeIcon icon={isLocked ? faLock : faLockOpen} style={{ width: 13, height: 13 }} />
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{ flex: "none", width: 28, height: 28, borderRadius: "50%", background: "var(--surface-page)", border: "1px solid var(--border)", font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {!editable && (
           <div style={{ marginTop: 14, padding: "10px 13px", borderRadius: "var(--radius-lg)", background: "var(--plum-tint)", font: "500 12px var(--font-sans)", color: "var(--accent)" }}>
-            This item is {plan.status} and cannot be edited from here.
+            {!canPlan
+              ? "You can view this trip but not change it."
+              : isLocked
+              ? canDecide
+                ? "This item is locked — tap the lock icon above to reopen it."
+                : "This item is locked in place by the trip owner."
+              : `This item is ${plan.status} and cannot be edited from here.`}
           </div>
         )}
 
@@ -370,8 +498,8 @@ export default function PlanDetailsSheet({ planId, onClose }) {
                     type="button"
                     onClick={handleClearStart}
                     disabled={clearing || deleting}
-                    aria-label="Clear start time — removes this item from the schedule"
-                    title="Clear — removes this item from the schedule"
+                    aria-label={clearLabel}
+                    title={clearLabel}
                     style={{
                       position: "absolute",
                       top: "50%",
@@ -394,34 +522,63 @@ export default function PlanDetailsSheet({ planId, onClose }) {
                 )}
               </div>
             </div>
-            <Stepper label="Duration" valueLabel={fmtMin(durationMinutes)} onDown={() => stepDuration(-15)} onUp={() => stepDuration(15)} />
+            <Stepper
+              label="Duration"
+              valueLabel={fmtMin(durationMinutes)}
+              onDown={() => stepDuration(-15)}
+              onUp={() => stepDuration(15)}
+              disabled={!editable}
+            />
           </div>
         </div>
 
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div>
+          {pinId != null && (
+            // Navigation, not an edit — kept as a neutral full-width button
+            // above the destructive Delete. Routes to pages/EditVisit.jsx,
+            // whose default ("schedule") back destination returns to the
+            // day this pin is placed on.
             <button
               type="button"
-              onClick={handleDeleteTap}
-              disabled={deleting || clearing || !editable}
+              onClick={() => navigate(`/trips/${trip.id}/edit/${pinId}?from=schedule`)}
               style={{
                 width: "100%",
                 height: 48,
                 borderRadius: "var(--radius-lg)",
-                background: deleteArmed ? "var(--danger, #b3261e)" : "var(--surface-page)",
-                border: deleteArmed ? "none" : "1px solid var(--border-strong)",
-                color: deleteArmed ? "#fff" : "var(--danger, #b3261e)",
+                background: "var(--surface-page)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-primary)",
                 font: "600 14px var(--font-sans)",
-                opacity: editable ? 1 : 0.6,
-                transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
               }}
             >
-              {deleting ? "Deleting…" : deleteArmed ? "confirm?" : "Delete permanently"}
+              View pin details
             </button>
-            <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
-              {deleteArmed ? "Tap once more to confirm — this can't be undone." : ""}
+          )}
+          {canPlan ? (
+            <div>
+              <button
+                type="button"
+                onClick={handleDeleteTap}
+                disabled={deleting || clearing || !editable}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  borderRadius: "var(--radius-lg)",
+                  background: deleteArmed ? "var(--danger, #b3261e)" : "var(--surface-page)",
+                  border: deleteArmed ? "none" : "1px solid var(--border-strong)",
+                  color: deleteArmed ? "#fff" : "var(--danger, #b3261e)",
+                  font: "600 14px var(--font-sans)",
+                  opacity: editable ? 1 : 0.6,
+                  transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
+                }}
+              >
+                {deleting ? "Deleting…" : deleteArmed ? "confirm?" : "Delete permanently"}
+              </button>
+              <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
+                {deleteArmed ? "Tap once more to confirm — this can't be undone." : ""}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BANDS } from "../../data/pins";
+import { worksOn } from "../../lib/availability";
 
 // Sunday-starting week grid, where each row is a calendar week and each
 // week's 7 columns are Sun..Sat — callers pass `days` from data/trip.js
@@ -94,15 +95,16 @@ function navButtonStyle(edge) {
   };
 }
 
-export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand, onToggle, days }) {
-  const okBase = (day, band) => !rule || (rule.days?.includes(day) && rule.bands?.includes(band));
+export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand, placedLocked = false, onToggle, days }) {
+  // Rule + override are read through lib/availability.js so this grid and
+  // the propose-a-block flow's "Pull in" list can never disagree about
+  // what "works" means (see that module's header).
+  const works = (day, band) => worksOn(pinId, rule, overrides, day, band);
 
   let workingCount = 0;
   for (const d of days) {
     for (const band of BANDS) {
-      const key = `${pinId}|${d.n}-${band}`;
-      const works = overrides[key] ? !okBase(d.n, band) : okBase(d.n, band);
-      if (works) workingCount += 1;
+      if (works(d.n, band)) workingCount += 1;
     }
   }
 
@@ -234,20 +236,33 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
                       if (!d) return <div key={di} style={{ flex: 1, minWidth: 0, height: 26 }} />;
                       const key = `${pinId}|${d.n}-${band}`;
                       const overridden = Boolean(overrides[key]);
-                      const works = overridden ? !okBase(d.n, band) : okBase(d.n, band);
-                      const placed = placedDayBand === `${d.n}-${band}` && works;
+                      const cellWorks = works(d.n, band);
+                      // A locked plan can't be moved off this cell (spec
+                      // "Moving / unplacing" — only placed/pencilled can
+                      // resize/move), so its "placed" marker can't depend
+                      // on `works`: an override toggled after the lock, or
+                      // a rule that never matched this slot to begin with,
+                      // would otherwise make an immovable placement look
+                      // unplaced. A non-locked plan keeps the old
+                      // works-gated check, since it can still be moved to
+                      // a working square.
+                      const isPlacedCell = placedDayBand === `${d.n}-${band}`;
+                      const placed = isPlacedCell && (placedLocked || cellWorks);
                       return (
                         <div
                           key={key}
-                          onClick={() => onToggle(d.n, band)}
+                          // No onToggle = read-only (a viewer without
+                          // ideas:write — see pages/EditVisit.jsx).
+                          onClick={onToggle ? () => onToggle(d.n, band) : undefined}
                           style={{
+                            cursor: onToggle ? "pointer" : "default",
                             flex: 1,
                             minWidth: 0,
                             boxShadow: overridden ? "0 0 0 1.5px rgba(143,68,120,.55)" : "none",
                             borderRadius: 5,
                           }}
                         >
-                          <div style={cellStyle({ placed, works })}>{placed ? "•" : ""}</div>
+                          <div style={cellStyle({ placed, works: cellWorks })}>{placed ? "•" : ""}</div>
                         </div>
                       );
                     })}
@@ -344,7 +359,7 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
       ) : null}
 
       <div className="mono-caption" style={{ marginTop: 9, fontFamily: "var(--font-sans)", textTransform: "none", letterSpacing: 0, lineHeight: 1.5, color: "var(--text-muted)" }}>
-        Tap a square to override. Only squares that work show up as options when the group compares sets.
+        {onToggle ? "Tap a square to override. " : ""}Only squares that work show up as options when the group compares sets.
       </div>
     </div>
   );

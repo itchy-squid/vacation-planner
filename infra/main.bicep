@@ -56,6 +56,11 @@ param entraClientId string = ''
 @secure()
 param entraClientSecret string = ''
 
+@description('Google OAuth client ID for Easy Auth\'s Google provider. Leave empty to leave Google sign-in off -- see infra/README.md "Set up Google sign-in".')
+param googleClientId string = ''
+@secure()
+param googleClientSecret string = ''
+
 @description('''Tenant for Postgres AAD auth (modules/postgres.bicep) only
 -- Easy Auth (modules/container-app-backend.bicep) signs users in via the
 /consumers endpoint regardless of this value, since that app registration
@@ -122,6 +127,14 @@ module backendIdentity 'modules/managed-identity.bicep' = {
   }
 }
 
+module photoStorage 'modules/storage-account.bicep' = {
+  name: 'photo-storage'
+  params: {
+    location: location
+    name: suffix
+  }
+}
+
 module backend 'modules/container-app-backend.bicep' = {
   name: 'backend'
   params: {
@@ -137,12 +150,16 @@ module backend 'modules/container-app-backend.bicep' = {
     postgresHost: postgres.outputs.fqdn
     postgresDatabase: postgres.outputs.databaseName
     postgresAppRole: postgresAppRole
+    storageBlobEndpoint: photoStorage.outputs.blobEndpoint
+    storageContainerName: photoStorage.outputs.containerName
     corsOrigins: corsOrigins
     customDomainName: backendCustomDomainName
     bindCustomDomain: backendBindCustomDomain
     existingCertificateResourceId: backendExistingCertificateResourceId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
+    googleClientId: googleClientId
+    googleClientSecret: googleClientSecret
   }
 }
 
@@ -162,5 +179,6 @@ output backendCustomDomainVerificationId string = backend.outputs.customDomainVe
 output registryLoginServer string = registry.outputs.loginServer
 output postgresFqdn string = postgres.outputs.fqdn
 output postgresServerName string = postgres.outputs.serverName
-@description('Object ID of the backend managed identity — pass this to pgaadauth_create_principal_with_oid(..., objectType=\'service\') in infra/sql/provision_roles.sql to map it to the postgresAppRole Postgres role.')
+output photoStorageAccountName string = photoStorage.outputs.accountName
+@description('Object ID of the backend managed identity — pass this to pgaadauth_create_principal_with_oid(..., objectType=\'service\') in infra/sql/provision_roles.sql to map it to the postgresAppRole Postgres role, and to the storage role assignments in infra/README.md "One-time manual setup" step 7.')
 output backendIdentityObjectId string = backendIdentity.outputs.principalId

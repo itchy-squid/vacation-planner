@@ -18,7 +18,8 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 // infra/modules/container-app-backend.bicep's authConfig). Anonymous
 // requests get a 401 from the platform itself, before the request ever
 // reaches FastAPI, so there's no sign-in *form* to build here — Easy Auth's
-// own hosted login lives at `${API_BASE}/.auth/login/aad`, and a signed-in
+// own hosted login lives at `${API_BASE}/.auth/login/<provider>` (`aad` for
+// Microsoft, `google` for Google), and a signed-in
 // session is just a cookie the browser holds for the API's origin. This
 // layer's whole job is: (1) send that cookie cross-origin, (2) notice when
 // there isn't one, and (3) send the browser to log in and back.
@@ -37,13 +38,66 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 // out", so a network hiccup or a CORS problem never locks anyone out of
 // the app.
 
-function loginUrl() {
-  const returnTo = window.location.href;
-  return `${API_BASE}/.auth/login/aad?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
+// Which Easy Auth providers this deployment has turned on, baked in at build
+// time by .github/workflows/deploy.yml from the same variables the infra job
+// uses (EASY_AUTH_CLIENT_ID -> "aad", EASY_AUTH_GOOGLE_CLIENT_ID ->
+// "google"). Unset means Microsoft only, which is what every build did
+// before Google existed.
+export const PROVIDER_LABELS = { aad: "Microsoft", google: "Google" };
+export const AUTH_PROVIDERS = (import.meta.env.VITE_AUTH_PROVIDERS ?? "aad")
+  .split(",")
+  .map((p) => p.trim())
+  .filter((p) => p in PROVIDER_LABELS);
+
+// The provider this browser last signed in with, so an expired session can
+// go straight back to it instead of stopping at the chooser. A convenience
+// only: storage can be missing or blocked, and then we just ask again.
+const PROVIDER_KEY = "vp.authProvider";
+
+function rememberedProvider() {
+  try {
+    const p = window.localStorage.getItem(PROVIDER_KEY);
+    return AUTH_PROVIDERS.includes(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+// The provider to send someone to without asking, or null if they have to
+// pick (more than one provider, and none remembered).
+function automaticProvider() {
+  if (AUTH_PROVIDERS.length === 1) return AUTH_PROVIDERS[0];
+  return rememberedProvider();
+}
+
+function loginUrl(provider, returnTo) {
+  return `${API_BASE}/.auth/login/${provider}?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
+}
+
+function goToLogin(provider, returnTo) {
+  try {
+    window.localStorage.setItem(PROVIDER_KEY, provider);
+  } catch {
+    // Not remembered; the chooser will ask next time.
+  }
+  window.location.href = loginUrl(provider, returnTo);
+}
+
+// Query-string marker for the "choose how to sign in" screen (main.jsx),
+// used when there's no session and no provider we can pick on our own.
+export const SIGN_IN_PARAM = "signin";
+
+export function isSignInLanding() {
+  return new window.URLSearchParams(window.location.search).has(SIGN_IN_PARAM);
 }
 
 function redirectToLogin() {
-  window.location.href = loginUrl();
+  const provider = automaticProvider();
+  if (provider) {
+    goToLogin(provider, window.location.href);
+  } else {
+    window.location.href = `${window.location.origin}/?${SIGN_IN_PARAM}=1`;
+  }
 }
 
 // Query-string marker appended to the post-logout URL below and read by
@@ -68,10 +122,11 @@ export function logout() {
   window.location.href = `${API_BASE}/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(returnTo)}`;
 }
 
-// The Sign in button on the signed-out screen (see main.jsx). Same hosted
-// Easy Auth login as the automatic redirect, just user-initiated.
-export function signIn() {
-  window.location.href = `${API_BASE}/.auth/login/aad?post_login_redirect_uri=${encodeURIComponent(window.location.origin + "/")}`;
+// The Sign in buttons on the signed-out / sign-in screens (see main.jsx).
+// Same hosted Easy Auth login as the automatic redirect, just
+// user-initiated, and always returning to the app root.
+export function signIn(provider) {
+  goToLogin(provider, window.location.origin + "/");
 }
 
 // Resolved once per page load: true if the API reports a signed-in user,
@@ -95,8 +150,8 @@ function checkSession() {
 }
 
 // Call once, as early as possible (see main.jsx), so a signed-out user is
-// sent to log in before the app tries to render anything, rather than
-// after its first API call fails. Resolves for everyone except a
+// sent to log in (or to the provider chooser) before the app tries to
+// render anything, rather than after its first API call fails. Resolves for everyone except a
 // definitely-signed-out user, who never sees it resolve — the browser is
 // already navigating to Easy Auth's login page instead.
 export function ensureSignedIn() {
@@ -150,11 +205,27 @@ async function request(path, { method = "GET", body } = {}) {
 }
 
 export const api = {
+  me: () => request("/api/me"),
   listTrips: () => request("/api/trips"),
   getTrip: (tripId) => request(`/api/trips/${tripId}`),
   createTrip: (payload) => request("/api/trips", { method: "POST", body: payload }),
   updateTrip: (tripId, fields) => request(`/api/trips/${tripId}`, { method: "PATCH", body: fields }),
   listContributors: (tripId) => request(`/api/trips/${tripId}/contributors`),
+
+  // Sharing — see backend/app/routers/sharing.py. Roles are owner |
+  // planner | companion | reader (lib/roles.js); what each may do is
+  // backend/app/permissions.py.
+  changeRole: (tripId, contributorId, role) =>
+    request(`/api/trips/${tripId}/contributors/${contributorId}`, { method: "PATCH", body: { role } }),
+  removeContributor: (tripId, contributorId) =>
+    request(`/api/trips/${tripId}/contributors/${contributorId}`, { method: "DELETE" }),
+  leaveTrip: (tripId) => request(`/api/trips/${tripId}/leave`, { method: "POST" }),
+  listInvites: (tripId) => request(`/api/trips/${tripId}/invites`),
+  // Returns the live link for `role`, creating it on first ask.
+  getInvite: (tripId, role) => request(`/api/trips/${tripId}/invites`, { method: "POST", body: { role } }),
+  revokeInvite: (tripId, inviteId) => request(`/api/trips/${tripId}/invites/${inviteId}`, { method: "DELETE" }),
+  previewInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
 
   listPins: (tripId) => request(`/api/trips/${tripId}/pins`),
   createPin: (tripId, payload) => request(`/api/trips/${tripId}/pins`, { method: "POST", body: payload }),
@@ -169,13 +240,33 @@ export const api = {
   createPlan: (tripId, payload) => request(`/api/trips/${tripId}/plans`, { method: "POST", body: payload }),
   movePlan: (planId, fields) => request(`/api/plans/${planId}`, { method: "PATCH", body: fields }),
   deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
+  lockPlan: (planId) => request(`/api/plans/${planId}/lock`, { method: "POST" }),
 
-  proposeAlternative: (tripId, payload) => request(`/api/trips/${tripId}/contests`, { method: "POST", body: payload }),
+  // Propose a block: { starts_at, ends_at, label?, rationale?, items:
+  // [{ pin_id | travel_item_id, duration_minutes? }] }. There's no
+  // against_plan_id any more — a proposal claims a range of hours, and the
+  // server captures whatever is already in them into one "on the board"
+  // option (see backend/app/routers/contests.py::open_block_contest).
+  proposeBlock: (tripId, payload) => request(`/api/trips/${tripId}/contests`, { method: "POST", body: payload }),
+  // Turns the caller's own draft block into a real proposal. 409s if the
+  // hours went out for a vote while the draft sat unpublished.
+  publishPlan: (planId) => request(`/api/plans/${planId}/publish`, { method: "POST" }),
   getContest: (contestId) => request(`/api/contests/${contestId}`),
+  // Rewrite one candidate plan — its stops, their times, its name and its
+  // case: { label, rationale, items: [...] }, the same item shape
+  // proposeBlock takes, minus the window (an option always spans its
+  // contest's hours). Returns the whole contest, because saving clears the
+  // votes cast for that plan and the tally on screen has to change with it
+  // (see backend/app/routers/contests.py::update_proposal).
+  updateProposal: (planId, payload) => request(`/api/plans/${planId}/stops`, { method: "PUT", body: payload }),
+
   toggleContestVote: (contestId, planId) =>
     request(`/api/contests/${contestId}/vote`, { method: "POST", body: { plan_id: planId } }),
-  lockContest: (contestId, planId) =>
-    request(`/api/contests/${contestId}/lock`, { method: "POST", body: { plan_id: planId } }),
+  // Settles a decision: the chosen set's stops go onto the calendar as
+  // separate placed plans, and the contest is deleted. Returns
+  // { placed_plans }.
+  pickSet: (contestId, planId) =>
+    request(`/api/contests/${contestId}/pick`, { method: "POST", body: { plan_id: planId } }),
   reopenPlan: (planId) => request(`/api/plans/${planId}/reopen`, { method: "POST" }),
 
   listTravelItems: (tripId) => request(`/api/trips/${tripId}/travel-items`),

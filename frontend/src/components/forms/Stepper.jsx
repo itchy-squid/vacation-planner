@@ -1,6 +1,6 @@
 // Duration stepper: 15-minute steps, floor 15 (design_system readme +
 // handoff README screen 6 "Duration / Cost").
-export default function Stepper({ label, valueLabel, onDown, onUp }) {
+export default function Stepper({ label, valueLabel, onDown, onUp, disabled = false }) {
   return (
     <div>
       {label ? <div className="mono-caption">{label}</div> : null}
@@ -14,11 +14,14 @@ export default function Stepper({ label, valueLabel, onDown, onUp }) {
           borderRadius: "var(--radius-lg)",
           height: 46,
           overflow: "hidden",
+          opacity: disabled ? 0.6 : 1,
         }}
       >
         <button
           type="button"
           onClick={onDown}
+          disabled={disabled}
+          aria-label="Shorter"
           style={{ width: 40, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", font: "400 20px var(--font-sans)", color: "var(--text-secondary)" }}
         >
           −
@@ -27,6 +30,8 @@ export default function Stepper({ label, valueLabel, onDown, onUp }) {
         <button
           type="button"
           onClick={onUp}
+          disabled={disabled}
+          aria-label="Longer"
           style={{ width: 40, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", font: "400 20px var(--font-sans)", color: "var(--text-secondary)" }}
         >
           +

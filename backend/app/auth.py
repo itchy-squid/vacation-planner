@@ -1,5 +1,5 @@
 """Identity via Azure Container Apps / App Service built-in auth ("Easy
-Auth") with Microsoft Entra ID, per the project's AskUserQuestion answer:
+Auth") with Microsoft Entra ID and/or Google, per the project's AskUserQuestion answer:
 no real sign-in flow is wired up in this pass, but the backend is written
 to trust Easy Auth's forwarded headers once it's turned on in front of the
 Container App (see infra/modules/containerapp.bicep).
@@ -18,13 +18,9 @@ import binascii
 import json
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import HTTPException, Request, status
 
 from .config import get_settings
-from .db import get_db
-from .models import Contributor
 
 CLIENT_PRINCIPAL_HEADER = "X-MS-CLIENT-PRINCIPAL"
 CLIENT_PRINCIPAL_ID_HEADER = "X-MS-CLIENT-PRINCIPAL-ID"
@@ -39,6 +35,22 @@ _EMAIL_CLAIM_TYPES = {
 }
 _NAME_CLAIM_TYPES = {"name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"}
 
+# Easy Auth's `auth_typ` / X-MS-CLIENT-PRINCIPAL-IDP value for Google.
+GOOGLE_PROVIDER = "google"
+# Users are keyed by email alone (see app/permissions.py), so an email
+# Google hasn't verified must never be trusted: a Google account can be
+# created with someone else's non-Gmail address as its login.
+_EMAIL_VERIFIED_CLAIM = "email_verified"
+
+
+class _Rejected:
+    """A principal header that parsed fine but must not be trusted. Distinct
+    from None (unparseable) so get_principal doesn't fall back to the
+    simpler headers, which carry the same unverified identity."""
+
+
+_REJECTED = _Rejected()
+
 
 @dataclass(frozen=True)
 class Principal:
@@ -48,7 +60,7 @@ class Principal:
     identity_provider: str | None
 
 
-def _parse_client_principal_header(raw: str) -> Principal | None:
+def _parse_client_principal_header(raw: str, principal_id: str | None) -> Principal | _Rejected | None:
     try:
         decoded = base64.b64decode(raw)
         payload = json.loads(decoded)
@@ -68,11 +80,15 @@ def _parse_client_principal_header(raw: str) -> Principal | None:
     if not email:
         return None
 
+    provider = payload.get("auth_typ")
+    if provider == GOOGLE_PROVIDER and claim_map.get(_EMAIL_VERIFIED_CLAIM, "").lower() != "true":
+        return _REJECTED
+
     return Principal(
-        object_id=payload.get("userId"),
+        object_id=payload.get("userId") or principal_id,
         email=email,
         display_name=name or email.split("@")[0],
-        identity_provider=payload.get("auth_typ"),
+        identity_provider=provider,
     )
 
 
@@ -83,13 +99,16 @@ def get_principal(request: Request) -> Principal | None:
 
     header = request.headers.get(CLIENT_PRINCIPAL_HEADER)
     if header:
-        principal = _parse_client_principal_header(header)
+        principal = _parse_client_principal_header(header, request.headers.get(CLIENT_PRINCIPAL_ID_HEADER))
+        if principal is _REJECTED:
+            return None
         if principal:
             return principal
 
     # Fallback: the simpler always-present headers Easy Auth also sets.
+    # Not for Google: these carry no email_verified claim to check.
     name = request.headers.get(CLIENT_PRINCIPAL_NAME_HEADER)
-    if name:
+    if name and request.headers.get(CLIENT_PRINCIPAL_IDP_HEADER) != GOOGLE_PROVIDER:
         return Principal(
             object_id=request.headers.get(CLIENT_PRINCIPAL_ID_HEADER),
             email=name,
@@ -113,33 +132,6 @@ def get_current_principal(request: Request) -> Principal:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No authenticated user (Easy Auth headers missing)")
 
 
-def get_current_contributor(
-    trip_id: int,
-    principal: Principal = Depends(get_current_principal),
-    db: Session = Depends(get_db),
-) -> Contributor:
-    """Resolves the signed-in principal to a Contributor row scoped to one
-    trip. In development, an unknown email is auto-enrolled as a
-    non-owner contributor so local testing doesn't require seeding first."""
-
-    settings = get_settings()
-    contributor = db.scalar(
-        select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == principal.email)
-    )
-    if contributor:
-        return contributor
-
-    if settings.is_development:
-        contributor = Contributor(
-            trip_id=trip_id,
-            email=principal.email,
-            display_name=principal.display_name,
-            initial=principal.display_name[:1].upper(),
-            is_owner=False,
-        )
-        db.add(contributor)
-        db.commit()
-        db.refresh(contributor)
-        return contributor
-
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a contributor on this trip")
+# Whether that person may do anything on a particular trip is answered by
+# app/permissions.py (their Contributor row's role). There is no dev-mode
+# auto-enrolment any more: joining a trip happens through an invite link.

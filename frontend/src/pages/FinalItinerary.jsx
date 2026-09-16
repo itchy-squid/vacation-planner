@@ -1,15 +1,13 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faArrowRight } from "@fortawesome/free-solid-svg-icons";
 import AvatarStack from "../components/planner/AvatarStack";
 import { usePlannerState } from "../state/PlannerContext";
+import TripHeader from "../components/core/TripHeader";
 import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
 import { dayIndexForDate, clockLabel } from "../lib/planTime";
-
-// Backend's derive.py moving_minutes formula: max(0, (item_count-1)*12) —
-// mirrored here purely for display pacing between a locked plan's stops,
-// same as pages/CompareSets.jsx's STOP_GAP_MIN.
-const MOVE_GAP_MIN = 12;
 
 // Screen 7 — "read the locked plan," now data-driven across every day of
 // the trip instead of a fixed FINISHED_DAYS mock with Day 5 special-
@@ -17,6 +15,10 @@ const MOVE_GAP_MIN = 12;
 // pencilled/locked plan and no open contest; a day with an open contest
 // or nothing scheduled yet shows as unfinished with a resume link. See
 // docs/features/scheduling-feature-spec.md "Locking".
+//
+// Stop times come from each item's startMinuteOfDay, computed once on the
+// server. This screen used to pace them 12 minutes apart while the compare
+// screen used 10 — one itinerary, two clocks. See backend/app/derive.py.
 export default function FinalItinerary() {
   const navigate = useNavigate();
   const state = usePlannerState();
@@ -35,18 +37,22 @@ export default function FinalItinerary() {
 
       const stops = [];
       settledPlans.forEach((p) => {
-        let t = p.startDt.minuteOfDay;
-        p.items.forEach((item, idx) => {
-          if (idx > 0) t += MOVE_GAP_MIN;
+        p.items.forEach((item) => {
           stops.push({
-            time: clockLabel(t),
+            time: clockLabel(item.startMinuteOfDay ?? p.startDt.minuteOfDay),
+            sortKey: item.startMinuteOfDay ?? p.startDt.minuteOfDay,
             title: item.title,
-            detail: item.costCents === 0 ? "free" : `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}`,
+            detail: item.costCents
+              ? `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}`
+              : fmtMin(item.durationMinutes),
             notable: p.status === "pencilled",
           });
-          t += item.durationMinutes;
         });
       });
+      // A captured incumbent carries explicit offsets, so its stops are
+      // not necessarily in plan order — sort by the clock, which is the
+      // order a day is actually read in.
+      stops.sort((a, b) => a.sortKey - b.sortKey);
 
       return {
         dayIndex,
@@ -64,13 +70,12 @@ export default function FinalItinerary() {
   return (
     <div className="screen">
       <div className="screen-scroll" style={{ paddingBottom: 32 }}>
-        <div style={{ padding: "20px var(--gutter-text) 0" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div className="mono-caption">{finishedCount} of {dayViews.length || 1} days set</div>
-            <HomeButtonInline />
-          </div>
-          <div className="serif-place" style={{ fontSize: 30, marginTop: 4, color: "var(--text-primary)" }}>{TRIP.name}</div>
-          <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>{TRIP.regionLine}</div>
+        <TripHeader />
+        {/* The trip's name is in the header now — what stays here is how far
+            through it the group actually is. */}
+        <div style={{ padding: "6px var(--gutter-text) 0" }}>
+          <div className="mono-caption">{finishedCount} of {dayViews.length || 1} days set</div>
+          <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>{TRIP.regionLine}</div>
           <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: "var(--surface-sunken)", overflow: "hidden" }}>
             <div style={{ width: `${dayViews.length ? (finishedCount / dayViews.length) * 100 : 0}%`, height: "100%", background: "var(--geo)" }} />
           </div>
@@ -85,6 +90,12 @@ export default function FinalItinerary() {
                 key={d.dayIndex}
                 label={d.label}
                 place={d.hasOpenContest ? "Still being decided by the group" : "Nothing scheduled yet"}
+                // Only the plain "nothing scheduled yet" case collapses its
+                // text into the tappable control itself (text + ›) — a day
+                // stuck on an open contest keeps its own explanatory line
+                // plus a separate "Resume" action, since "Still being
+                // decided by the group" isn't itself an instruction to tap.
+                nothingScheduled={!d.hasOpenContest}
                 onResume={() =>
                   d.hasOpenContest && d.firstContestId
                     ? navigate(`/trips/${TRIP.id}/contests/${d.firstContestId}`)
@@ -96,21 +107,6 @@ export default function FinalItinerary() {
         </div>
       </div>
     </div>
-  );
-}
-
-function HomeButtonInline() {
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      aria-label="Back to Trips home"
-      className="tap"
-      onClick={() => navigate("/")}
-      style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--surface-card)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", font: "400 16px var(--font-sans)", color: "var(--text-primary)", flex: "none" }}
-    >
-      ⌂
-    </button>
   );
 }
 
@@ -137,12 +133,28 @@ function DayCard({ label, stops, contributors }) {
   );
 }
 
-function UnfinishedCard({ label, place, onResume }) {
+function UnfinishedCard({ label, place, onResume, nothingScheduled = false }) {
   return (
     <div style={{ borderRadius: "var(--radius-2xl)", border: "1.5px dashed var(--border-strong)", padding: "15px 16px" }}>
       <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>{label}</div>
-      <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>{place}</div>
-      <button onClick={onResume} style={{ marginTop: 10, font: "600 12px var(--font-sans)", color: "var(--accent)" }}>Resume</button>
+      {nothingScheduled ? (
+        // "Nothing scheduled yet" doubles as the tap target here, instead
+        // of a separate caption plus its own "Resume" button below it —
+        // there's nothing to resume, just an empty day to go start
+        // scheduling.
+        <button
+          onClick={onResume}
+          style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 5, font: "600 12px var(--font-sans)", color: "var(--accent)" }}
+        >
+          {place}
+          <FontAwesomeIcon icon={faArrowRight} style={{ width: 10, height: 10 }} />
+        </button>
+      ) : (
+        <>
+          <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>{place}</div>
+          <button onClick={onResume} style={{ marginTop: 10, font: "600 12px var(--font-sans)", color: "var(--accent)" }}>Resume</button>
+        </>
+      )}
     </div>
   );
 }

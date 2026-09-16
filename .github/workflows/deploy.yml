@@ -25,6 +25,13 @@ name: Deploy
 #     gate before anything deploys there.
 #   - Resource group already exists for that environment
 #     (vacationplanner-dev / vacationplanner).
+#   - The backend identity's two storage roles (Storage Blob Data
+#     Contributor + Storage Blob Delegator on the pin-photos storage
+#     account, infra/modules/storage-account.bicep) are granted by hand,
+#     once per environment, before the first deploy that needs photo
+#     uploads to actually work -- this workflow's DEPLOY_CLIENT_ID only
+#     has Contributor on the resource group, which can't write role
+#     assignments. See infra/README.md "One-time manual setup" step 7.
 #   - The database uses Microsoft Entra ID auth only (no Postgres
 #     passwords) — see infra/README.md "Managed identity database auth".
 #     The one-time role provisioning (infra/sql/provision_roles.sql) is a
@@ -60,13 +67,15 @@ name: Deploy
 #     (the federated app registration above), AZURE_TENANT_ID (shared by
 #     GitHub's login, Postgres's AAD admin, and Easy Auth),
 #     AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME, and
-#     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up). (The
+#     EASY_AUTH_CLIENT_ID (leave unset until Easy Auth is set up), and
+#     EASY_AUTH_GOOGLE_CLIENT_ID (leave unset to keep Google sign-in off). (The
 #     Postgres Entra admin is a manual, one-time step now, not something
 #     this workflow provisions — see infra/README.md "One-time manual
 #     setup", step 6 — so there's no POSTGRES_ADMIN_* variable to set.)
 #   - Per-environment SECRETS (same Environments' "Secrets" tab — these
 #     ARE sensitive): EASY_AUTH_CLIENT_SECRET (leave unset until Easy Auth
-#     is set up), AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App
+#     is set up), EASY_AUTH_GOOGLE_CLIENT_SECRET (only with EASY_AUTH_GOOGLE_CLIENT_ID),
+#     AZURE_STATIC_WEB_APPS_API_TOKEN (from the Static Web App
 #     resource, after the first Bicep deploy creates it). Nothing Azure
 #     login related is a secret anymore — that's the point of OIDC.
 
@@ -145,7 +154,9 @@ jobs:
             {
               "entraClientId": "${{ vars.EASY_AUTH_CLIENT_ID }}",
               "entraClientSecret": "${{ secrets.EASY_AUTH_CLIENT_SECRET }}",
-              "entraTenantId": "${{ vars.AZURE_TENANT_ID }}"
+              "entraTenantId": "${{ vars.AZURE_TENANT_ID }}",
+              "googleClientId": "${{ vars.EASY_AUTH_GOOGLE_CLIENT_ID }}",
+              "googleClientSecret": "${{ secrets.EASY_AUTH_GOOGLE_CLIENT_SECRET }}"
             }
 
   migrate:
@@ -246,7 +257,17 @@ jobs:
           # domain once backendCustomDomainName is set, otherwise its
           # auto-generated *.azurecontainerapps.io hostname.
           VITE_API_BASE_URL: ${{ needs.infra.outputs.backend-fqdn }}
+          # Which Easy Auth providers the sign-in screen offers -- derived
+          # from the same variables the infra job turns them on with, so
+          # the frontend never links to a provider that isn't configured.
+          EASY_AUTH_CLIENT_ID: ${{ vars.EASY_AUTH_CLIENT_ID }}
+          EASY_AUTH_GOOGLE_CLIENT_ID: ${{ vars.EASY_AUTH_GOOGLE_CLIENT_ID }}
         run: |
+          providers=""
+          if [ -n "$EASY_AUTH_CLIENT_ID" ]; then providers="aad"; fi
+          if [ -n "$EASY_AUTH_GOOGLE_CLIENT_ID" ]; then providers="${providers:+$providers,}google"; fi
+          export VITE_AUTH_PROVIDERS="$providers"
+          echo "VITE_AUTH_PROVIDERS=$VITE_AUTH_PROVIDERS"
           npm ci
           npm run build
 

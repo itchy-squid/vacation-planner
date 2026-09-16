@@ -54,6 +54,7 @@ resources.
 | `ACR_NAME` | `vacationplannerdev` (dev) / `vacationplanner` (prod) |
 | `CONTAINER_APP_NAME` | `vacationplanner-dev` (dev) / `vacationplanner` (prod) |
 | `EASY_AUTH_CLIENT_ID` | Client ID of the separate Easy Auth Entra app registration (`infra/README.md` step 3). Leave unset until Easy Auth is set up. |
+| `EASY_AUTH_GOOGLE_CLIENT_ID` | Client ID of that environment's Google OAuth client (`infra/README.md` "Set up Google sign-in"). Leave unset to keep Google sign-in off. Also decides whether the frontend shows a Google button. |
 
 No `POSTGRES_ADMIN_*` variable — the Postgres Entra admin is a manual
 per-environment step (`infra/README.md` "One-time manual setup" step 6).
@@ -63,6 +64,7 @@ per-environment step (`infra/README.md` "One-time manual setup" step 6).
 | Name | Value / how to get it |
 |---|---|
 | `EASY_AUTH_CLIENT_SECRET` | From the Easy Auth app registration. Leave unset until Easy Auth is set up. |
+| `EASY_AUTH_GOOGLE_CLIENT_SECRET` | From that Google OAuth client. Only needed when `EASY_AUTH_GOOGLE_CLIENT_ID` is set. |
 | `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the Static Web App resource — only exists after the first Bicep deploy, filled in on a second pass. |
 
 ### Not needed at all
@@ -78,7 +80,7 @@ No stored Azure credential — login is federated (OIDC) via
    `repo:itchy-squid/vacation-planner:environment:dev` (or `:prod`) —
    `infra/README.md` "Continuous deployment" step 2.
 3. **`infra/sql/provision_roles.sql`** run once by hand against that
-   environment's Postgres server — `infra/README.md` step 6.
+   environment's Postgres server — `infra/README.md` step 8.
 4. **Prod**: consider the required-reviewer approval gate above.
 
 ## First deploy of a new environment
@@ -97,8 +99,10 @@ deploy:
 4. After that deploy, grab the Static Web App's deployment token from the
    portal and set `AZURE_STATIC_WEB_APPS_API_TOKEN`.
 5. Re-run the workflow.
-6. Provision database roles and run the first migration —
-   `infra/README.md` steps 6–7 (manual, not part of `deploy.yml`).
+6. Grant the backend identity's storage roles and provision database
+   roles — `infra/README.md` steps 6–8 (manual, not part of
+   `deploy.yml`). The first migration then runs automatically via CI's
+   `migrate` job (`infra/README.md` step 9) on the next deploy.
 
 ## Known simplifications (flagged for later hardening)
 
@@ -120,3 +124,5 @@ From `infra/README.md`:
 - `infra/README.md` — full infra walkthrough.
 - `claude/db-privilege-provisioning.md` (project docs) — database
   auth/privilege model rationale.
+- `claude/storage-role-assignment-manual-step.md` (project docs) — why
+  the storage role assignments are a manual step, not CI-provisioned.

@@ -162,3 +162,22 @@ h1, h2, h3, h4, p {
     display: none;
   }
 }
+
+/* NewPin's photo-picker marquee (pages/NewPin.jsx): same idea again —
+   the row of candidate photos scrolls, with hover-revealed left/right
+   nudge buttons for pointers that support hover, hidden on touch since
+   the strip already swipes natively there. */
+.photo-marquee-nudge {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.photo-marquee:hover .photo-marquee-nudge {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .photo-marquee-nudge {
+    display: none;
+  }
+}

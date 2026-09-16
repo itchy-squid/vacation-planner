@@ -41,8 +41,8 @@ def read_me(principal: Principal = Depends(get_current_principal)) -> MeOut:
       get_current_principal raises.
 
     Identity only: whether this person may edit a given trip is
-    trip-scoped and answered by Contributor rows (app/auth.py
-    get_current_contributor, GET /api/trips/{trip_id}/contributors).
+    trip-scoped and answered by the caller's role on it (see
+    app/permissions.py, GET /api/trips/{trip_id}/contributors).
     """
 
     return MeOut(
