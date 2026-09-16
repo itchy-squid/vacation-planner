@@ -1,9 +1,11 @@
+import { roleLabel } from "../../lib/roles";
+
 // Small mono tag naming someone's role on a trip — "OWNER", "READER",
-// "YOU'RE A READER". Owner and contributor read in the accent tint (both
-// can change the trip); reader stays neutral. Pass children to override
-// the label.
+// "YOU'RE A READER". Owner and planner read in the accent tint (both can
+// change the plan itself); companion and reader stay neutral. Pass
+// children to override the label.
 export default function RoleTag({ role, children }) {
-  const plum = role === "contributor" || role === "owner";
+  const plum = role === "planner" || role === "owner";
   return (
     <span
       className="mono-caption"
@@ -15,7 +17,7 @@ export default function RoleTag({ role, children }) {
         whiteSpace: "nowrap",
       }}
     >
-      {children ?? (role === "owner" ? "Owner" : plum ? "Contributor" : "Reader")}
+      {children ?? roleLabel(role)}
     </span>
   );
 }

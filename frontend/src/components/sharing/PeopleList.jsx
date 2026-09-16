@@ -2,6 +2,7 @@ import { useState } from "react";
 import RoleTag from "../core/RoleTag";
 import { CaretIcon } from "./icons";
 import { roleLabel, usePlannerDispatch } from "../../state/PlannerContext";
+import { GRANTABLE_ROLES } from "../../lib/roles";
 
 // Everyone on the trip, one row each. With `editable` (the owner's Trip
 // settings), each non-owner row carries a role picker that can also
@@ -129,8 +130,11 @@ function PersonRow({ person, isYou, editable, last }) {
               disabled={busy}
               style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%" }}
             >
-              <option value="contributor">Contributor</option>
-              <option value="reader">Reader</option>
+              {GRANTABLE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {roleLabel(r)}
+                </option>
+              ))}
               <option value="remove">Remove from trip…</option>
             </select>
           </label>

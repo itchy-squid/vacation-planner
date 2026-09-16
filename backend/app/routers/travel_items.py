@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..events import bus
 from ..models import PlanItem, TravelItem
-from ..permissions import IDEAS_READ, IDEAS_WRITE, Access, require
+from ..permissions import IDEAS_ADD, IDEAS_READ, Access, require
 from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import TravelItemCreate, TravelItemOut, TravelItemUpdate
 from .pins import ensure_may_set_costs
@@ -22,10 +22,10 @@ def list_travel_items(trip_id: int, _: Access = Depends(require(IDEAS_READ)), db
 def create_travel_item(
     trip_id: int,
     payload: TravelItemCreate,
-    access: Access = Depends(require(IDEAS_WRITE)),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
-    ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True))
+    ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True), access.member.id)
     item = TravelItem(trip_id=trip_id, added_by_id=access.member.id, **payload.model_dump())
     db.add(item)
     db.commit()
@@ -38,14 +38,15 @@ def create_travel_item(
 def update_travel_item(
     travel_item_id: int,
     payload: TravelItemUpdate,
-    access: Access = Depends(require(IDEAS_WRITE)),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
     item = db.get(TravelItem, travel_item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Travel item not found")
+    access.ensure_may_edit_idea(item.added_by_id)
     fields = payload.model_dump(exclude_unset=True)
-    ensure_may_set_costs(access, fields)
+    ensure_may_set_costs(access, fields, item.added_by_id)
     for field, value in fields.items():
         setattr(item, field, value)
     db.commit()
@@ -55,10 +56,11 @@ def update_travel_item(
 
 
 @router.delete("/travel-items/{travel_item_id}", status_code=204)
-def delete_travel_item(travel_item_id: int, _: Access = Depends(require(IDEAS_WRITE)), db: Session = Depends(get_db)):
+def delete_travel_item(travel_item_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Session = Depends(get_db)):
     item = db.get(TravelItem, travel_item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Travel item not found")
+    access.ensure_may_edit_idea(item.added_by_id)
     referenced = db.scalar(select(PlanItem).where(PlanItem.travel_item_id == travel_item_id))
     if referenced is not None:
         raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, referenced, "travel item"))

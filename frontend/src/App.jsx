@@ -68,7 +68,7 @@ function AppRoutes() {
       <Route
         path="/trips/:tripId/new-pin"
         element={
-          <RequireScope scope="ideas:write">
+          <RequireScope scope="ideas:add">
             <NewPin />
           </RequireScope>
         }
@@ -85,7 +85,7 @@ function AppRoutes() {
       <Route
         path="/trips/:tripId/schedule/:day/propose"
         element={
-          <RequireScope scope="plans:write">
+          <RequireScope scope="plans:propose">
             <ProposeBlock />
           </RequireScope>
         }

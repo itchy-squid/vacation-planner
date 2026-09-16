@@ -7,12 +7,28 @@ it needs through `require(...)`, which is the single place membership and
 scope are checked. Hiding a control in the UI is a convenience, not the
 check.
 
+The roles, from least to most:
+
+- reader: looks, nothing more.
+- companion: going on the trip, not running the plan. Adds ideas (and
+  edits or deletes only their own), proposes blocks and keeps drafts,
+  votes and comments. Can't place, move or remove anything on the calendar
+  directly, and sees no costs except the ones on ideas they added
+  themselves, which they can also set.
+- planner: everything a companion can do, on anyone's ideas, plus direct
+  placement and every cost on the trip. (Stored as "planner"; this role was
+  called "contributor" before the companion role existed. The member row
+  itself is still the `Contributor` model.)
+- owner: a planner who also decides, runs the trip settings and manages
+  people.
+
 Costs are a read scope of their own. A caller without `costs:read` still
 gets pins, travel items and plans, but every cost field in those responses
-comes back as null. That redaction lives in the response schemas
+comes back as null — except, with `costs:own`, on a pin or travel item the
+caller added. That redaction lives in the response schemas
 (app/schemas.py) and reads `can_see_costs()` below, which `require` sets
-for the request. It defaults to False, so a schema built outside a
-permission-checked request shows no costs rather than leaking them.
+for the request. It defaults to nothing visible, so a schema built outside
+a permission-checked request shows no costs rather than leaking them.
 """
 
 from __future__ import annotations
@@ -32,7 +48,8 @@ from .models import Contest, Contributor, Pin, Plan, TravelItem, Trip, TripInvit
 
 class Role(str, enum.Enum):
     owner = "owner"
-    contributor = "contributor"
+    planner = "planner"
+    companion = "companion"
     reader = "reader"
 
 
@@ -40,30 +57,38 @@ class Role(str, enum.Enum):
 
 TRIP_READ = "trip:read"  # trip details, who's on it, the live event stream
 IDEAS_READ = "ideas:read"  # pins, travel items, availability, comments
-IDEAS_WRITE = "ideas:write"  # add/edit/delete pins, travel items, availability
+IDEAS_ADD = "ideas:add"  # add pins/travel items; edit/delete/availability on your own
+IDEAS_WRITE = "ideas:write"  # edit/delete/availability on anyone's
 PLANS_READ = "plans:read"  # the calendar, proposals and votes
-PLANS_WRITE = "plans:write"  # place/move/remove plans, propose, drafts
+PLANS_PROPOSE = "plans:propose"  # propose blocks, drafts, edit your own sets
+PLANS_WRITE = "plans:write"  # place/move/remove plans on the calendar directly
 PLANS_DECIDE = "plans:decide"  # pick a set, lock, reopen
 VOTES_WRITE = "votes:write"
 COMMENTS_WRITE = "comments:write"
 COSTS_READ = "costs:read"  # any cost figure, and who shares it
-COSTS_WRITE = "costs:write"  # set cost_cents / heads
+COSTS_WRITE = "costs:write"  # set cost_cents / heads on anything
+COSTS_OWN = "costs:own"  # see and set cost_cents / heads on what you added
 TRIP_MANAGE = "trip:manage"  # name, dates, traveller count
 MEMBERS_MANAGE = "members:manage"  # invite links, roles, removing people
 
 _READER = frozenset({TRIP_READ, IDEAS_READ, PLANS_READ})
-_CONTRIBUTOR = _READER | {IDEAS_WRITE, PLANS_WRITE, VOTES_WRITE, COMMENTS_WRITE, COSTS_READ, COSTS_WRITE}
-_OWNER = _CONTRIBUTOR | {PLANS_DECIDE, TRIP_MANAGE, MEMBERS_MANAGE}
+_COMPANION = _READER | {IDEAS_ADD, PLANS_PROPOSE, VOTES_WRITE, COMMENTS_WRITE, COSTS_OWN}
+_PLANNER = _COMPANION | {IDEAS_WRITE, PLANS_WRITE, COSTS_READ, COSTS_WRITE}
+_OWNER = _PLANNER | {PLANS_DECIDE, TRIP_MANAGE, MEMBERS_MANAGE}
 
 ROLE_SCOPES: dict[Role, frozenset[str]] = {
     Role.reader: frozenset(_READER),
-    Role.contributor: frozenset(_CONTRIBUTOR),
+    Role.companion: frozenset(_COMPANION),
+    Role.planner: frozenset(_PLANNER),
     Role.owner: frozenset(_OWNER),
 }
 
 # Roles an invite link (or the owner's role picker) can hand out. Ownership
 # is never granted this way.
-GRANTABLE_ROLES = (Role.contributor, Role.reader)
+GRANTABLE_ROLES = (Role.planner, Role.companion, Role.reader)
+
+# The roles that vote, and so count toward a contest's tally and majority.
+VOTING_ROLES = tuple(role for role, scopes in ROLE_SCOPES.items() if VOTES_WRITE in scopes)
 
 
 def scopes_for(role: Role | str) -> frozenset[str]:
@@ -72,15 +97,27 @@ def scopes_for(role: Role | str) -> frozenset[str]:
 
 # --- cost redaction -----------------------------------------------------------
 
-_cost_visible: ContextVar[bool] = ContextVar("cost_visible", default=False)
+@dataclass(frozen=True)
+class _CostView:
+    all: bool = False  # costs:read
+    own_by: int | None = None  # with costs:own, the caller's member id
 
 
-def can_see_costs() -> bool:
-    return _cost_visible.get()
+_cost_view: ContextVar[_CostView] = ContextVar("cost_view", default=_CostView())
 
 
-def set_cost_visibility(visible: bool) -> None:
-    _cost_visible.set(visible)
+def can_see_costs(added_by_id: int | None = None) -> bool:
+    """Whether the current request may see a cost. `added_by_id` is who
+    added the pin or travel item the cost belongs to; leave it out for a
+    figure that isn't one person's (a plan's total)."""
+    view = _cost_view.get()
+    if view.all:
+        return True
+    return view.own_by is not None and added_by_id is not None and added_by_id == view.own_by
+
+
+def set_cost_visibility(visible: bool, own_by: int | None = None) -> None:
+    _cost_view.set(_CostView(all=visible, own_by=None if visible else own_by))
 
 
 # --- access -------------------------------------------------------------------
@@ -99,6 +136,27 @@ class Access:
     def ensure(self, scope: str, message: str | None = None) -> None:
         if scope not in self.scopes:
             raise forbidden(scope, message)
+
+    def owns(self, added_by_id: int | None) -> bool:
+        return added_by_id is not None and added_by_id == self.member.id
+
+    def ensure_may_edit_idea(self, added_by_id: int | None) -> None:
+        """Editing, deleting or re-timing a pin or travel item: anyone's
+        with ideas:write, only your own with ideas:add."""
+        if self.has(IDEAS_WRITE):
+            return
+        if self.has(IDEAS_ADD) and self.owns(added_by_id):
+            return
+        raise forbidden(IDEAS_WRITE, "You can only change ideas you added")
+
+    def ensure_may_set_costs(self, added_by_id: int | None) -> None:
+        """Setting a price or a cost split on a pin or travel item added by
+        `added_by_id`: anything with costs:write, your own with costs:own."""
+        if self.has(COSTS_WRITE):
+            return
+        if self.has(COSTS_OWN) and self.owns(added_by_id):
+            return
+        raise forbidden(COSTS_WRITE, "You can't change costs on this trip")
 
 
 def forbidden(scope: str, message: str | None = None) -> HTTPException:
@@ -173,7 +231,7 @@ def require(*needed: str):
         return access
 
     async def _bind(access: Access = Depends(_check)) -> Access:
-        set_cost_visibility(access.has(COSTS_READ))
+        set_cost_visibility(access.has(COSTS_READ), access.member.id if access.has(COSTS_OWN) else None)
         return access
 
     _bind.required_scopes = tuple(needed)  # read by tests/test_permissions.py

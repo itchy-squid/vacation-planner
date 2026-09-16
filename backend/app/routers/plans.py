@@ -8,7 +8,7 @@ from ..db import get_db
 from ..derive import item_start_minutes, plan_range_minutes, plan_totals
 from ..events import bus
 from ..models import Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem
-from ..permissions import PLANS_DECIDE, PLANS_READ, PLANS_WRITE, Access, require
+from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, PLANS_WRITE, Access, require
 from ..schemas import PinOut, PlanCreate, PlanItemCreate, PlanItemOut, PlanMove, PlanOut, TravelItemOut
 
 router = APIRouter(prefix="/api", tags=["plans"])
@@ -231,7 +231,7 @@ def get_plan(plan_id: int, access: Access = Depends(require(PLANS_READ)), db: Se
 def create_plan(
     trip_id: int,
     payload: PlanCreate,
-    access: Access = Depends(require(PLANS_WRITE)),
+    access: Access = Depends(require(PLANS_PROPOSE)),
     db: Session = Depends(get_db),
 ):
     """Direct placement, or — with status "draft" — the private, unclaimed
@@ -241,6 +241,9 @@ def create_plan(
     to add a set to the vote that's already open there."""
     is_draft = payload.status == "draft"
     if not is_draft:
+        # A draft is the start of a proposal (plans:propose); putting
+        # something straight onto the calendar is plans:write.
+        access.ensure(PLANS_WRITE, "Propose a block instead — you can't place things on the calendar directly")
         # A draft skips this entirely: it claims no time, so there is
         # nothing for it to conflict with (feature spec §6.4).
         occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at)
@@ -298,7 +301,7 @@ def move_plan(
 @router.delete("/plans/{plan_id}", status_code=204)
 def delete_plan(
     plan_id: int,
-    access: Access = Depends(require(PLANS_WRITE)),
+    access: Access = Depends(require(PLANS_PROPOSE)),
     db: Session = Depends(get_db),
 ):
     plan = db.get(Plan, plan_id)
@@ -311,8 +314,10 @@ def delete_plan(
         # 403, to match get_plan.
         if plan.created_by_id != access.member.id:
             raise HTTPException(status_code=404, detail="Plan not found")
-    elif plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
-        raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be unplaced")
+    else:
+        access.ensure(PLANS_WRITE)
+        if plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
+            raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be unplaced")
 
     trip_id = plan.trip_id
     was_draft = plan.status == PlanStatus.draft

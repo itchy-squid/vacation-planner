@@ -70,12 +70,16 @@ function Column({ label, lines, summary, total, empty, tinted = false }) {
       >
         {summary}
       </div>
-      <div
-        className="mono-data-sm"
-        style={{ marginTop: 2, color: tinted ? "var(--accent)" : "var(--text-faint)" }}
-      >
-        {formatMoney(total)} total
-      </div>
+      {/* null: the viewer doesn't see the trip's costs (a companion), so
+          a total would only add up the few they're allowed to see. */}
+      {total == null ? null : (
+        <div
+          className="mono-data-sm"
+          style={{ marginTop: 2, color: tinted ? "var(--accent)" : "var(--text-faint)" }}
+        >
+          {formatMoney(total)} total
+        </div>
+      )}
     </div>
   );
 }

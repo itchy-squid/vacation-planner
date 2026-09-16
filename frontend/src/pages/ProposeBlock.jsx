@@ -7,7 +7,7 @@ import ComparisonColumns, { summariseStops } from "../components/planner/Compari
 import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
 import Stepper from "../components/forms/Stepper";
-import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
@@ -157,6 +157,11 @@ export default function ProposeBlock() {
   // in front of the new stop, which is what "Starts" edits — the same
   // reading StopList gives it for a stop already in the list.
   const [stopForm, setStopForm] = useState(null);
+  // A companion proposes too, but sees and sets costs only on what they
+  // added (lib/roles.js): the stop form hides the cost of anyone else's
+  // pin, and the review hides totals that would only count their own.
+  const seesAllCosts = useCan()("costs:read");
+  const ideaAccess = useIdeaAccess();
 
   // Custom events invented on this screen. They exist on the server from
   // the moment "Add stop" is tapped, so a proposal that is abandoned, or a
@@ -335,6 +340,7 @@ export default function ProposeBlock() {
           durationMinutes: pin.dur,
           costCents: pin.costCents,
           heads: pin.heads,
+          who: pin.who,
           ...availability(pin.id),
         })
       );
@@ -349,6 +355,7 @@ export default function ProposeBlock() {
           durationMinutes: t.dur,
           costCents: t.costCents,
           heads: t.heads,
+          who: t.who,
           works: true,
           reasons: [],
         })
@@ -386,7 +393,7 @@ export default function ProposeBlock() {
 
   function openNewStop() {
     setError("");
-    setStopForm({ option: null, title: "", dur: 60, cost: 0, heads: [], gap: 0 });
+    setStopForm({ option: null, title: "", dur: 60, cost: 0, heads: [], gap: 0, costEditable: ideaAccess.canSetCost(null) });
   }
 
   function openPullIn(option) {
@@ -398,6 +405,7 @@ export default function ProposeBlock() {
       cost: (option.costCents ?? 0) / 100,
       heads: option.heads ?? [],
       gap: 0,
+      costEditable: ideaAccess.canSetCost(option),
     });
   }
 
@@ -447,7 +455,7 @@ export default function ProposeBlock() {
       const option = stopForm.option;
       setBusy(true);
       try {
-        if (costCents !== (option.costCents ?? 0)) {
+        if (stopForm.costEditable && costCents !== (option.costCents ?? 0)) {
           if (option.kind === "pin") {
             const result = await dispatch({ type: "PATCH_PIN", id: option.refId, fields: { cost: costCents / 100 } });
             if (!result.ok) throw new Error(result.error || "Couldn't update that cost.");
@@ -455,7 +463,7 @@ export default function ProposeBlock() {
             await dispatch({ type: "PATCH_TRAVEL_ITEM", id: option.refId, fields: { cost_cents: costCents } });
           }
         }
-        addStop({ ...option, durationMinutes, costCents }, gap);
+        addStop({ ...option, durationMinutes, costCents: stopForm.costEditable ? costCents : option.costCents }, gap);
         setStopForm(null);
       } catch (err) {
         setError(err.message || "Couldn't add that stop.");
@@ -477,11 +485,11 @@ export default function ProposeBlock() {
           title: stopForm.title.trim(),
           kind: "other",
           duration_minutes: durationMinutes,
-          cost_cents: costCents,
+          cost_cents: stopForm.costEditable ? costCents : 0,
         },
       });
       createdHereRef.current.add(created.id);
-      if (stopForm.heads.length) {
+      if (stopForm.costEditable && stopForm.heads.length) {
         await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: stopForm.heads } });
       }
       addStop(
@@ -775,6 +783,7 @@ export default function ProposeBlock() {
               : boardColumn(insideItems, selection, windowMinutes)
           }
           yours={yoursColumn(stops, selection, windowMinutes)}
+          showTotals={seesAllCosts}
           contributors={contributors}
           busy={busy}
           error={error}
@@ -1359,20 +1368,22 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, c
           />
         </label>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <label style={{ flex: 1, minWidth: 0 }}>
-          <div className="mono-caption">Cost, in total ($)</div>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={form.cost}
-            onChange={(e) => set("cost")(e.target.value)}
-            style={fieldStyle}
-          />
-        </label>
-        <div style={{ flex: 1, minWidth: 0 }} />
-      </div>
+      {form.costEditable && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <label style={{ flex: 1, minWidth: 0 }}>
+            <div className="mono-caption">Cost, in total ($)</div>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.cost}
+              onChange={(e) => set("cost")(e.target.value)}
+              style={fieldStyle}
+            />
+          </label>
+          <div style={{ flex: 1, minWidth: 0 }} />
+        </div>
+      )}
 
       <div className="mono-data-sm" style={{ color: pastEnd ? "var(--warn)" : "var(--text-faint)" }}>
         {pastEnd
@@ -1380,13 +1391,13 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, c
           : `Ends ${clockLabel(endsAt)}`}
         {form.gap > 0 ? ` · ${fmtMin(form.gap)} free before it` : ""}
       </div>
-      {pulling && (
+      {pulling && form.costEditable && (
         <div style={{ marginTop: -6, font: "400 11px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
           Changing the cost changes it for this {form.option.kind === "pin" ? "pin" : "event"} everywhere it&rsquo;s used.
         </div>
       )}
 
-      {!pulling && (
+      {!pulling && form.costEditable && (
         <HeadsPicker contributors={contributors} value={form.heads} onChange={set("heads")} travellerCount={travellerCount} />
       )}
 
@@ -1419,6 +1430,7 @@ function StepFour({
   setLetter,
   board,
   yours,
+  showTotals = true,
   contributors,
   busy,
   error,
@@ -1474,7 +1486,10 @@ function StepFour({
           />
         </div>
 
-        <ComparisonColumns board={board} yours={yours} />
+        <ComparisonColumns
+          board={showTotals ? board : { ...board, totalCents: null }}
+          yours={showTotals ? yours : { ...yours, totalCents: null }}
+        />
 
         <div style={{ background: "var(--surface-card)", border: "1px solid var(--hairline)", borderRadius: "var(--radius-lg)", padding: 14 }}>
           <div className="mono-caption">Why (optional)</div>

@@ -46,7 +46,7 @@ function travelKindIcon(kind) {
   return (TRAVEL_KINDS.find((k) => k.value === kind) ?? TRAVEL_KINDS[2]).icon;
 }
 
-export default function AddSheet({ dayIndex, onClose, unplacedPins, unplacedTravelItems, dayRegions, allTripRegions }) {
+export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedPins, unplacedTravelItems, dayRegions, allTripRegions }) {
   const navigate = useNavigate();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
@@ -86,6 +86,7 @@ export default function AddSheet({ dayIndex, onClose, unplacedPins, unplacedTrav
           <Menu
             dayIndex={dayIndex}
             unplacedCount={unplacedCount}
+            canPlace={canPlace}
             onPropose={() => navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`)}
             onPick={() => setMode("picker")}
             onCustom={() => setMode("custom")}
@@ -128,7 +129,9 @@ export default function AddSheet({ dayIndex, onClose, unplacedPins, unplacedTrav
 
 // ---- menu -----------------------------------------------------------------
 
-function Menu({ dayIndex, unplacedCount, onPropose, onPick, onCustom }) {
+// Without plans:write (a companion) only "Propose a block" is offered:
+// the other two put something straight onto the calendar.
+function Menu({ dayIndex, unplacedCount, canPlace, onPropose, onPick, onCustom }) {
   return (
     <div>
       <div className="mono-caption" style={{ marginBottom: 6 }}>Add to day {dayIndex}</div>
@@ -142,25 +145,30 @@ function Menu({ dayIndex, unplacedCount, onPropose, onPick, onCustom }) {
         title="Propose a block"
         subtitle="Pick hours, then fill them"
         onClick={onPropose}
+        last={!canPlace}
       />
-      <MenuRow
-        icon={faLocationDot}
-        tint="var(--geo-quiet)"
-        ink="var(--geo)"
-        title="Add a pin"
-        subtitle={unplacedCount === 1 ? "1 unplaced item" : `${unplacedCount} unplaced items`}
-        onClick={onPick}
-        disabled={unplacedCount === 0}
-      />
-      <MenuRow
-        icon={faClock}
-        tint="var(--surface-sunken)"
-        ink="var(--text-secondary)"
-        title="Custom event"
-        subtitle="Something that isn't a pin"
-        onClick={onCustom}
-        last
-      />
+      {canPlace && (
+        <>
+          <MenuRow
+            icon={faLocationDot}
+            tint="var(--geo-quiet)"
+            ink="var(--geo)"
+            title="Add a pin"
+            subtitle={unplacedCount === 1 ? "1 unplaced item" : `${unplacedCount} unplaced items`}
+            onClick={onPick}
+            disabled={unplacedCount === 0}
+          />
+          <MenuRow
+            icon={faClock}
+            tint="var(--surface-sunken)"
+            ink="var(--text-secondary)"
+            title="Custom event"
+            subtitle="Something that isn't a pin"
+            onClick={onCustom}
+            last
+          />
+        </>
+      )}
     </div>
   );
 }

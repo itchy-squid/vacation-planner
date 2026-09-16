@@ -89,7 +89,7 @@ class Contributor(Base):
     request time (see app/auth.py); there is no password/credential stored
     here.
 
-    `role` is owner | contributor | reader, and it is the whole of what a
+    `role` is owner | planner | companion | reader, and it is the whole of what a
     member may do on this trip: app/permissions.py maps each role to a
     fixed set of scopes. A trip has exactly one owner, who is the person
     that created it."""
@@ -97,7 +97,7 @@ class Contributor(Base):
     __tablename__ = "contributors"
     __table_args__ = (
         UniqueConstraint("trip_id", "email", name="uq_contributor_trip_email"),
-        CheckConstraint("role IN ('owner', 'contributor', 'reader')", name="ck_contributor_role"),
+        CheckConstraint("role IN ('owner', 'planner', 'companion', 'reader')", name="ck_contributor_role"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -106,7 +106,7 @@ class Contributor(Base):
     display_name: Mapped[str] = mapped_column(String(120))
     initial: Mapped[str] = mapped_column(String(4))
     tint: Mapped[str] = mapped_column(String(32), default="var(--who-1)")
-    role: Mapped[str] = mapped_column(String(16), default="contributor")
+    role: Mapped[str] = mapped_column(String(16), default="planner")
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # The link this person joined through, if any — what the owner's
     # "N joined" count on each invite link reads. Nulled, not cascaded, when
@@ -121,7 +121,7 @@ class Contributor(Base):
         # Accepts the old is_owner flag so fixtures and seed code can keep
         # saying is_owner=True; role wins when both are given.
         if is_owner is not None and "role" not in kwargs:
-            kwargs["role"] = "owner" if is_owner else "contributor"
+            kwargs["role"] = "owner" if is_owner else "planner"
         super().__init__(**kwargs)
 
     @property
@@ -136,7 +136,7 @@ class TripInvite(Base):
     which stamps revoked_at and leaves already-joined members alone."""
 
     __tablename__ = "trip_invites"
-    __table_args__ = (CheckConstraint("role IN ('contributor', 'reader')", name="ck_trip_invite_role"),)
+    __table_args__ = (CheckConstraint("role IN ('planner', 'companion', 'reader')", name="ck_trip_invite_role"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)

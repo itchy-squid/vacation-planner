@@ -355,7 +355,7 @@ def run() -> None:
             None,
             TripPhase.ideation,
             [("Shinjuku Gyoen", "Tokyo"), ("Fushimi Inari", "Kyoto"), ("Nishiki Market", "Kyoto")],
-            mei_role="contributor",
+            mei_role="planner",
             owner_name="Kenji",
         )
         seed_light_trip(

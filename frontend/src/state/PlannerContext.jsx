@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { coordsForPin } from "../lib/mapLayout";
 import { formatDateRange, relativeTime } from "../lib/format";
 import { parseApiDateTime } from "../lib/planTime";
+import { roleLabel } from "../lib/roles";
 
 // Remembers which trip was last active so a page refresh reopens it
 // instead of always falling back to the hardcoded "Taiwan" default (see
@@ -54,8 +55,8 @@ function normalizeContributor(c) {
     name: c.display_name,
     initial: c.initial,
     tint: c.tint,
-    // owner | contributor | reader — see backend/app/permissions.py.
-    role: c.role ?? (c.is_owner ? "owner" : "contributor"),
+    // owner | planner | companion | reader — see lib/roles.js.
+    role: c.role ?? (c.is_owner ? "owner" : "planner"),
     isOwner: c.is_owner,
     email: c.email,
   };
@@ -81,11 +82,6 @@ function accessFromTrip(t) {
   };
 }
 
-function roleLabel(role) {
-  if (role === "owner") return "Owner";
-  if (role === "reader") return "Reader";
-  return "Contributor";
-}
 
 // "Your trip" / "Kenji's trip · Reader" — the ownership line on Trips Home.
 export function ownershipLine(trip) {
@@ -1175,6 +1171,25 @@ export function useCan() {
     const set = new Set(scopes ?? []);
     return (scope) => set.has(scope);
   }, [scopes]);
+}
+
+// Per-item access for pins and travel items, on top of useCan(): a
+// companion (ideas:add, costs:own) may change, and see the cost of, only
+// what they added themselves; a planner (ideas:write, costs:read/write)
+// any of it. `item` is a normalized pin or travel item — pass null for
+// one the viewer is about to create, which will be theirs.
+export function useIdeaAccess() {
+  const can = useCan();
+  const { currentUserId } = usePlannerState();
+  return useMemo(() => {
+    const mine = (item) => item == null || (item.who != null && item.who === currentUserId);
+    return {
+      canAddIdeas: can("ideas:add"),
+      canEditIdea: (item) => can("ideas:write") || (can("ideas:add") && mine(item)),
+      canSeeCost: (item) => can("costs:read") || (can("costs:own") && mine(item)),
+      canSetCost: (item) => can("costs:write") || (can("costs:own") && mine(item)),
+    };
+  }, [can, currentUserId]);
 }
 
 export function useCurrentUser() {

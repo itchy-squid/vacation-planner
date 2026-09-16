@@ -9,7 +9,7 @@ from ..db import get_db
 from ..derive import item_duration_minutes, item_start_minutes
 from ..events import bus
 from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Vote
-from ..permissions import PLANS_DECIDE, PLANS_READ, PLANS_WRITE, VOTES_WRITE, Access, Role, require
+from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, VOTES_WRITE, VOTING_ROLES, Access, require
 from ..tripclock import minutes_between, same_moment
 from ..schemas import (
     ContestOut,
@@ -91,10 +91,10 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
         for i, p in enumerate(ordered)
     ]
     # The people who can vote. Readers can't, so they aren't counted toward
-    # the tally or the majority.
+    # the tally or the majority. Companions can, and are.
     contributor_count = len(
         db.scalars(
-            select(Contributor).where(Contributor.trip_id == contest.trip_id, Contributor.role != Role.reader.value)
+            select(Contributor).where(Contributor.trip_id == contest.trip_id, Contributor.role.in_([r.value for r in VOTING_ROLES]))
         ).all()
     )
 
@@ -312,7 +312,7 @@ def open_block_contest(
 def propose_block(
     trip_id: int,
     payload: ContestProposeCreate,
-    access: Access = Depends(require(PLANS_WRITE)),
+    access: Access = Depends(require(PLANS_PROPOSE)),
     db: Session = Depends(get_db),
 ):
     """Propose an alternative for a range of hours. The proposal claims a
@@ -336,7 +336,7 @@ def propose_block(
 @router.post("/plans/{plan_id}/publish", response_model=ContestOut, status_code=201)
 def publish_plan(
     plan_id: int,
-    access: Access = Depends(require(PLANS_WRITE)),
+    access: Access = Depends(require(PLANS_PROPOSE)),
     db: Session = Depends(get_db),
 ):
     """Turn the caller's own draft block into a real proposal (feature spec
@@ -392,7 +392,7 @@ def get_contest(contest_id: int, access: Access = Depends(require(PLANS_READ)), 
 def update_proposal(
     plan_id: int,
     payload: ProposalUpdate,
-    access: Access = Depends(require(PLANS_WRITE)),
+    access: Access = Depends(require(PLANS_PROPOSE)),
     db: Session = Depends(get_db),
 ):
     """Rewrite one candidate plan: its stops, their times, its name and its

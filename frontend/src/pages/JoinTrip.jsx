@@ -5,6 +5,7 @@ import Badge from "../components/core/Badge";
 import Button from "../components/core/Button";
 import RoleTag from "../components/core/RoleTag";
 import { api } from "../lib/api";
+import { ROLES } from "../lib/roles";
 import { formatDateRange } from "../lib/format";
 import { usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 
@@ -16,21 +17,6 @@ import { usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 //
 // Someone already on the trip skips the question and goes straight in;
 // the server leaves their role as it was either way.
-
-const ROLE_POINTS = {
-  reader: [
-    [true, "See ideas, the day plan and the itinerary"],
-    [true, "Follow proposals and votes as they happen"],
-    [false, "No adding, editing, voting or comments"],
-    [false, "Expenses stay hidden"],
-  ],
-  contributor: [
-    [true, "See everything on the trip, including expenses"],
-    [true, "Add ideas, places and travel items"],
-    [true, "Plan days, propose blocks and vote"],
-    [false, "Trip settings and invites stay with the owner"],
-  ],
-};
 
 export default function JoinTrip() {
   const { token } = useParams();
@@ -133,7 +119,6 @@ export default function JoinTrip() {
   }
 
   const ownerName = preview.owner?.display_name ?? "Someone";
-  const isContributor = preview.role === "contributor";
   const locations = preview.region_line ? ` · ${preview.region_line}` : "";
 
   return (
@@ -206,7 +191,7 @@ export default function JoinTrip() {
               <RoleTag role={preview.role} />
             </div>
             <ul style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 12 }}>
-              {ROLE_POINTS[isContributor ? "contributor" : "reader"].map(([ok, text]) => (
+              {(ROLES[preview.role]?.joinPoints ?? ROLES.reader.joinPoints).map(([ok, text]) => (
                 <li
                   key={text}
                   style={{

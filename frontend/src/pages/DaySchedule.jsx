@@ -49,8 +49,11 @@ export default function DaySchedule() {
   const { trip, pins, travelItems, plans, placing, proposeSheet } = state;
 
   const currentUser = useCurrentUser();
-  // Readers see the day but can't place, drag or propose (plans:write).
-  const canPlan = useCan()("plans:write");
+  // Readers see the day but can't place, drag or propose. Companions can
+  // propose a block (plans:propose) but not place or drag (plans:write).
+  const can = useCan();
+  const canPlan = can("plans:write");
+  const canPropose = can("plans:propose");
 
   // Drafts are excluded from the grid, from the overlap checks and from
   // the tray's "unplaced" reckoning: a draft block claims no time and is
@@ -576,7 +579,7 @@ export default function DaySchedule() {
           (components/planner/AddSheet.jsx); see
           docs/features/scheduling-feature-spec.md "Tray". */}
       <div style={{ background: "var(--surface-inverse)", padding: "12px 16px 40px", flex: "none" }}>
-        {!canPlan ? (
+        {!canPropose ? (
           // Readers: the bar keeps its place (and the room it leaves for
           // the tab bar) but says why there's nothing to add.
           <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -668,9 +671,10 @@ export default function DaySchedule() {
         ))}
       </div>
 
-      {addOpen && canPlan && (
+      {addOpen && canPropose && (
         <AddSheet
           dayIndex={dayIndex}
+          canPlace={canPlan}
           onClose={() => setAddOpen(false)}
           unplacedPins={unplacedPins}
           unplacedTravelItems={unplacedTravelItems}

@@ -3,19 +3,14 @@ import Button from "../core/Button";
 import { api } from "../../lib/api";
 import { CopyIcon, ShareIcon } from "./icons";
 import { copyText, inviteUrl } from "./links";
+import { GRANTABLE_ROLES, ROLES } from "../../lib/roles";
 
-const OPTIONS = [
-  {
-    role: "reader",
-    title: "Reader",
-    body: "Sees ideas, the plan, votes and the itinerary. Can't change anything, vote, or see expenses.",
-  },
-  {
-    role: "contributor",
-    title: "Contributor",
-    body: "Sees everything, including expenses. Can add ideas, plan days, propose blocks and vote.",
-  },
-];
+// Least access first, so the safest link is the one at the top.
+const OPTIONS = [...GRANTABLE_ROLES].reverse().map((role) => ({
+  role,
+  title: ROLES[role].label,
+  body: ROLES[role].invite,
+}));
 
 // The owner's "Invite people" sheet: pick a role, get that role's link.
 // There's one live link per role (backend/app/routers/sharing.py), so
@@ -23,7 +18,7 @@ const OPTIONS = [
 // each time. `onLinksChanged` lets Trip settings refresh its link list
 // when this sheet creates one.
 export default function InviteSheet({ trip, onClose, onLinksChanged }) {
-  const [role, setRole] = useState("contributor");
+  const [role, setRole] = useState("planner");
   const [links, setLinks] = useState({}); // role -> invite
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -160,7 +155,7 @@ export default function InviteSheet({ trip, onClose, onLinksChanged }) {
           })}
         </div>
 
-        <div className="mono-caption" style={{ padding: "0 4px" }}>{role === "reader" ? "Reader link" : "Contributor link"}</div>
+        <div className="mono-caption" style={{ padding: "0 4px" }}>{ROLES[role].label} link</div>
         <div
           style={{
             marginTop: -6,

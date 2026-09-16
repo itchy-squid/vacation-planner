@@ -31,9 +31,9 @@ class ContributorOut(BaseModel):
     display_name: str
     initial: str
     tint: str
-    # owner | contributor | reader — see app/permissions.py. is_owner is
+    # owner | planner | companion | reader — see app/permissions.py. is_owner is
     # kept for the screens that only ask that one question.
-    role: Literal["owner", "contributor", "reader"]
+    role: Literal["owner", "planner", "companion", "reader"]
     is_owner: bool
     joined_at: datetime
 
@@ -42,7 +42,7 @@ class ContributorRoleUpdate(BaseModel):
     """PATCH /api/trips/{trip_id}/contributors/{contributor_id}. Ownership
     can't be handed over this way."""
 
-    role: Literal["contributor", "reader"]
+    role: Literal["planner", "companion", "reader"]
 
 
 class TripOwnerOut(BaseModel):
@@ -75,7 +75,7 @@ class TripOut(BaseModel):
     # The caller's own standing on this trip, so the client can shape its
     # screens without a second request. The server checks every call
     # regardless; these are for hiding controls, not for enforcing.
-    my_role: Literal["owner", "contributor", "reader"]
+    my_role: Literal["owner", "planner", "companion", "reader"]
     my_scopes: list[str]
     my_contributor_id: int
     owner: TripOwnerOut | None
@@ -94,22 +94,23 @@ class TripUpdate(BaseModel):
     traveller_count: int | None = None
 
 
-def _redact_costs(model: BaseModel, *fields: str) -> None:
-    """Blank every cost field for a caller without costs:read (see
+def _redact_costs(model: BaseModel, *fields: str, added_by_id: int | None = None) -> None:
+    """Blank every cost field for a caller who can't see this cost (no
+    costs:read, and no costs:own on something they added — see
     app/permissions.py). None rather than 0: zero is a real price, and a
     client must be able to tell "free" from "not yours to see"."""
-    if not can_see_costs():
+    if not can_see_costs(added_by_id):
         for field in fields:
             setattr(model, field, None)
 
 
 class InviteCreate(BaseModel):
-    role: Literal["contributor", "reader"]
+    role: Literal["planner", "companion", "reader"]
 
 
 class InviteOut(BaseModel):
     id: int
-    role: Literal["contributor", "reader"]
+    role: Literal["planner", "companion", "reader"]
     token: str
     created_at: datetime
     created_by_id: int | None
@@ -128,13 +129,13 @@ class InvitePreviewOut(BaseModel):
     start_date: date | None
     end_date: date | None
     phase: str
-    role: Literal["contributor", "reader"]
+    role: Literal["planner", "companion", "reader"]
     owner: TripOwnerOut | None
     member_count: int
     # Already on the trip: the client skips the confirm step and opens it.
     # Their role is left as it is.
     already_member: bool
-    my_role: Literal["owner", "contributor", "reader"] | None = None
+    my_role: Literal["owner", "planner", "companion", "reader"] | None = None
 
 
 class AvailabilityRuleIn(BaseModel):
@@ -238,7 +239,7 @@ class PinOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "PinOut":
-        _redact_costs(self, "cost_cents", "heads")
+        _redact_costs(self, "cost_cents", "heads", added_by_id=self.added_by_id)
         return self
 
 
@@ -294,7 +295,7 @@ class TravelItemOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "TravelItemOut":
-        _redact_costs(self, "cost_cents", "heads")
+        _redact_costs(self, "cost_cents", "heads", added_by_id=self.added_by_id)
         return self
 
 

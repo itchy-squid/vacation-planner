@@ -6,7 +6,7 @@ import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import HeadsPicker from "../components/planner/HeadsPicker";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
-import { usePlannerState, usePlannerDispatch, useCan } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
@@ -89,12 +89,14 @@ export default function EditVisit() {
   const dispatch = usePlannerDispatch();
   const pin = state.pins[pinId];
   // A reader opens this screen to look: every field is read-only, and
-  // Save / Delete / Replace aren't offered. Cost and its split are shown
-  // only with costs:read, and editable only with costs:write.
-  const can = useCan();
-  const canEdit = can("ideas:write");
-  const canSeeCosts = can("costs:read");
-  const canSetCosts = canEdit && can("costs:write");
+  // Save / Delete / Replace aren't offered. So does a companion, on a pin
+  // someone else added — on their own they edit it like a planner would.
+  // Cost and its split are shown and editable for planners on any pin,
+  // and for a companion only on their own (lib/roles.js).
+  const ideaAccess = useIdeaAccess();
+  const canEdit = ideaAccess.canEditIdea(pin ?? {});
+  const canSeeCosts = ideaAccess.canSeeCost(pin ?? {});
+  const canSetCosts = canEdit && ideaAccess.canSetCost(pin ?? {});
   const knownRegions = [...new Set(Object.values(state.pins).map((p) => p.region).filter(Boolean))];
 
   const [commentCount, setCommentCount] = useState(null);

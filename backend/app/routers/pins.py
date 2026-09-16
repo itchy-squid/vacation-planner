@@ -8,7 +8,7 @@ from .. import photo_storage
 from ..db import SessionLocal, get_db
 from ..events import bus
 from ..models import AvailabilityOverride, AvailabilityRule, Pin, PlanItem
-from ..permissions import COSTS_WRITE, IDEAS_READ, IDEAS_WRITE, Access, require
+from ..permissions import IDEAS_ADD, IDEAS_READ, Access, require
 from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import (
     AvailabilityOverrideToggle,
@@ -25,11 +25,12 @@ logger = logging.getLogger(__name__)
 _COST_FIELDS = ("cost_cents", "heads")
 
 
-def ensure_may_set_costs(access: Access, fields: dict) -> None:
-    """Setting a price or a cost split is costs:write, on top of whatever
-    the edit itself needs. Shared with routers/travel_items.py."""
+def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:
+    """Setting a price or a cost split is costs:write (or costs:own on
+    something the caller added), on top of whatever the edit itself needs.
+    Shared with routers/travel_items.py."""
     if any(f in fields for f in _COST_FIELDS):
-        access.ensure(COSTS_WRITE, "You can't change costs on this trip")
+        access.ensure_may_set_costs(added_by_id)
 
 
 def _mirror_pin_photo(pin_id: int, trip_id: int, source_url: str) -> None:
@@ -70,10 +71,10 @@ def create_pin(
     trip_id: int,
     payload: PinCreate,
     background_tasks: BackgroundTasks,
-    access: Access = Depends(require(IDEAS_WRITE)),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
-    ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True))
+    ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True), access.member.id)
     pin = Pin(trip_id=trip_id, added_by_id=access.member.id, **payload.model_dump())
     db.add(pin)
     db.commit()
@@ -101,7 +102,7 @@ def update_pin(
     pin_id: int,
     payload: PinUpdate,
     background_tasks: BackgroundTasks,
-    access: Access = Depends(require(IDEAS_WRITE)),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
     """Edits are immediate — no local draft, matching the handoff README's
@@ -110,8 +111,9 @@ def update_pin(
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
     fields = payload.model_dump(exclude_unset=True)
-    ensure_may_set_costs(access, fields)
+    ensure_may_set_costs(access, fields, pin.added_by_id)
     for field, value in fields.items():
         setattr(pin, field, value)
     db.commit()
@@ -128,7 +130,7 @@ def update_pin(
 
 
 @router.delete("/api/pins/{pin_id}", status_code=204)
-def delete_pin(pin_id: int, _: Access = Depends(require(IDEAS_WRITE)), db: Session = Depends(get_db)):
+def delete_pin(pin_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Session = Depends(get_db)):
     """Permanently deletes the pin itself — distinct from unplacing it
     (DELETE /api/plans/{plan_id}, which only removes its Plan/PlanItem and
     leaves the pin in the unscheduled tray). Rejected the same way
@@ -138,6 +140,7 @@ def delete_pin(pin_id: int, _: Access = Depends(require(IDEAS_WRITE)), db: Sessi
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
     referenced = db.scalar(select(PlanItem).where(PlanItem.pin_id == pin_id))
     if referenced is not None:
         raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, referenced, "pin"))
@@ -153,12 +156,13 @@ def delete_pin(pin_id: int, _: Access = Depends(require(IDEAS_WRITE)), db: Sessi
 def set_availability_rule(
     pin_id: int,
     payload: AvailabilityRuleIn,
-    _: Access = Depends(require(IDEAS_WRITE)),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
     rule = pin.availability_rule
     if not rule:
         rule = AvailabilityRule(pin_id=pin_id)
@@ -174,7 +178,7 @@ def set_availability_rule(
 def toggle_availability_override(
     pin_id: int,
     payload: AvailabilityOverrideToggle,
-    access: Access = Depends(require(IDEAS_WRITE)),
+    access: Access = Depends(require(IDEAS_ADD)),
     db: Session = Depends(get_db),
 ):
     """A tap flips one cell in the availability grid — see handoff README
@@ -182,6 +186,7 @@ def toggle_availability_override(
     pin = db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    access.ensure_may_edit_idea(pin.added_by_id)
 
     existing = db.scalar(
         select(AvailabilityOverride).where(

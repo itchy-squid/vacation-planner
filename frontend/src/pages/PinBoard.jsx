@@ -14,7 +14,9 @@ import HeaderIconButton from "../components/core/HeaderIconButton";
 export default function PinBoard() {
   const navigate = useNavigate();
   const { trip: TRIP, pins, contributors: CONTRIBUTORS } = usePlannerState();
-  const canEdit = useCan()("ideas:write");
+  // Companions and planners both add pins (ideas:add); what each may do
+  // to an existing one is decided on its own screen (pages/EditVisit.jsx).
+  const canEdit = useCan()("ideas:add");
   const [region, setRegion] = useState("All");
 
   const PINS = useMemo(() => Object.values(pins), [pins]);

@@ -3,12 +3,8 @@ import { useNavigate } from "react-router-dom";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 import PeopleList, { Avatar } from "../components/sharing/PeopleList";
-import { roleLabel, usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
-
-const ACCESS_COPY = {
-  reader: "You can see ideas, the plan, votes and the itinerary.",
-  contributor: "You can add ideas, plan days, propose blocks, vote and see expenses.",
-};
+import { usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
+import { ROLES, roleLabel } from "../lib/roles";
 
 // What the gear opens for anyone who isn't the trip's owner (see
 // pages/TripSettings.jsx): who owns the trip, what you can do on it, who
@@ -100,7 +96,7 @@ export default function TripInfo() {
           >
             <div style={{ font: "var(--type-label)", color: "var(--text-primary)" }}>{roleLabel(trip.role)}</div>
             <div style={{ font: "var(--type-body-sm)", color: "var(--text-secondary)", marginTop: 3 }}>
-              {ACCESS_COPY[trip.role] ?? ""} Ask {ownerName} if you need to change the trip&rsquo;s settings
+              {ROLES[trip.role]?.access ?? ""} Ask {ownerName} if you need to change the trip&rsquo;s settings
               {trip.role === "reader" ? " or make changes" : ""}.
             </div>
           </div>

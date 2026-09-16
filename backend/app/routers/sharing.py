@@ -32,7 +32,7 @@ from ..models import (
     TripInvite,
     Vote,
 )
-from ..permissions import MEMBERS_MANAGE, TRIP_READ, Access, Role, invite_by_token, member_for, require
+from ..permissions import MEMBERS_MANAGE, TRIP_READ, VOTING_ROLES, Access, Role, invite_by_token, member_for, require
 from ..schemas import (
     ContributorOut,
     ContributorRoleUpdate,
@@ -82,7 +82,7 @@ def change_role(
         raise HTTPException(status_code=409, detail="The trip owner's role can't be changed")
     if member.role != payload.role:
         member.role = payload.role
-        if payload.role == Role.reader.value:
+        if Role(payload.role) not in VOTING_ROLES:
             # Readers don't vote. A vote left behind would keep counting
             # toward a tally its caster can no longer change.
             db.execute(delete(Vote).where(Vote.contributor_id == member.id))

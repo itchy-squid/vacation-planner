@@ -38,7 +38,9 @@ export default function CompareSets() {
   const dispatch = usePlannerDispatch();
   const currentUser = useCurrentUser();
   const can = useCan();
-  const canPlan = can("plans:write");
+  // Adding a set, or editing your own, is proposing (plans:propose) —
+  // companions do it too.
+  const canPropose = can("plans:propose");
   const canVote = can("votes:write");
   const canDecide = can("plans:decide");
   const { trip } = state;
@@ -125,11 +127,11 @@ export default function CompareSets() {
   // them.
   const canEdit = useCallback(
     (set) =>
-      canPlan &&
+      canPropose &&
       contest?.status === "open" &&
       set.createdById != null &&
       (set.createdById === currentUser.id || currentUser.isOwner),
-    [contest, currentUser, canPlan]
+    [contest, currentUser, canPropose]
   );
 
   // Both of these go to the same screen the set was built on
@@ -335,7 +337,7 @@ export default function CompareSets() {
               it is an addition to a decision in progress, not the
               decision. Hidden once the owner has locked one: a resolved
               contest has nothing left to add a set to. */}
-          {!isResolved && canPlan && (
+          {!isResolved && canPropose && (
             <button
               type="button"
               onClick={() => openProposeScreen({})}

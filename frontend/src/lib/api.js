@@ -213,7 +213,8 @@ export const api = {
   listContributors: (tripId) => request(`/api/trips/${tripId}/contributors`),
 
   // Sharing — see backend/app/routers/sharing.py. Roles are owner |
-  // contributor | reader; what each may do is backend/app/permissions.py.
+  // planner | companion | reader (lib/roles.js); what each may do is
+  // backend/app/permissions.py.
   changeRole: (tripId, contributorId, role) =>
     request(`/api/trips/${tripId}/contributors/${contributorId}`, { method: "PATCH", body: { role } }),
   removeContributor: (tripId, contributorId) =>
