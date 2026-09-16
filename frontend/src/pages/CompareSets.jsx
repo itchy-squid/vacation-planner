@@ -5,7 +5,7 @@ import MapPin from "../components/planner/MapPin";
 import RouteSegment from "../components/planner/RouteSegment";
 import SetCard from "../components/planner/SetCard";
 import ConsensusMeter from "../components/planner/ConsensusMeter";
-import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin, slackColor } from "../data/derive";
@@ -37,6 +37,10 @@ export default function CompareSets() {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const currentUser = useCurrentUser();
+  const can = useCan();
+  const canPlan = can("plans:write");
+  const canVote = can("votes:write");
+  const canDecide = can("plans:decide");
   const { trip } = state;
 
   const [contest, setContest] = useState(null);
@@ -95,7 +99,8 @@ export default function CompareSets() {
         rationale: p.rationale,
         status: p.status,
         createdById: p.created_by_id ?? null,
-        cost: Math.round(p.total_cost_cents / 100),
+        // null when the viewer can't see costs (a reader).
+        cost: p.total_cost_cents == null ? null : Math.round(p.total_cost_cents / 100),
         slack: p.slack_minutes,
         votes: p.vote_count,
         voted: p.voted_by_me,
@@ -120,10 +125,11 @@ export default function CompareSets() {
   // them.
   const canEdit = useCallback(
     (set) =>
+      canPlan &&
       contest?.status === "open" &&
       set.createdById != null &&
       (set.createdById === currentUser.id || currentUser.isOwner),
-    [contest, currentUser]
+    [contest, currentUser, canPlan]
   );
 
   // Both of these go to the same screen the set was built on
@@ -316,9 +322,9 @@ export default function CompareSets() {
                 canEdit={canEdit(s)}
                 onEdit={() => openProposeScreen({ editPlanId: s.id })}
                 voted={s.voted}
-                onVote={() => handleVote(s.id)}
+                onVote={canVote ? () => handleVote(s.id) : null}
                 onPick={() => handlePick(s.id)}
-                isOwner={currentUser.isOwner && !isResolved}
+                isOwner={canDecide && !isResolved}
                 ownerName={owner?.name}
                 otherSetCount={displaySets.length - 1}
               />
@@ -329,7 +335,7 @@ export default function CompareSets() {
               it is an addition to a decision in progress, not the
               decision. Hidden once the owner has locked one: a resolved
               contest has nothing left to add a set to. */}
-          {!isResolved && (
+          {!isResolved && canPlan && (
             <button
               type="button"
               onClick={() => openProposeScreen({})}
@@ -356,7 +362,7 @@ export default function CompareSets() {
 
           {isResolved ? (
             <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-              {currentUser.isOwner && (
+              {canDecide && (
                 <button
                   type="button"
                   onClick={() => handleReopen(contest.plans[0]?.id)}

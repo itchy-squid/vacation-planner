@@ -1,10 +1,12 @@
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import Badge from "../components/core/Badge";
 import Button from "../components/core/Button";
 import AvatarStack from "../components/planner/AvatarStack";
 import MetricTile from "../components/planner/MetricTile";
-import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, roleLabel } from "../state/PlannerContext";
+import RoleTag from "../components/core/RoleTag";
 import { logout } from "../lib/api";
 
 // Screen 1 — "pick a trip; read its phase at a glance." Handoff README
@@ -17,7 +19,18 @@ import { logout } from "../lib/api";
 // navigate away from this screen.
 export default function TripsHome() {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = usePlannerDispatch();
+  // "Taiwan added to your trips" — set by pages/JoinTrip.jsx when it
+  // lands here after a join. Read once, then cleared from history so a
+  // refresh or back-navigation doesn't show it again.
+  const [joinedName, setJoinedName] = useState(location.state?.joinedTripName ?? null);
+  const dismissJoined = useCallback(() => setJoinedName(null), []);
+  useEffect(() => {
+    if (location.state?.joinedTripName) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, navigate]);
   const {
     trip: TRIP,
     otherTrips: OTHER_TRIPS,
@@ -53,7 +66,7 @@ export default function TripsHome() {
   }
 
   return (
-    <div className="screen">
+    <div className="screen" style={{ position: "relative" }}>
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "20px var(--gutter-text) 14px" }}>
           <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
@@ -87,6 +100,28 @@ export default function TripsHome() {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
                 <AvatarStack contributors={CONTRIBUTORS} overflowCount={CONTRIBUTOR_OVERFLOW_COUNT} />
                 <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-muted)" }}>{TRIP.contributorCount} planning</span>
+              </div>
+
+              {/* Whose trip this is, and where the viewer stands on it. */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: "1px solid var(--hairline)",
+                }}
+              >
+                <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)" }}>
+                  {TRIP.role === "owner" ? "Your trip" : `${TRIP.owner?.name ?? "Someone"}'s trip`}
+                </span>
+                {TRIP.role === "owner" ? (
+                  <RoleTag role="owner" />
+                ) : (
+                  <RoleTag role={TRIP.role}>You&rsquo;re a {roleLabel(TRIP.role).toLowerCase()}</RoleTag>
+                )}
               </div>
 
               <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
@@ -143,7 +178,7 @@ export default function TripsHome() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="serif-place" style={{ fontSize: 18, color: "var(--text-primary)" }}>{t.name}</div>
                   <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>
-                    {isOpening ? "Opening…" : t.meta}
+                    {isOpening ? "Opening…" : [t.meta, t.ownership].filter(Boolean).join(" · ")}
                   </div>
                   <div style={{ marginTop: 6, width: 64, height: 5, borderRadius: 999, background: t.phase === "ideation" ? "var(--plum-tint-strong)" : "var(--surface-sunken)", overflow: "hidden" }}>
                     <div style={{ width: `${t.progress * 100}%`, height: "100%", background: t.phase === "ideation" ? "var(--accent)" : "var(--geo)" }} />
@@ -156,6 +191,45 @@ export default function TripsHome() {
 
         <SignOut />
       </div>
+      {joinedName ? <JoinedToast name={joinedName} onDismiss={dismissJoined} /> : null}
+    </div>
+  );
+}
+
+function JoinedToast({ name, onDismiss }) {
+  useEffect(() => {
+    const t = window.setTimeout(onDismiss, 5000);
+    return () => window.clearTimeout(t);
+  }, [onDismiss]);
+  return (
+    <div
+      role="status"
+      style={{
+        position: "absolute",
+        left: "var(--gutter-screen)",
+        right: "var(--gutter-screen)",
+        bottom: 28,
+        background: "var(--surface-inverse)",
+        color: "var(--text-on-dark)",
+        borderRadius: "var(--radius-lg)",
+        padding: "0 6px 0 16px",
+        minHeight: 46,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        boxShadow: "var(--shadow-select)",
+        zIndex: 20,
+      }}
+    >
+      <span style={{ font: "500 13px var(--font-sans)" }}>{name} added to your trips</span>
+      <button
+        type="button"
+        className="hit-target"
+        onClick={onDismiss}
+        style={{ padding: "0 10px", height: 44, font: "600 12.5px var(--font-sans)", color: "var(--text-on-dark-muted)" }}
+      >
+        Dismiss
+      </button>
     </div>
   );
 }

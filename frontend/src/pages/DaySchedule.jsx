@@ -6,7 +6,7 @@ import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
-import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
@@ -49,6 +49,8 @@ export default function DaySchedule() {
   const { trip, pins, travelItems, plans, placing, proposeSheet } = state;
 
   const currentUser = useCurrentUser();
+  // Readers see the day but can't place, drag or propose (plans:write).
+  const canPlan = useCan()("plans:write");
 
   // Drafts are excluded from the grid, from the overlap checks and from
   // the tray's "unplaced" reckoning: a draft block claims no time and is
@@ -277,7 +279,7 @@ export default function DaySchedule() {
   }
 
   function handlePlanPointerDown(e, plan, entry) {
-    if (placing) return;
+    if (placing || !canPlan) return;
     if (plan.status !== "placed" && plan.status !== "pencilled") return; // contested/locked aren't draggable
     // A plan is moved from the day it begins on. Dragging the morning
     // tail of last night's crossing would be moving a block whose start
@@ -510,7 +512,7 @@ export default function DaySchedule() {
                 const { plan, numCols, col } = entry;
                 const isDragging = dragPreview?.planId === plan.id;
                 const draggable =
-                  (plan.status === "placed" || plan.status === "pencilled") && !entry.continuesBefore;
+                  canPlan && (plan.status === "placed" || plan.status === "pencilled") && !entry.continuesBefore;
                 // The block's span on THIS day, which can start before
                 // 00:00 or end after 24:00. The rectangle is clipped to
                 // the grid; the arrows say which way it runs on.
@@ -574,51 +576,62 @@ export default function DaySchedule() {
           (components/planner/AddSheet.jsx); see
           docs/features/scheduling-feature-spec.md "Tray". */}
       <div style={{ background: "var(--surface-inverse)", padding: "12px 16px 40px", flex: "none" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            style={{
-              flex: 1,
-              height: 46,
-              borderRadius: "var(--radius-lg)",
-              background: "var(--accent)",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              font: "600 14px var(--font-sans)",
-            }}
-          >
-            <FontAwesomeIcon icon={faPlus} style={{ width: 13, height: 13 }} />
-            Add
-          </button>
-          {/* The count was the one genuinely useful thing the tray caption
-              said, so it survives as a second target straight into the
-              picker rather than as dead text. */}
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            disabled={unplacedCount === 0}
-            style={{
-              flex: "none",
-              height: 46,
-              padding: "0 13px",
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border-on-dark)",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              font: "500 12px var(--font-sans)",
-              color: "var(--text-on-dark-muted)",
-              opacity: unplacedCount === 0 ? 0.45 : 1,
-            }}
-          >
-            {unplacedCount} unplaced
-            <FontAwesomeIcon icon={faChevronRight} style={{ width: 9, height: 9 }} />
-          </button>
-        </div>
+        {!canPlan ? (
+          // Readers: the bar keeps its place (and the room it leaves for
+          // the tab bar) but says why there's nothing to add.
+          <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ font: "500 13px var(--font-sans)", color: "var(--text-on-dark)" }}>View only</span>
+            <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-on-dark-muted)", textAlign: "right" }}>
+              Ask {trip.owner?.name ?? "the owner"} if you need to make changes
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              style={{
+                flex: 1,
+                height: 46,
+                borderRadius: "var(--radius-lg)",
+                background: "var(--accent)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                font: "600 14px var(--font-sans)",
+              }}
+            >
+              <FontAwesomeIcon icon={faPlus} style={{ width: 13, height: 13 }} />
+              Add
+            </button>
+            {/* The count was the one genuinely useful thing the tray caption
+                said, so it survives as a second target straight into the
+                picker rather than as dead text. */}
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              disabled={unplacedCount === 0}
+              style={{
+                flex: "none",
+                height: 46,
+                padding: "0 13px",
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--border-on-dark)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                font: "500 12px var(--font-sans)",
+                color: "var(--text-on-dark-muted)",
+                opacity: unplacedCount === 0 ? 0.45 : 1,
+              }}
+            >
+              {unplacedCount} unplaced
+              <FontAwesomeIcon icon={faChevronRight} style={{ width: 9, height: 9 }} />
+            </button>
+          </div>
+        )}
 
         {/* Your own unpublished drafts for this day stay on the surface.
             Nobody else can see these, which is exactly why they need
@@ -655,7 +668,7 @@ export default function DaySchedule() {
         ))}
       </div>
 
-      {addOpen && (
+      {addOpen && canPlan && (
         <AddSheet
           dayIndex={dayIndex}
           onClose={() => setAddOpen(false)}

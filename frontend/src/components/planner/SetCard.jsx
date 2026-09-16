@@ -37,6 +37,7 @@ export default function SetCard({
   canEdit,
   onEdit,
   voted,
+  // null when the viewer can't vote (a reader) — the button isn't shown.
   onVote,
   onPick,
   isOwner,
@@ -115,7 +116,8 @@ export default function SetCard({
           </div>
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-          <MetricTile value={`$${cost}`} label="total" />
+          {/* No cost for a viewer who can't see costs (a reader). */}
+          {cost == null ? null : <MetricTile value={`$${cost}`} label="total" />}
           <MetricTile value={fmtMin(slack)} label="slack" valueColor={slackColor} />
         </div>
       </div>
@@ -177,50 +179,54 @@ export default function SetCard({
             </div>
           ) : null}
 
-          <div style={{ marginTop: 11, display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={onVote}
-              style={{
-                flex: 1,
-                height: 40,
-                borderRadius: "var(--radius-lg)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                font: "600 13px var(--font-sans)",
-                background: voted ? color : "var(--surface-card)",
-                color: voted ? "#fff" : "var(--text-primary)",
-                border: voted ? "none" : "1px solid var(--border-strong)",
-                transition: "background var(--dur-fast) var(--ease-standard)",
-              }}
-            >
-              {voted ? "Voted ✓" : "Vote for this set"}
-            </button>
-            {isOwner ? (
-              <button
-                type="button"
-                onClick={handlePickTap}
-                style={{
-                  flex: 1,
-                  height: 40,
-                  borderRadius: "var(--radius-lg)",
-                  background: pickArmed ? "var(--danger, #b3261e)" : "var(--surface-inverse)",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  font: "600 13px var(--font-sans)",
-                  transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
-                }}
-              >
-                {/* A majority doesn't resolve anything by itself — the
-                    owner still decides, and the label says which of the
-                    two things they're doing. */}
-                {pickArmed ? "confirm?" : isMajority ? "Go with the majority" : "Pick this set"}
-              </button>
-            ) : null}
-          </div>
+          {onVote || isOwner ? (
+            <div style={{ marginTop: 11, display: "flex", gap: 8 }}>
+              {onVote ? (
+                <button
+                  type="button"
+                  onClick={onVote}
+                  style={{
+                    flex: 1,
+                    height: 40,
+                    borderRadius: "var(--radius-lg)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    font: "600 13px var(--font-sans)",
+                    background: voted ? color : "var(--surface-card)",
+                    color: voted ? "#fff" : "var(--text-primary)",
+                    border: voted ? "none" : "1px solid var(--border-strong)",
+                    transition: "background var(--dur-fast) var(--ease-standard)",
+                  }}
+                >
+                  {voted ? "Voted ✓" : "Vote for this set"}
+                </button>
+              ) : null}
+              {isOwner ? (
+                <button
+                  type="button"
+                  onClick={handlePickTap}
+                  style={{
+                    flex: 1,
+                    height: 40,
+                    borderRadius: "var(--radius-lg)",
+                    background: pickArmed ? "var(--danger, #b3261e)" : "var(--surface-inverse)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    font: "600 13px var(--font-sans)",
+                    transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
+                  }}
+                >
+                  {/* A majority doesn't resolve anything by itself — the
+                      owner still decides, and the label says which of the
+                      two things they're doing. */}
+                  {pickArmed ? "confirm?" : isMajority ? "Go with the majority" : "Pick this set"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {isOwner && pickArmed ? (
             <div
               role="alert"
@@ -240,7 +246,8 @@ export default function SetCard({
           ) : null}
           {!isOwner ? (
             <div style={{ marginTop: 8, font: "400 10.5px var(--font-sans)", color: "var(--text-muted)" }}>
-              {ownerName ? `Only ${ownerName} (owner) can pick a set.` : "Only the trip owner can pick a set."} Everyone else can vote and comment.
+              {ownerName ? `Only ${ownerName} (owner) can pick a set.` : "Only the trip owner can pick a set."}{" "}
+              {onVote ? "Everyone else can vote and comment." : "As a reader you can follow the vote but not take part."}
             </div>
           ) : null}
         </div>

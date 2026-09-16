@@ -1,14 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from ..auth import Principal, get_current_contributor, get_current_principal, get_principal
 from ..custom_events import forget_orphaned_travel_items, publish_forgotten, travel_item_ids_of
 from ..db import get_db
 from ..derive import item_start_minutes, plan_range_minutes, plan_totals
 from ..events import bus
 from ..models import Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem
+from ..permissions import PLANS_DECIDE, PLANS_READ, PLANS_WRITE, Access, require
 from ..schemas import PinOut, PlanCreate, PlanItemCreate, PlanItemOut, PlanMove, PlanOut, TravelItemOut
 
 router = APIRouter(prefix="/api", tags=["plans"])
@@ -19,25 +19,6 @@ router = APIRouter(prefix="/api", tags=["plans"])
 # absent: a private draft nobody else can see must not be able to block
 # anybody else's placement (proposals-and-expenses spec §6.1).
 _OCCUPYING_STATUSES = (PlanStatus.placed, PlanStatus.pencilled, PlanStatus.contested, PlanStatus.locked)
-
-
-def contributor_for_request(db: Session, trip_id: int, request: Request) -> Contributor | None:
-    """The signed-in contributor on this trip, or None — never raising, and
-    never enrolling anyone. Read paths use this rather than
-    auth.get_current_contributor because a GET shouldn't 403 an outsider
-    (they simply see no drafts) and shouldn't have the side effect of
-    creating a Contributor row the way the dev-mode auto-enrol does."""
-    principal = get_principal(request)
-    if principal is None:
-        from ..config import get_settings
-
-        settings = get_settings()
-        if not settings.is_development:
-            return None
-        email = settings.dev_user_email
-    else:
-        email = principal.email
-    return db.scalar(select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == email))
 
 
 def visible_plans_condition(viewer: Contributor | None) -> ColumnElement[bool]:
@@ -225,8 +206,8 @@ def validate_stop_layout(db: Session, items: list[PlanItemCreate], window_minute
 
 
 @router.get("/trips/{trip_id}/plans", response_model=list[PlanOut])
-def list_plans(trip_id: int, request: Request, db: Session = Depends(get_db)):
-    viewer = contributor_for_request(db, trip_id, request)
+def list_plans(trip_id: int, access: Access = Depends(require(PLANS_READ)), db: Session = Depends(get_db)):
+    viewer = access.member
     plans = db.scalars(
         select(Plan).where(Plan.trip_id == trip_id, visible_plans_condition(viewer))
     ).all()
@@ -234,15 +215,14 @@ def list_plans(trip_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/plans/{plan_id}", response_model=PlanOut)
-def get_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
+def get_plan(plan_id: int, access: Access = Depends(require(PLANS_READ)), db: Session = Depends(get_db)):
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
     if plan.status == PlanStatus.draft:
-        viewer = contributor_for_request(db, plan.trip_id, request)
         # 404 rather than 403: someone else's draft shouldn't even confirm
         # that a plan exists at that id.
-        if viewer is None or plan.created_by_id != viewer.id:
+        if plan.created_by_id != access.member.id:
             raise HTTPException(status_code=404, detail="Plan not found")
     return plan_to_schema(plan)
 
@@ -251,7 +231,7 @@ def get_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
 def create_plan(
     trip_id: int,
     payload: PlanCreate,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(PLANS_WRITE)),
     db: Session = Depends(get_db),
 ):
     """Direct placement, or — with status "draft" — the private, unclaimed
@@ -267,7 +247,6 @@ def create_plan(
         if occupying is not None:
             raise HTTPException(status_code=409, detail=occupied_detail(occupying))
 
-    contributor = get_current_contributor(trip_id=trip_id, principal=principal, db=db)
     plan = Plan(
         trip_id=trip_id,
         starts_at=payload.starts_at,
@@ -275,7 +254,7 @@ def create_plan(
         label=payload.label,
         rationale=payload.rationale,
         status=PlanStatus(payload.status),
-        created_by_id=contributor.id if contributor else None,
+        created_by_id=access.member.id,
     )
     db.add(plan)
     db.flush()
@@ -290,7 +269,12 @@ def create_plan(
 
 
 @router.patch("/plans/{plan_id}", response_model=PlanOut)
-def move_plan(plan_id: int, payload: PlanMove, db: Session = Depends(get_db)):
+def move_plan(
+    plan_id: int,
+    payload: PlanMove,
+    _: Access = Depends(require(PLANS_WRITE)),
+    db: Session = Depends(get_db),
+):
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -314,7 +298,7 @@ def move_plan(plan_id: int, payload: PlanMove, db: Session = Depends(get_db)):
 @router.delete("/plans/{plan_id}", status_code=204)
 def delete_plan(
     plan_id: int,
-    request: Request,
+    access: Access = Depends(require(PLANS_WRITE)),
     db: Session = Depends(get_db),
 ):
     plan = db.get(Plan, plan_id)
@@ -325,8 +309,7 @@ def delete_plan(
         # Discarding your own draft block. Author-only for the same reason
         # reading one is: it isn't anyone else's to throw away. 404, not
         # 403, to match get_plan.
-        viewer = contributor_for_request(db, plan.trip_id, request)
-        if viewer is None or plan.created_by_id != viewer.id:
+        if plan.created_by_id != access.member.id:
             raise HTTPException(status_code=404, detail="Plan not found")
     elif plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
         raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be unplaced")
@@ -350,7 +333,7 @@ def delete_plan(
 @router.post("/plans/{plan_id}/lock", response_model=PlanOut)
 def lock_plan(
     plan_id: int,
-    principal: Principal = Depends(get_current_principal),
+    _: Access = Depends(require(PLANS_DECIDE)),
     db: Session = Depends(get_db),
 ):
     """Owner-only. Locks a placed/pencilled plan directly, with no contest
@@ -370,10 +353,6 @@ def lock_plan(
         raise HTTPException(status_code=404, detail="Plan not found")
     if plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
         raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be locked directly")
-
-    contributor = get_current_contributor(trip_id=plan.trip_id, principal=principal, db=db)
-    if not contributor.is_owner:
-        raise HTTPException(status_code=403, detail="Only the trip owner can lock an item")
 
     plan.status = PlanStatus.locked
     db.commit()

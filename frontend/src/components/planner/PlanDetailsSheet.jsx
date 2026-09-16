@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLock, faLockOpen, faArrowUpRightFromSquare } from "@fortawesome/free-solid-svg-icons";
 import { useNavigate } from "react-router-dom";
-import { usePlannerState, usePlannerDispatch, useCurrentUser } from "../../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCan } from "../../state/PlannerContext";
 import { getTripDays } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
@@ -38,7 +38,11 @@ function externalHref(link) {
 export default function PlanDetailsSheet({ planId, onClose }) {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const currentUser = useCurrentUser();
+  const can = useCan();
+  // Moving, clearing and deleting are plans:write; locking is the owner's
+  // plans:decide. Readers get the sheet for looking only.
+  const canPlan = can("plans:write");
+  const canDecide = can("plans:decide");
   const navigate = useNavigate();
   const { trip, plans, pins } = state;
 
@@ -112,7 +116,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   if (!planId || !plan) return null;
 
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
-  const editable = plan.status === "placed" || plan.status === "pencilled";
+  const editable = canPlan && (plan.status === "placed" || plan.status === "pencilled");
   // Only reachable here for a plan with no contest — pages/DaySchedule.jsx
   // routes a contested/locked-via-contest plan to the compare screen
   // instead (see handlePlanTap there), so "locked" in this sheet always
@@ -364,7 +368,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, flex: "none" }}>
-            {currentUser.isOwner && (
+            {canDecide && (
               // Lock icon lives in the header, next to the status it
               // changes — not in the destructive-action footer below,
               // since this is a routine, reversible toggle rather than a
@@ -417,8 +421,10 @@ export default function PlanDetailsSheet({ planId, onClose }) {
 
         {!editable && (
           <div style={{ marginTop: 14, padding: "10px 13px", borderRadius: "var(--radius-lg)", background: "var(--plum-tint)", font: "500 12px var(--font-sans)", color: "var(--accent)" }}>
-            {isLocked
-              ? currentUser.isOwner
+            {!canPlan
+              ? "You can view this trip but not change it."
+              : isLocked
+              ? canDecide
                 ? "This item is locked — tap the lock icon above to reopen it."
                 : "This item is locked in place by the trip owner."
               : `This item is ${plan.status} and cannot be edited from here.`}
@@ -516,7 +522,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
                 )}
               </div>
             </div>
-            <Stepper label="Duration" valueLabel={fmtMin(durationMinutes)} onDown={() => stepDuration(-15)} onUp={() => stepDuration(15)} />
+            <Stepper
+              label="Duration"
+              valueLabel={fmtMin(durationMinutes)}
+              onDown={() => stepDuration(-15)}
+              onUp={() => stepDuration(15)}
+              disabled={!editable}
+            />
           </div>
         </div>
 
@@ -542,29 +554,31 @@ export default function PlanDetailsSheet({ planId, onClose }) {
               View pin details
             </button>
           )}
-          <div>
-            <button
-              type="button"
-              onClick={handleDeleteTap}
-              disabled={deleting || clearing || !editable}
-              style={{
-                width: "100%",
-                height: 48,
-                borderRadius: "var(--radius-lg)",
-                background: deleteArmed ? "var(--danger, #b3261e)" : "var(--surface-page)",
-                border: deleteArmed ? "none" : "1px solid var(--border-strong)",
-                color: deleteArmed ? "#fff" : "var(--danger, #b3261e)",
-                font: "600 14px var(--font-sans)",
-                opacity: editable ? 1 : 0.6,
-                transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
-              }}
-            >
-              {deleting ? "Deleting…" : deleteArmed ? "confirm?" : "Delete permanently"}
-            </button>
-            <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
-              {deleteArmed ? "Tap once more to confirm — this can't be undone." : ""}
+          {canPlan ? (
+            <div>
+              <button
+                type="button"
+                onClick={handleDeleteTap}
+                disabled={deleting || clearing || !editable}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  borderRadius: "var(--radius-lg)",
+                  background: deleteArmed ? "var(--danger, #b3261e)" : "var(--surface-page)",
+                  border: deleteArmed ? "none" : "1px solid var(--border-strong)",
+                  color: deleteArmed ? "#fff" : "var(--danger, #b3261e)",
+                  font: "600 14px var(--font-sans)",
+                  opacity: editable ? 1 : 0.6,
+                  transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
+                }}
+              >
+                {deleting ? "Deleting…" : deleteArmed ? "confirm?" : "Delete permanently"}
+              </button>
+              <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
+                {deleteArmed ? "Tap once more to confirm — this can't be undone." : ""}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -251,8 +251,11 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
                       return (
                         <div
                           key={key}
-                          onClick={() => onToggle(d.n, band)}
+                          // No onToggle = read-only (a viewer without
+                          // ideas:write — see pages/EditVisit.jsx).
+                          onClick={onToggle ? () => onToggle(d.n, band) : undefined}
                           style={{
+                            cursor: onToggle ? "pointer" : "default",
                             flex: 1,
                             minWidth: 0,
                             boxShadow: overridden ? "0 0 0 1.5px rgba(143,68,120,.55)" : "none",
@@ -356,7 +359,7 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
       ) : null}
 
       <div className="mono-caption" style={{ marginTop: 9, fontFamily: "var(--font-sans)", textTransform: "none", letterSpacing: 0, lineHeight: 1.5, color: "var(--text-muted)" }}>
-        Tap a square to override. Only squares that work show up as options when the group compares sets.
+        {onToggle ? "Tap a square to override. " : ""}Only squares that work show up as options when the group compares sets.
       </div>
     </div>
   );

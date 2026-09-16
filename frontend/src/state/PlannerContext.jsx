@@ -49,8 +49,53 @@ function readLastTripId() {
 // calendar picks up a lock/reopen's effect once the user navigates back.
 
 function normalizeContributor(c) {
-  return { id: c.id, name: c.display_name, initial: c.initial, tint: c.tint, isOwner: c.is_owner, email: c.email };
+  return {
+    id: c.id,
+    name: c.display_name,
+    initial: c.initial,
+    tint: c.tint,
+    // owner | contributor | reader — see backend/app/permissions.py.
+    role: c.role ?? (c.is_owner ? "owner" : "contributor"),
+    isOwner: c.is_owner,
+    email: c.email,
+  };
 }
+
+// A cost the caller isn't allowed to see (no costs:read) arrives as null,
+// which is different from a free item's 0. Keep it null all the way to the
+// screen so nothing renders "$0" for a price the viewer simply can't see.
+function dollarsOrNull(cents) {
+  return cents == null ? null : Math.round(cents / 100);
+}
+
+// Everything the trip screens need to know about the viewer's standing on
+// the active trip, from the trip payload itself (backend TripOut).
+function accessFromTrip(t) {
+  return {
+    role: t.my_role,
+    scopes: t.my_scopes ?? [],
+    owner: t.owner
+      ? { id: t.owner.id, name: t.owner.display_name, email: t.owner.email, initial: t.owner.initial, tint: t.owner.tint }
+      : null,
+    memberCount: t.member_count ?? 0,
+  };
+}
+
+function roleLabel(role) {
+  if (role === "owner") return "Owner";
+  if (role === "reader") return "Reader";
+  return "Contributor";
+}
+
+// "Your trip" / "Kenji's trip · Reader" — the ownership line on Trips Home.
+export function ownershipLine(trip) {
+  if (!trip) return "";
+  if (trip.role === "owner") return "Your trip";
+  const owner = trip.owner?.name ? `${trip.owner.name}'s trip` : "Shared with you";
+  return `${owner} · ${roleLabel(trip.role)}`;
+}
+
+export { roleLabel };
 
 function normalizePin(p, contributorsById) {
   const addedBy = p.added_by_id ? contributorsById[p.added_by_id] : null;
@@ -65,8 +110,8 @@ function normalizePin(p, contributorsById) {
     cx,
     cy,
     dur: p.duration_minutes,
-    cost: Math.round(p.cost_cents / 100),
-    costCents: p.cost_cents,
+    cost: dollarsOrNull(p.cost_cents),
+    costCents: p.cost_cents ?? null,
     // Contributor ids sharing this cost; [] means everyone on the trip.
     // Kept as raw ids rather than resolved contributors so a head who has
     // since left the trip doesn't silently vanish from the split.
@@ -97,8 +142,8 @@ function normalizeTravelItem(t, contributorsById) {
     title: t.title,
     kind: t.kind,
     dur: t.duration_minutes,
-    cost: Math.round(t.cost_cents / 100),
-    costCents: t.cost_cents,
+    cost: dollarsOrNull(t.cost_cents),
+    costCents: t.cost_cents ?? null,
     heads: t.heads ?? [],
     notes: t.notes,
     link: t.link,
@@ -126,7 +171,7 @@ function normalizePlanItem(it) {
     offsetMinutes: it.offset_minutes ?? null,
     // Served pre-computed by the API so no screen re-derives packing.
     startMinuteOfDay: it.start_minute_of_day ?? null,
-    costCents: source?.cost_cents ?? 0,
+    costCents: source ? source.cost_cents ?? null : 0,
     heads: source?.heads ?? [],
     position: it.position,
   };
@@ -150,7 +195,7 @@ function normalizePlan(p) {
     rationale: p.rationale ?? "",
     items: (p.items ?? []).map(normalizePlanItem),
     totalDurationMinutes: p.total_duration_minutes,
-    totalCostCents: p.total_cost_cents,
+    totalCostCents: p.total_cost_cents ?? null,
     // No movingMinutes: there is one definition of slack now, and it
     // doesn't subtract a guess at travel time. See backend/app/derive.py.
     slackMinutes: p.slack_minutes,
@@ -258,11 +303,13 @@ async function loadTripView(tripId, trips) {
 
   const otherTrips = await Promise.all(
     otherTripRows.map(async (t) => {
-      const [c, p] = await Promise.all([api.listContributors(t.id), api.listPins(t.id)]);
+      const p = await api.listPins(t.id);
+      const access = accessFromTrip(t);
       return {
         id: t.id,
         name: t.name,
-        meta: `${p.length} pin${p.length === 1 ? "" : "s"} · ${c.length} planning`,
+        meta: `${p.length} pin${p.length === 1 ? "" : "s"} · ${access.memberCount} planning`,
+        ownership: ownershipLine(access),
         progress: phaseProgress(t.phase),
         phase: t.phase,
       };
@@ -327,9 +374,14 @@ async function loadTripView(tripId, trips) {
     // headcountFor below, the one place that fallback is spelled out.
     travellerCount: trip.traveller_count ?? null,
     metrics: { pins: pinsList.length, regions: regionCount, toDecide: toDecideCount },
+    // The viewer's role and scopes on this trip, plus who owns it. Used to
+    // hide controls the server would refuse anyway — see useCan below.
+    ...accessFromTrip(trip),
   };
 
-  const currentUserId = contributors.find((c) => c.isOwner)?.id ?? contributors[0]?.id ?? null;
+  // The signed-in person's own row on this trip, straight from the server
+  // (TripOut.my_contributor_id) rather than guessed from the roster.
+  const currentUserId = trip.my_contributor_id ?? null;
 
   return {
     trip: tripView,
@@ -425,6 +477,14 @@ function reducer(state, action) {
     case "SET_CURRENT_USER":
       return { ...state, currentUserId: action.id };
 
+    case "SET_MEMBERS":
+      return {
+        ...state,
+        contributors: action.contributors,
+        contributorOverflowCount: Math.max(0, action.contributors.length - 4),
+        trip: state.trip ? { ...state.trip, ...action.trip } : state.trip,
+      };
+
     default:
       return state;
   }
@@ -474,7 +534,9 @@ export function PlannerProvider({ children }) {
         // compare as strings rather than `t.id === tripIdFromUrl`.
         const linkedTrip = tripIdFromUrl ? trips.find((t) => String(t.id) === tripIdFromUrl) : null;
         if (tripIdFromUrl && !linkedTrip) {
-          throw new Error("That link doesn't match a trip we have — it may have been deleted, or the link is wrong.");
+          throw new Error(
+            "That trip isn't in your list. If someone shared it with you, open the invite link they sent to add it."
+          );
         }
         // No trip in the URL: fall back to whichever trip was last active
         // (see rememberLastTripId/readLastTripId above) so a plain
@@ -529,6 +591,78 @@ export function PlannerProvider({ children }) {
             placing: { kind: "travel", refId: item.id, durationMinutes: item.dur, label: item.title },
           });
           return;
+        }
+
+        // Who's on the trip and the viewer's own role changed (someone
+        // joined, left, or had their role changed). Re-reads the roster and
+        // the trip's access fields, then the rest of the trip, since a role
+        // change can change which costs come back.
+        case "REFRESH_MEMBERS": {
+          if (!state.trip) return;
+          const trips = await api.listTrips();
+          if (!trips.some((t) => t.id === state.trip.id)) {
+            // No longer on this trip (removed by the owner).
+            const payload = trips.length ? await loadTripView(trips[0].id, trips) : emptyTripView();
+            dispatch({ type: "LOADED", payload });
+            return { ok: true, removed: true };
+          }
+          const payload = await loadTripView(state.trip.id, trips);
+          dispatch({ type: "LOADED", payload });
+          return { ok: true };
+        }
+
+        // Accept an invite link and make that trip the active one.
+        case "JOIN_TRIP": {
+          try {
+            const joined = await api.acceptInvite(action.token);
+            const trips = await api.listTrips();
+            const payload = await loadTripView(joined.id, trips);
+            dispatch({ type: "LOADED", payload });
+            return { ok: true, tripId: joined.id, tripName: joined.name };
+          } catch (err) {
+            console.error("join failed", err);
+            return { ok: false, error: apiMessage(err), gone: err.status === 404 };
+          }
+        }
+
+        case "LEAVE_TRIP": {
+          if (!state.trip) return { ok: false };
+          try {
+            await api.leaveTrip(state.trip.id);
+            const trips = await api.listTrips();
+            const payload = trips.length ? await loadTripView(trips[0].id, trips) : emptyTripView();
+            dispatch({ type: "LOADED", payload });
+            return { ok: true };
+          } catch (err) {
+            console.error("leave failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "CHANGE_ROLE":
+        case "REMOVE_MEMBER": {
+          if (!state.trip) return { ok: false };
+          try {
+            if (action.type === "CHANGE_ROLE") {
+              await api.changeRole(state.trip.id, action.contributorId, action.role);
+            } else {
+              await api.removeContributor(state.trip.id, action.contributorId);
+            }
+            const [contributorsRaw, tripRaw] = await Promise.all([
+              api.listContributors(state.trip.id),
+              api.getTrip(state.trip.id),
+            ]);
+            const contributors = contributorsRaw.map(normalizeContributor);
+            dispatch({
+              type: "SET_MEMBERS",
+              contributors,
+              trip: { ...accessFromTrip(tripRaw), contributorCount: contributors.length },
+            });
+            return { ok: true };
+          } catch (err) {
+            console.error("member update failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
         }
 
         case "REFRESH_PLANS_AND_ITEMS": {
@@ -843,6 +977,7 @@ export function PlannerProvider({ children }) {
               id: trip.id,
               name: trip.name,
               meta: "0 pins · 1 planning",
+              ownership: "Your trip",
               progress: phaseProgress(trip.phase),
               phase: trip.phase,
             },
@@ -1028,6 +1163,18 @@ export function usePlannerDispatch() {
   const ctx = useContext(PlannerDispatchContext);
   if (!ctx) throw new Error("usePlannerDispatch must be used within PlannerProvider");
   return ctx;
+}
+
+// Whether the viewer holds `scope` on the active trip — e.g.
+// can("ideas:write"), can("costs:read"). The server enforces every one of
+// these on its own; this is only for not offering what would be refused.
+export function useCan() {
+  const { trip } = usePlannerState();
+  const scopes = trip?.scopes;
+  return useMemo(() => {
+    const set = new Set(scopes ?? []);
+    return (scope) => set.has(scope);
+  }, [scopes]);
 }
 
 export function useCurrentUser() {

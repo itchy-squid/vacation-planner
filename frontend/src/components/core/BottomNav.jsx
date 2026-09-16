@@ -1,5 +1,5 @@
 import { NavLink, matchPath, useLocation } from "react-router-dom";
-import { usePlannerState } from "../../state/PlannerContext";
+import { usePlannerState, useCan } from "../../state/PlannerContext";
 import { useGuardedNavigate, useIsNavGuarded } from "../../state/NavGuard";
 
 // The app's trip-level bottom navigation — the one place every main screen
@@ -59,6 +59,7 @@ export default function BottomNav() {
   const { pathname } = useLocation();
   const guardedNavigate = useGuardedNavigate();
   const isGuarded = useIsNavGuarded();
+  const can = useCan();
 
   // No trips in the database yet (see PlannerContext's emptyTripView):
   // every link below is trip-scoped, so there's nothing to point at.
@@ -79,7 +80,8 @@ export default function BottomNav() {
     firstOpenContestId
       ? { to: `${base}/contests/${firstOpenContestId}`, label: "Compare", match: ["/trips/:tripId/contests/:contestId"] }
       : null,
-    { to: `${base}/expenses`, label: "Expenses", match: ["/trips/:tripId/expenses"] },
+    // Readers don't hold costs:read, so they don't get the tab at all.
+    can("costs:read") ? { to: `${base}/expenses`, label: "Expenses", match: ["/trips/:tripId/expenses"] } : null,
     { to: `${base}/itinerary`, label: "Itinerary", match: ["/trips/:tripId/itinerary"] },
   ].filter(Boolean);
 

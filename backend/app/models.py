@@ -28,7 +28,6 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
-    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -82,15 +81,24 @@ class Trip(Base):
     travel_items: Mapped[list["TravelItem"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
     plans: Mapped[list["Plan"]] = relationship(back_populates="trip", cascade="all, delete-orphan", foreign_keys="Plan.trip_id")
     contests: Mapped[list["Contest"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    invites: Mapped[list["TripInvite"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
 
 
 class Contributor(Base):
     """A trip member. `email` is matched against the Easy Auth principal at
-    request time (see app/auth.py) once real auth is wired up; there is no
-    password/credential stored here."""
+    request time (see app/auth.py); there is no password/credential stored
+    here.
+
+    `role` is owner | contributor | reader, and it is the whole of what a
+    member may do on this trip: app/permissions.py maps each role to a
+    fixed set of scopes. A trip has exactly one owner, who is the person
+    that created it."""
 
     __tablename__ = "contributors"
-    __table_args__ = (UniqueConstraint("trip_id", "email", name="uq_contributor_trip_email"),)
+    __table_args__ = (
+        UniqueConstraint("trip_id", "email", name="uq_contributor_trip_email"),
+        CheckConstraint("role IN ('owner', 'contributor', 'reader')", name="ck_contributor_role"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
@@ -98,10 +106,47 @@ class Contributor(Base):
     display_name: Mapped[str] = mapped_column(String(120))
     initial: Mapped[str] = mapped_column(String(4))
     tint: Mapped[str] = mapped_column(String(32), default="var(--who-1)")
-    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    role: Mapped[str] = mapped_column(String(16), default="contributor")
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # The link this person joined through, if any — what the owner's
+    # "N joined" count on each invite link reads. Nulled, not cascaded, when
+    # a link row is ever removed; revoking a link only stamps revoked_at.
+    joined_via_invite_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trip_invites.id", ondelete="SET NULL", use_alter=True), nullable=True
+    )
 
     trip: Mapped[Trip] = relationship(back_populates="contributors")
+
+    def __init__(self, *, is_owner: bool | None = None, **kwargs):
+        # Accepts the old is_owner flag so fixtures and seed code can keep
+        # saying is_owner=True; role wins when both are given.
+        if is_owner is not None and "role" not in kwargs:
+            kwargs["role"] = "owner" if is_owner else "contributor"
+        super().__init__(**kwargs)
+
+    @property
+    def is_owner(self) -> bool:
+        return self.role == "owner"
+
+
+class TripInvite(Base):
+    """A shareable join link for one trip. Anyone signed in who opens it can
+    add the trip to their list with `role`. One live link per role is
+    reused (routers/sharing.py); a link works until the owner revokes it,
+    which stamps revoked_at and leaves already-joined members alone."""
+
+    __tablename__ = "trip_invites"
+    __table_args__ = (CheckConstraint("role IN ('contributor', 'reader')", name="ck_trip_invite_role"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True)
+    role: Mapped[str] = mapped_column(String(16))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    trip: Mapped[Trip] = relationship(back_populates="invites")
 
 
 class Pin(Base):

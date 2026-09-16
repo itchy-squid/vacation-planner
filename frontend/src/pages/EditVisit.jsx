@@ -6,7 +6,7 @@ import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import HeadsPicker from "../components/planner/HeadsPicker";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
-import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCan } from "../state/PlannerContext";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
@@ -88,6 +88,13 @@ export default function EditVisit() {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const pin = state.pins[pinId];
+  // A reader opens this screen to look: every field is read-only, and
+  // Save / Delete / Replace aren't offered. Cost and its split are shown
+  // only with costs:read, and editable only with costs:write.
+  const can = useCan();
+  const canEdit = can("ideas:write");
+  const canSeeCosts = can("costs:read");
+  const canSetCosts = canEdit && can("costs:write");
   const knownRegions = [...new Set(Object.values(state.pins).map((p) => p.region).filter(Boolean))];
 
   const [commentCount, setCommentCount] = useState(null);
@@ -428,29 +435,33 @@ export default function EditVisit() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "20px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <HomeButton size={28} />
-            <button onClick={handleCancel} disabled={saving || deleting} style={{ font: "500 13px var(--font-sans)", color: saving || deleting ? "var(--text-muted)" : "var(--accent)" }}>‹ Cancel</button>
+            <button onClick={handleCancel} disabled={saving || deleting} style={{ font: "500 13px var(--font-sans)", color: saving || deleting ? "var(--text-muted)" : "var(--accent)" }}>
+              {canEdit ? "‹ Cancel" : "‹ Back"}
+            </button>
           </div>
           {/* Single Save action now lives at the bottom of the form
               ("Save changes") — this header used to carry a second Save
               that did the identical thing, so the empty cell here just
               keeps the label centered. */}
-          <span className="mono-caption">Edit visit</span>
+          <span className="mono-caption">{canEdit ? "Edit visit" : "Visit"}</span>
           <div />
         </div>
 
         <PhotoPlaceholder height={150} label="photo placeholder" src={form.photoUrl} alt={pin.title}>
-          <div style={{ marginLeft: "auto", marginRight: 14, marginBottom: 10 }}>
-            <button
-              type="button"
-              onClick={() => setEditingPhoto((open) => !open)}
-              style={{ background: "rgba(255,255,255,.94)", borderRadius: 999, padding: "5px 10px", font: "600 10px var(--font-sans)", color: "var(--stone-700)" }}
-            >
-              {editingPhoto ? "Cancel" : "Replace"}
-            </button>
-          </div>
+          {canEdit ? (
+            <div style={{ marginLeft: "auto", marginRight: 14, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => setEditingPhoto((open) => !open)}
+                style={{ background: "rgba(255,255,255,.94)", borderRadius: 999, padding: "5px 10px", font: "600 10px var(--font-sans)", color: "var(--stone-700)" }}
+              >
+                {editingPhoto ? "Cancel" : "Replace"}
+              </button>
+            </div>
+          ) : null}
         </PhotoPlaceholder>
 
-        {editingPhoto && (
+        {editingPhoto && canEdit && (
           <div style={{ padding: "10px 16px 0" }}>
             <TextField
               label="Image URL"
@@ -472,7 +483,7 @@ export default function EditVisit() {
         <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <div className="mono-caption">Title</div>
-            <input value={form.title} onChange={(e) => setField("title", e.target.value)} style={{ marginTop: 6, ...textFieldStyle({ weight: 600, size: 15 }) }} />
+            <input value={form.title} readOnly={!canEdit} onChange={(e) => setField("title", e.target.value)} style={{ marginTop: 6, ...textFieldStyle({ weight: 600, size: 15 }) }} />
           </div>
 
           <div>
@@ -480,6 +491,7 @@ export default function EditVisit() {
             <input
               value={form.region}
               onChange={(e) => setField("region", e.target.value)}
+              readOnly={!canEdit}
               placeholder="e.g. Xiaoliuqiu"
               list="edit-visit-known-regions"
               style={{ marginTop: 6, ...textFieldStyle({ size: 13.5 }) }}
@@ -499,6 +511,7 @@ export default function EditVisit() {
               <input
                 value={form.link}
                 onChange={(e) => setField("link", e.target.value)}
+                readOnly={!canEdit}
                 style={{ flex: 1, minWidth: 0, ...textFieldStyle({ mono: true, size: 12.5 }) }}
               />
               <button
@@ -540,7 +553,7 @@ export default function EditVisit() {
               placedDayBand={placedDayBand}
               placedLocked={placedIsLocked}
               days={tripDays}
-              onToggle={toggleOverride}
+              onToggle={canEdit ? toggleOverride : undefined}
             />
           </div>
 
@@ -550,45 +563,56 @@ export default function EditVisit() {
               valueLabel={fmtMin(form.dur)}
               onDown={() => changeDuration(form.dur - 15)}
               onUp={() => changeDuration(form.dur + 15)}
+              disabled={!canEdit}
             />
-            <div style={{ flex: 1 }}>
-              {/* Not "cost each": this is the whole cost of the visit, for
-                  everyone it's split between. Per-head is a division done
-                  for display (see data/expenses.js), so storing the total
-                  is what keeps a row on the Expenses screen and the trip
-                  total agreeing to the cent. */}
-              <div className="mono-caption">Cost, in total</div>
-              <div style={{ marginTop: 6, display: "flex", alignItems: "center", background: "var(--surface-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-lg)", height: 46, padding: "0 13px" }}>
-                <span style={{ font: "500 14px var(--font-sans)", color: "var(--text-muted)", marginRight: 4 }}>$</span>
-                <input
-                  value={form.cost}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value.replace(/[^0-9]/g, ""), 10);
-                    setField("cost", Number.isNaN(v) ? 0 : v);
-                  }}
-                  inputMode="numeric"
-                  style={{ flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: 14, fontWeight: 600, color: "var(--text-primary)", background: "transparent" }}
-                />
+            {canSeeCosts ? (
+              <div style={{ flex: 1 }}>
+                {/* Not "cost each": this is the whole cost of the visit, for
+                    everyone it's split between. Per-head is a division done
+                    for display (see data/expenses.js), so storing the total
+                    is what keeps a row on the Expenses screen and the trip
+                    total agreeing to the cent. */}
+                <div className="mono-caption">Cost, in total</div>
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", background: "var(--surface-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-lg)", height: 46, padding: "0 13px" }}>
+                  <span style={{ font: "500 14px var(--font-sans)", color: "var(--text-muted)", marginRight: 4 }}>$</span>
+                  <input
+                    value={form.cost}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value.replace(/[^0-9]/g, ""), 10);
+                      setField("cost", Number.isNaN(v) ? 0 : v);
+                    }}
+                    inputMode="numeric"
+                    readOnly={!canSetCosts}
+                    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: 14, fontWeight: 600, color: "var(--text-primary)", background: "transparent" }}
+                  />
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
 
           {/* Sits directly under "Cost each" because it's the divisor of
               exactly that number — see the Expenses screen, where the two
               are shown together as "$85 × 4". */}
-          <HeadsPicker
-            contributors={state.contributors}
-            value={form.heads}
-            onChange={(heads) => setField("heads", heads)}
-            travellerCount={state.trip.travellerCount || state.contributors.length || 1}
-            disabled={saving || deleting}
-          />
+          {canSeeCosts ? (
+            <HeadsPicker
+              contributors={state.contributors}
+              value={form.heads}
+              onChange={(heads) => setField("heads", heads)}
+              travellerCount={state.trip.travellerCount || state.contributors.length || 1}
+              disabled={saving || deleting || !canSetCosts}
+            />
+          ) : null}
 
           {durationSyncNote && (
             <div style={{ font: "500 11px var(--font-sans)", color: "var(--warn, #a15c1a)" }}>{durationSyncNote}</div>
           )}
 
-          <TextArea label="Notes for the group" value={form.notes} onChange={(e) => setField("notes", e.target.value)} />
+          <TextArea
+            label="Notes for the group"
+            value={form.notes}
+            readOnly={!canEdit}
+            onChange={(e) => setField("notes", e.target.value)}
+          />
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 13px", background: "var(--surface-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -607,51 +631,55 @@ export default function EditVisit() {
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{saveError}</div>
           )}
 
-          <button
-            onClick={handleSave}
-            disabled={saving || deleting}
-            style={{ height: 48, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", font: "600 14px var(--font-sans)", opacity: saving || deleting ? 0.45 : 1 }}
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-          <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingBottom: 8 }}>
-            {dirty && !saving ? "Unsaved changes · " : ""}{footnote}
-          </div>
+          {canEdit ? (
+            <>
+              <button
+                onClick={handleSave}
+                disabled={saving || deleting}
+                style={{ height: 48, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", font: "600 14px var(--font-sans)", opacity: saving || deleting ? 0.45 : 1 }}
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+              <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingBottom: 8 }}>
+                {dirty && !saving ? "Unsaved changes · " : ""}{footnote}
+              </div>
 
-          {/* Destructive zone, deliberately separated from Save above by
-              its own margin — double-tap-to-confirm like PlanDetailsSheet
-              .jsx's "Delete permanently", since this can't be undone from
-              here either. */}
-          <div style={{ marginTop: 10 }}>
-            <button
-              type="button"
-              onClick={handleDeleteTap}
-              disabled={deleting || saving || placingPlanBlocksDelete}
-              style={{
-                width: "100%",
-                height: 48,
-                borderRadius: "var(--radius-lg)",
-                background: deleteArmed ? "var(--danger, #b3261e)" : "var(--surface-card)",
-                border: deleteArmed ? "none" : "1px solid var(--border-strong)",
-                color: deleteArmed ? "#fff" : "var(--danger, #b3261e)",
-                font: "600 14px var(--font-sans)",
-                opacity: placingPlanBlocksDelete ? 0.45 : 1,
-                transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
-              }}
-            >
-              {deleting ? "Deleting…" : deleteArmed ? "confirm?" : "Delete pin"}
-            </button>
-            <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
-              {placingPlanBlocksDelete
-                ? `This pin is part of ${placingPlan.status === "contested" ? "an open contest" : "a locked plan"} — resolve that before deleting it.`
-                : deleteArmed
-                ? "Tap once more to confirm — this can't be undone."
-                : ""}
-            </div>
-            {deleteError && (
-              <div style={{ marginTop: 8, font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{deleteError}</div>
-            )}
-          </div>
+              {/* Destructive zone, deliberately separated from Save above by
+                  its own margin — double-tap-to-confirm like PlanDetailsSheet
+                  .jsx's "Delete permanently", since this can't be undone from
+                  here either. */}
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={handleDeleteTap}
+                  disabled={deleting || saving || placingPlanBlocksDelete}
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    borderRadius: "var(--radius-lg)",
+                    background: deleteArmed ? "var(--danger, #b3261e)" : "var(--surface-card)",
+                    border: deleteArmed ? "none" : "1px solid var(--border-strong)",
+                    color: deleteArmed ? "#fff" : "var(--danger, #b3261e)",
+                    font: "600 14px var(--font-sans)",
+                    opacity: placingPlanBlocksDelete ? 0.45 : 1,
+                    transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
+                  }}
+                >
+                  {deleting ? "Deleting…" : deleteArmed ? "confirm?" : "Delete pin"}
+                </button>
+                <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
+                  {placingPlanBlocksDelete
+                    ? `This pin is part of ${placingPlan.status === "contested" ? "an open contest" : "a locked plan"} — resolve that before deleting it.`
+                    : deleteArmed
+                    ? "Tap once more to confirm — this can't be undone."
+                    : ""}
+                </div>
+                {deleteError && (
+                  <div style={{ marginTop: 8, font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{deleteError}</div>
+                )}
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
     </div>

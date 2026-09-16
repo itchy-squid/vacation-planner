@@ -1,15 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import Principal, get_current_contributor, get_current_principal
 from ..custom_events import forget_orphaned_travel_items, publish_forgotten, travel_item_ids_of
 from ..db import get_db
 from ..derive import item_duration_minutes, item_start_minutes
 from ..events import bus
 from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Vote
+from ..permissions import PLANS_DECIDE, PLANS_READ, PLANS_WRITE, VOTES_WRITE, Access, Role, require
 from ..tripclock import minutes_between, same_moment
 from ..schemas import (
     ContestOut,
@@ -24,7 +24,6 @@ from ..schemas import (
 )
 from .plans import (
     _add_items,
-    contributor_for_request,
     ensure_unique_stops,
     find_overlapping_plan,
     find_overlapping_plans,
@@ -61,15 +60,9 @@ def _set_letter(index: int) -> str:
             return letter
 
 
-def _my_vote_plan_id(contest: Contest, request: Request | None, db: Session) -> int | None:
-    """Best-effort: only set when the request carries an identifiable
-    principal (Easy Auth headers in prod, DEV_USER_EMAIL locally) who is
-    already a contributor on this trip. Never raises — an anonymous or
-    unrecognized caller just sees no vote highlighted."""
-    if request is None:
-        return None
-    contributor = contributor_for_request(db, contest.trip_id, request)
-    if not contributor:
+def _my_vote_plan_id(contest: Contest, contributor: Contributor | None, db: Session) -> int | None:
+    """The plan `contributor` voted for in this contest, if any."""
+    if contributor is None:
         return None
     vote = db.scalar(select(Vote).where(Vote.contest_id == contest.id, Vote.contributor_id == contributor.id))
     return vote.plan_id if vote else None
@@ -84,8 +77,8 @@ def _contest_plan_to_schema(plan: Plan, vote_count: int, voted_by_me: bool, set_
     )
 
 
-def _contest_to_schema(contest: Contest, db: Session, request: Request | None = None) -> ContestOut:
-    my_vote_plan_id = _my_vote_plan_id(contest, request, db)
+def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None = None) -> ContestOut:
+    my_vote_plan_id = _my_vote_plan_id(contest, viewer, db)
     vote_counts: dict[int, int] = {}
     for v in contest.votes:
         vote_counts[v.plan_id] = vote_counts.get(v.plan_id, 0) + 1
@@ -97,7 +90,13 @@ def _contest_to_schema(contest: Contest, db: Session, request: Request | None = 
         _contest_plan_to_schema(p, vote_counts.get(p.id, 0), p.id == my_vote_plan_id, _set_letter(i))
         for i, p in enumerate(ordered)
     ]
-    contributor_count = len(db.scalars(select(Contributor).where(Contributor.trip_id == contest.trip_id)).all())
+    # The people who can vote. Readers can't, so they aren't counted toward
+    # the tally or the majority.
+    contributor_count = len(
+        db.scalars(
+            select(Contributor).where(Contributor.trip_id == contest.trip_id, Contributor.role != Role.reader.value)
+        ).all()
+    )
 
     # Strictly more than half. Advisory: the owner still locks, and nothing
     # here resolves the contest (feature spec decision 4).
@@ -313,14 +312,12 @@ def open_block_contest(
 def propose_block(
     trip_id: int,
     payload: ContestProposeCreate,
-    request: Request,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(PLANS_WRITE)),
     db: Session = Depends(get_db),
 ):
     """Propose an alternative for a range of hours. The proposal claims a
     window rather than targeting one existing plan — see
     open_block_contest above."""
-    contributor = get_current_contributor(trip_id=trip_id, principal=principal, db=db)
     contest = open_block_contest(
         db,
         trip_id,
@@ -329,18 +326,17 @@ def propose_block(
         label=payload.label,
         rationale=payload.rationale,
         items=payload.items,
-        contributor=contributor,
+        contributor=access.member,
     )
     db.commit()
     db.refresh(contest)
-    return _contest_to_schema(contest, db, request)
+    return _contest_to_schema(contest, db, access.member)
 
 
 @router.post("/plans/{plan_id}/publish", response_model=ContestOut, status_code=201)
 def publish_plan(
     plan_id: int,
-    request: Request,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(PLANS_WRITE)),
     db: Session = Depends(get_db),
 ):
     """Turn the caller's own draft block into a real proposal (feature spec
@@ -351,8 +347,8 @@ def publish_plan(
     plan = db.get(Plan, plan_id)
     if not plan or plan.status != PlanStatus.draft:
         raise HTTPException(status_code=404, detail="Draft not found")
-    viewer = contributor_for_request(db, plan.trip_id, request)
-    if viewer is None or plan.created_by_id != viewer.id:
+    viewer = access.member
+    if plan.created_by_id != viewer.id:
         # 404, not 403 — a draft belongs to its author alone, and this
         # shouldn't confirm that one exists at that id.
         raise HTTPException(status_code=404, detail="Draft not found")
@@ -381,23 +377,22 @@ def publish_plan(
     db.commit()
     db.refresh(contest)
     bus.publish(trip_id, "plan.published", {"contest_id": contest.id})
-    return _contest_to_schema(contest, db, request)
+    return _contest_to_schema(contest, db, viewer)
 
 
 @router.get("/contests/{contest_id}", response_model=ContestOut)
-def get_contest(contest_id: int, request: Request, db: Session = Depends(get_db)):
+def get_contest(contest_id: int, access: Access = Depends(require(PLANS_READ)), db: Session = Depends(get_db)):
     contest = db.get(Contest, contest_id)
     if not contest:
         raise HTTPException(status_code=404, detail="Contest not found")
-    return _contest_to_schema(contest, db, request)
+    return _contest_to_schema(contest, db, access.member)
 
 
 @router.put("/plans/{plan_id}/stops", response_model=ContestOut)
 def update_proposal(
     plan_id: int,
     payload: ProposalUpdate,
-    request: Request,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(PLANS_WRITE)),
     db: Session = Depends(get_db),
 ):
     """Rewrite one candidate plan: its stops, their times, its name and its
@@ -439,7 +434,7 @@ def update_proposal(
             },
         )
 
-    contributor = get_current_contributor(trip_id=plan.trip_id, principal=principal, db=db)
+    contributor = access.member
     if plan.created_by_id != contributor.id and not contributor.is_owner:
         raise HTTPException(
             status_code=403,
@@ -476,15 +471,14 @@ def update_proposal(
         {"plan_id": plan.id, "contest_id": contest.id, "votes_cleared": len(stale)},
     )
     publish_forgotten(forgotten)
-    return _contest_to_schema(contest, db, request)
+    return _contest_to_schema(contest, db, contributor)
 
 
 @router.post("/contests/{contest_id}/vote", response_model=ContestOut)
 def toggle_vote(
     contest_id: int,
     payload: VoteToggle,
-    request: Request,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(VOTES_WRITE)),
     db: Session = Depends(get_db),
 ):
     """One vote per contributor per contest, toggleable — voting for the
@@ -493,7 +487,7 @@ def toggle_vote(
     contest = db.get(Contest, contest_id)
     if not contest:
         raise HTTPException(status_code=404, detail="Contest not found")
-    contributor = get_current_contributor(trip_id=contest.trip_id, principal=principal, db=db)
+    contributor = access.member
 
     existing = db.scalar(select(Vote).where(Vote.contest_id == contest_id, Vote.contributor_id == contributor.id))
     if existing and existing.plan_id == payload.plan_id:
@@ -506,14 +500,14 @@ def toggle_vote(
     db.commit()
     bus.publish(contest.trip_id, "contest.vote_changed", {"contest_id": contest_id})
     db.refresh(contest)
-    return _contest_to_schema(contest, db, request)
+    return _contest_to_schema(contest, db, contributor)
 
 
 @router.post("/contests/{contest_id}/pick", response_model=ContestPicked)
 def pick_set(
     contest_id: int,
     payload: PickRequest,
-    principal: Principal = Depends(get_current_principal),
+    _: Access = Depends(require(PLANS_DECIDE)),
     db: Session = Depends(get_db),
 ):
     """Owner-only. Settles the decision by putting the chosen set on the
@@ -537,10 +531,6 @@ def pick_set(
         raise HTTPException(status_code=404, detail="Contest not found")
     if contest.status != ContestStatus.open:
         raise HTTPException(status_code=409, detail="That decision is already settled")
-    contributor = get_current_contributor(trip_id=contest.trip_id, principal=principal, db=db)
-    if not contributor.is_owner:
-        raise HTTPException(status_code=403, detail="Only the trip owner can pick a set")
-
     chosen = db.get(Plan, payload.plan_id)
     if not chosen or chosen.contest_id != contest_id:
         raise HTTPException(status_code=404, detail="That plan is not part of this contest")
@@ -591,7 +581,7 @@ def pick_set(
 @router.post("/plans/{plan_id}/reopen", response_model=PlanOut)
 def reopen_plan(
     plan_id: int,
-    principal: Principal = Depends(get_current_principal),
+    _: Access = Depends(require(PLANS_DECIDE)),
     db: Session = Depends(get_db),
 ):
     """Owner-only, only on a locked plan. Does not restore any plans
@@ -604,10 +594,6 @@ def reopen_plan(
         raise HTTPException(status_code=404, detail="Plan not found")
     if plan.status != PlanStatus.locked:
         raise HTTPException(status_code=409, detail="Only a locked plan can be reopened")
-    contributor = get_current_contributor(trip_id=plan.trip_id, principal=principal, db=db)
-    if not contributor.is_owner:
-        raise HTTPException(status_code=403, detail="Only the trip owner can reopen a locked plan")
-
     # A locked plan's hours are inert, so nothing stopped someone placing
     # something in them once it was locked... except that locking is what
     # made them inert in the first place. Unlocking into hours that have

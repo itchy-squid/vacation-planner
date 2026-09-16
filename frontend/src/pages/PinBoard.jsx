@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PinCard from "../components/planner/PinCard";
-import { usePlannerState } from "../state/PlannerContext";
+import { usePlannerState, useCan } from "../state/PlannerContext";
+import RoleTag from "../components/core/RoleTag";
 import TripHeader from "../components/core/TripHeader";
 import HeaderIconButton from "../components/core/HeaderIconButton";
 
@@ -13,6 +14,7 @@ import HeaderIconButton from "../components/core/HeaderIconButton";
 export default function PinBoard() {
   const navigate = useNavigate();
   const { trip: TRIP, pins, contributors: CONTRIBUTORS } = usePlannerState();
+  const canEdit = useCan()("ideas:write");
   const [region, setRegion] = useState("All");
 
   const PINS = useMemo(() => Object.values(pins), [pins]);
@@ -49,15 +51,20 @@ export default function PinBoard() {
             says something the header doesn't. */}
         <TripHeader
           right={
-            <HeaderIconButton
-              glyph="+"
-              label="Add pin"
-              glyphSize={20}
-              onClick={() => navigate(`/trips/${TRIP.id}/new-pin`)}
-            />
+            canEdit ? (
+              <HeaderIconButton
+                glyph="+"
+                label="Add pin"
+                glyphSize={20}
+                onClick={() => navigate(`/trips/${TRIP.id}/new-pin`)}
+              />
+            ) : null
           }
         />
-        <div className="mono-caption" style={{ padding: "6px var(--gutter-text) 12px" }}>Ideation · {PINS.length} pins</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px var(--gutter-text) 12px" }}>
+          <div className="mono-caption">Ideation · {PINS.length} pins</div>
+          {canEdit ? null : <RoleTag role="reader">View only</RoleTag>}
+        </div>
 
         <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 var(--gutter-screen) 16px" }}>
           {["All", ...REGIONS].map((r) => (

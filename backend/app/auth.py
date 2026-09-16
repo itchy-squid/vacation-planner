@@ -18,13 +18,9 @@ import binascii
 import json
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import HTTPException, Request, status
 
 from .config import get_settings
-from .db import get_db
-from .models import Contributor
 
 CLIENT_PRINCIPAL_HEADER = "X-MS-CLIENT-PRINCIPAL"
 CLIENT_PRINCIPAL_ID_HEADER = "X-MS-CLIENT-PRINCIPAL-ID"
@@ -113,33 +109,6 @@ def get_current_principal(request: Request) -> Principal:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No authenticated user (Easy Auth headers missing)")
 
 
-def get_current_contributor(
-    trip_id: int,
-    principal: Principal = Depends(get_current_principal),
-    db: Session = Depends(get_db),
-) -> Contributor:
-    """Resolves the signed-in principal to a Contributor row scoped to one
-    trip. In development, an unknown email is auto-enrolled as a
-    non-owner contributor so local testing doesn't require seeding first."""
-
-    settings = get_settings()
-    contributor = db.scalar(
-        select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == principal.email)
-    )
-    if contributor:
-        return contributor
-
-    if settings.is_development:
-        contributor = Contributor(
-            trip_id=trip_id,
-            email=principal.email,
-            display_name=principal.display_name,
-            initial=principal.display_name[:1].upper(),
-            is_owner=False,
-        )
-        db.add(contributor)
-        db.commit()
-        db.refresh(contributor)
-        return contributor
-
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a contributor on this trip")
+# Whether that person may do anything on a particular trip is answered by
+# app/permissions.py (their Contributor row's role). There is no dev-mode
+# auto-enrolment any more: joining a trip happens through an invite link.

@@ -150,11 +150,26 @@ async function request(path, { method = "GET", body } = {}) {
 }
 
 export const api = {
+  me: () => request("/api/me"),
   listTrips: () => request("/api/trips"),
   getTrip: (tripId) => request(`/api/trips/${tripId}`),
   createTrip: (payload) => request("/api/trips", { method: "POST", body: payload }),
   updateTrip: (tripId, fields) => request(`/api/trips/${tripId}`, { method: "PATCH", body: fields }),
   listContributors: (tripId) => request(`/api/trips/${tripId}/contributors`),
+
+  // Sharing — see backend/app/routers/sharing.py. Roles are owner |
+  // contributor | reader; what each may do is backend/app/permissions.py.
+  changeRole: (tripId, contributorId, role) =>
+    request(`/api/trips/${tripId}/contributors/${contributorId}`, { method: "PATCH", body: { role } }),
+  removeContributor: (tripId, contributorId) =>
+    request(`/api/trips/${tripId}/contributors/${contributorId}`, { method: "DELETE" }),
+  leaveTrip: (tripId) => request(`/api/trips/${tripId}/leave`, { method: "POST" }),
+  listInvites: (tripId) => request(`/api/trips/${tripId}/invites`),
+  // Returns the live link for `role`, creating it on first ask.
+  getInvite: (tripId, role) => request(`/api/trips/${tripId}/invites`, { method: "POST", body: { role } }),
+  revokeInvite: (tripId, inviteId) => request(`/api/trips/${tripId}/invites/${inviteId}`, { method: "DELETE" }),
+  previewInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
 
   listPins: (tripId) => request(`/api/trips/${tripId}/pins`),
   createPin: (tripId, payload) => request(`/api/trips/${tripId}/pins`, { method: "POST", body: payload }),

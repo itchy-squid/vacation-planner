@@ -2,22 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import Principal, get_current_principal
 from ..db import get_db
 from ..events import bus
-from ..models import Contributor, PlanItem, TravelItem
+from ..models import PlanItem, TravelItem
+from ..permissions import IDEAS_READ, IDEAS_WRITE, Access, require
 from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import TravelItemCreate, TravelItemOut, TravelItemUpdate
+from .pins import ensure_may_set_costs
 
 router = APIRouter(prefix="/api", tags=["travel-items"])
 
 
-def _contributor_for(trip_id: int, principal: Principal, db: Session) -> Contributor | None:
-    return db.scalar(select(Contributor).where(Contributor.trip_id == trip_id, Contributor.email == principal.email))
-
-
 @router.get("/trips/{trip_id}/travel-items", response_model=list[TravelItemOut])
-def list_travel_items(trip_id: int, db: Session = Depends(get_db)):
+def list_travel_items(trip_id: int, _: Access = Depends(require(IDEAS_READ)), db: Session = Depends(get_db)):
     return db.scalars(select(TravelItem).where(TravelItem.trip_id == trip_id)).all()
 
 
@@ -25,11 +22,11 @@ def list_travel_items(trip_id: int, db: Session = Depends(get_db)):
 def create_travel_item(
     trip_id: int,
     payload: TravelItemCreate,
-    principal: Principal = Depends(get_current_principal),
+    access: Access = Depends(require(IDEAS_WRITE)),
     db: Session = Depends(get_db),
 ):
-    contributor = _contributor_for(trip_id, principal, db)
-    item = TravelItem(trip_id=trip_id, added_by_id=contributor.id if contributor else None, **payload.model_dump())
+    ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True))
+    item = TravelItem(trip_id=trip_id, added_by_id=access.member.id, **payload.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -38,11 +35,18 @@ def create_travel_item(
 
 
 @router.patch("/travel-items/{travel_item_id}", response_model=TravelItemOut)
-def update_travel_item(travel_item_id: int, payload: TravelItemUpdate, db: Session = Depends(get_db)):
+def update_travel_item(
+    travel_item_id: int,
+    payload: TravelItemUpdate,
+    access: Access = Depends(require(IDEAS_WRITE)),
+    db: Session = Depends(get_db),
+):
     item = db.get(TravelItem, travel_item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Travel item not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    ensure_may_set_costs(access, fields)
+    for field, value in fields.items():
         setattr(item, field, value)
     db.commit()
     db.refresh(item)
@@ -51,7 +55,7 @@ def update_travel_item(travel_item_id: int, payload: TravelItemUpdate, db: Sessi
 
 
 @router.delete("/travel-items/{travel_item_id}", status_code=204)
-def delete_travel_item(travel_item_id: int, db: Session = Depends(get_db)):
+def delete_travel_item(travel_item_id: int, _: Access = Depends(require(IDEAS_WRITE)), db: Session = Depends(get_db)):
     item = db.get(TravelItem, travel_item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Travel item not found")

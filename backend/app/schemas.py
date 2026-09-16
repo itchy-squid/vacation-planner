@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import photo_storage
+from .permissions import can_see_costs
 
 
 class MeOut(BaseModel):
@@ -30,7 +31,26 @@ class ContributorOut(BaseModel):
     display_name: str
     initial: str
     tint: str
+    # owner | contributor | reader — see app/permissions.py. is_owner is
+    # kept for the screens that only ask that one question.
+    role: Literal["owner", "contributor", "reader"]
     is_owner: bool
+    joined_at: datetime
+
+
+class ContributorRoleUpdate(BaseModel):
+    """PATCH /api/trips/{trip_id}/contributors/{contributor_id}. Ownership
+    can't be handed over this way."""
+
+    role: Literal["contributor", "reader"]
+
+
+class TripOwnerOut(BaseModel):
+    id: int
+    display_name: str
+    email: str
+    initial: str
+    tint: str
 
 
 class TripCreate(BaseModel):
@@ -52,6 +72,14 @@ class TripOut(BaseModel):
     # are contributors" — see models.py Trip.
     traveller_count: int | None
     created_at: datetime
+    # The caller's own standing on this trip, so the client can shape its
+    # screens without a second request. The server checks every call
+    # regardless; these are for hiding controls, not for enforcing.
+    my_role: Literal["owner", "contributor", "reader"]
+    my_scopes: list[str]
+    my_contributor_id: int
+    owner: TripOwnerOut | None
+    member_count: int
 
 
 class TripUpdate(BaseModel):
@@ -64,6 +92,49 @@ class TripUpdate(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     traveller_count: int | None = None
+
+
+def _redact_costs(model: BaseModel, *fields: str) -> None:
+    """Blank every cost field for a caller without costs:read (see
+    app/permissions.py). None rather than 0: zero is a real price, and a
+    client must be able to tell "free" from "not yours to see"."""
+    if not can_see_costs():
+        for field in fields:
+            setattr(model, field, None)
+
+
+class InviteCreate(BaseModel):
+    role: Literal["contributor", "reader"]
+
+
+class InviteOut(BaseModel):
+    id: int
+    role: Literal["contributor", "reader"]
+    token: str
+    created_at: datetime
+    created_by_id: int | None
+    joined_count: int
+
+
+class InvitePreviewOut(BaseModel):
+    """What someone holding a link sees before joining — GET
+    /api/invites/{token}. Enough to recognise the trip and the role, and
+    nothing a member-only endpoint would otherwise guard (no pins, plans or
+    costs)."""
+
+    trip_id: int
+    trip_name: str
+    region_line: str
+    start_date: date | None
+    end_date: date | None
+    phase: str
+    role: Literal["contributor", "reader"]
+    owner: TripOwnerOut | None
+    member_count: int
+    # Already on the trip: the client skips the confirm step and opens it.
+    # Their role is left as it is.
+    already_member: bool
+    my_role: Literal["owner", "contributor", "reader"] | None = None
 
 
 class AvailabilityRuleIn(BaseModel):
@@ -130,8 +201,9 @@ class PinOut(BaseModel):
     lat: float | None
     lng: float | None
     duration_minutes: int
-    cost_cents: int
-    heads: list[int]
+    # None when the caller can't see costs (costs:read).
+    cost_cents: int | None
+    heads: list[int] | None
     notes: str
     link: str
     tags: list[str]
@@ -162,6 +234,11 @@ class PinOut(BaseModel):
         exactly as stored; signing only ever applies to our own blobs."""
         if self.photo_url and photo_storage.is_our_blob_url(self.photo_url):
             self.photo_url = photo_storage.sign_photo_url(self.photo_url)
+        return self
+
+    @model_validator(mode="after")
+    def _hide_costs(self) -> "PinOut":
+        _redact_costs(self, "cost_cents", "heads")
         return self
 
 
@@ -208,12 +285,17 @@ class TravelItemOut(BaseModel):
     title: str
     kind: str
     duration_minutes: int
-    cost_cents: int
-    heads: list[int]
+    cost_cents: int | None
+    heads: list[int] | None
     notes: str
     link: str
     added_by_id: int | None
     added_at: datetime
+
+    @model_validator(mode="after")
+    def _hide_costs(self) -> "TravelItemOut":
+        _redact_costs(self, "cost_cents", "heads")
+        return self
 
 
 class PlanItemCreate(BaseModel):
@@ -313,8 +395,13 @@ class PlanOut(BaseModel):
     # Derived, never stored — see app/derive.py. There is no
     # moving_minutes any more; see that module's docstring for why.
     total_duration_minutes: int
-    total_cost_cents: int
+    total_cost_cents: int | None
     slack_minutes: int
+
+    @model_validator(mode="after")
+    def _hide_costs(self) -> "PlanOut":
+        _redact_costs(self, "total_cost_cents")
+        return self
 
 
 class ContestProposeCreate(BaseModel):

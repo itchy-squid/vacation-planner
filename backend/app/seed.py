@@ -309,17 +309,25 @@ def seed_light_trip(
     end_date: date | None,
     phase: TripPhase,
     pin_titles: list[tuple[str, str]],
+    mei_role: str,
+    owner_name: str,
 ) -> None:
     """A lighter trip for the Trips Home "Also planning" rail — just enough
     real rows (a couple of contributors + pins) that its card reads from
-    actual counts instead of hand-typed copy."""
+    actual counts instead of hand-typed copy.
+
+    Mei (the local dev user) is added with `mei_role`, so the rail shows a
+    trip someone else owns in each of the roles she can hold there — and so
+    she can see these trips at all, since the trips list only returns the
+    caller's own."""
     trip = Trip(name=name, region_line=region_line, start_date=start_date, end_date=end_date, phase=phase)
     db.add(trip)
     db.flush()
 
-    owner = Contributor(trip_id=trip.id, email=f"{name.split(',')[0].split()[0].lower()}.owner@example.com", display_name="Owner", initial="O", tint="var(--who-1)", is_owner=True)
+    owner = Contributor(trip_id=trip.id, email=f"{name.split(',')[0].split()[0].lower()}.owner@example.com", display_name=owner_name, initial=owner_name[:1], tint="var(--who-1)", role="owner")
     guest = Contributor(trip_id=trip.id, email=f"{name.split(',')[0].split()[0].lower()}.guest@example.com", display_name="Guest", initial="G", tint="var(--who-2)", is_owner=False)
-    db.add_all([owner, guest])
+    mei = Contributor(trip_id=trip.id, email="mei@example.com", display_name="Mei", initial="M", tint="var(--who-3)", role=mei_role)
+    db.add_all([owner, guest, mei])
     db.flush()
 
     for i, (title, region) in enumerate(pin_titles):
@@ -347,6 +355,8 @@ def run() -> None:
             None,
             TripPhase.ideation,
             [("Shinjuku Gyoen", "Tokyo"), ("Fushimi Inari", "Kyoto"), ("Nishiki Market", "Kyoto")],
+            mei_role="contributor",
+            owner_name="Kenji",
         )
         seed_light_trip(
             db,
@@ -356,6 +366,8 @@ def run() -> None:
             date(2026, 6, 25),
             TripPhase.locked,
             [("Golden Circle", "Reykjavik"), ("Diamond Beach", "Vik"), ("Godafoss", "Akureyri"), ("Blue Lagoon", "Reykjavik")],
+            mei_role="reader",
+            owner_name="Sigrid",
         )
         print("Seeded:", ", ".join(SEEDED_TRIP_NAMES))
     finally:
