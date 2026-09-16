@@ -91,10 +91,68 @@ export function isSignInLanding() {
   return new window.URLSearchParams(window.location.search).has(SIGN_IN_PARAM);
 }
 
+// --- Returning to the page someone was trying to open ----------------------
+//
+// Easy Auth only honours post_login_redirect_uri values that match
+// login.allowedExternalRedirectUrls, which lists the bare frontend origin —
+// a deep link like /join/abc or /trips/7/board isn't reliably accepted, and
+// the provider chooser ("/?signin=1") drops the path altogether. So login
+// always returns to the origin root, and the path the person actually
+// wanted is kept here in sessionStorage (per tab, survives the round trip
+// through the identity provider) and put back by restoreReturnPath() once
+// the session check passes. A convenience only: if storage is blocked they
+// land on Trips Home, same as before.
+const RETURN_KEY = "vp.returnTo";
+const RETURN_MAX_AGE_MS = 30 * 60 * 1000;
+
+function rememberReturnPath() {
+  const { pathname, search, hash } = window.location;
+  if (isSignInLanding() || isSignedOutLanding()) return;
+  if (pathname === "/" && !search && !hash) return;
+  try {
+    window.sessionStorage.setItem(
+      RETURN_KEY,
+      JSON.stringify({ path: pathname + search + hash, at: Date.now() })
+    );
+  } catch {
+    // Not remembered; they'll land on Trips Home.
+  }
+}
+
+export function clearReturnPath() {
+  try {
+    window.sessionStorage.removeItem(RETURN_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+// Call after ensureSignedIn() resolves and before the router mounts, so
+// BrowserRouter (and PlannerContext's read of :tripId) sees the restored
+// URL as the initial location. Only ever a same-origin path.
+export function restoreReturnPath() {
+  let saved = null;
+  try {
+    saved = JSON.parse(window.sessionStorage.getItem(RETURN_KEY) || "null");
+  } catch {
+    saved = null;
+  }
+  clearReturnPath();
+  if (!saved || typeof saved.path !== "string") return;
+  if (Date.now() - (saved.at || 0) > RETURN_MAX_AGE_MS) return;
+  if (!saved.path.startsWith("/") || saved.path.startsWith("//") || saved.path.startsWith("/\\")) return;
+  // Only when we're sitting at the root login returned us to — a
+  // direct visit to some other page shouldn't be overridden.
+  const { pathname, search, hash } = window.location;
+  if (pathname !== "/" || search || hash) return;
+  window.history.replaceState(null, "", saved.path);
+}
+
 function redirectToLogin() {
+  rememberReturnPath();
   const provider = automaticProvider();
   if (provider) {
-    goToLogin(provider, window.location.href);
+    goToLogin(provider, window.location.origin + "/");
   } else {
     window.location.href = `${window.location.origin}/?${SIGN_IN_PARAM}=1`;
   }
