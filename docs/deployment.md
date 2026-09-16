@@ -54,6 +54,7 @@ resources.
 | `ACR_NAME` | `vacationplannerdev` (dev) / `vacationplanner` (prod) |
 | `CONTAINER_APP_NAME` | `vacationplanner-dev` (dev) / `vacationplanner` (prod) |
 | `EASY_AUTH_CLIENT_ID` | Client ID of the separate Easy Auth Entra app registration (`infra/README.md` step 3). Leave unset until Easy Auth is set up. |
+| `EASY_AUTH_GOOGLE_CLIENT_ID` | Client ID of that environment's Google OAuth client (`infra/README.md` "Set up Google sign-in"). Leave unset to keep Google sign-in off. Also decides whether the frontend shows a Google button. |
 
 No `POSTGRES_ADMIN_*` variable — the Postgres Entra admin is a manual
 per-environment step (`infra/README.md` "One-time manual setup" step 6).
@@ -63,6 +64,7 @@ per-environment step (`infra/README.md` "One-time manual setup" step 6).
 | Name | Value / how to get it |
 |---|---|
 | `EASY_AUTH_CLIENT_SECRET` | From the Easy Auth app registration. Leave unset until Easy Auth is set up. |
+| `EASY_AUTH_GOOGLE_CLIENT_SECRET` | From that Google OAuth client. Only needed when `EASY_AUTH_GOOGLE_CLIENT_ID` is set. |
 | `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the Static Web App resource — only exists after the first Bicep deploy, filled in on a second pass. |
 
 ### Not needed at all

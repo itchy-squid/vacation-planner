@@ -56,6 +56,11 @@ param entraClientId string = ''
 @secure()
 param entraClientSecret string = ''
 
+@description('Google OAuth client ID for Easy Auth\'s Google provider. Leave empty to leave Google sign-in off -- see infra/README.md "Set up Google sign-in".')
+param googleClientId string = ''
+@secure()
+param googleClientSecret string = ''
+
 @description('''Tenant for Postgres AAD auth (modules/postgres.bicep) only
 -- Easy Auth (modules/container-app-backend.bicep) signs users in via the
 /consumers endpoint regardless of this value, since that app registration
@@ -153,6 +158,8 @@ module backend 'modules/container-app-backend.bicep' = {
     existingCertificateResourceId: backendExistingCertificateResourceId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
+    googleClientId: googleClientId
+    googleClientSecret: googleClientSecret
   }
 }
 

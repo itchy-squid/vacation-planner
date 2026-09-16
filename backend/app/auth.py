@@ -1,5 +1,5 @@
 """Identity via Azure Container Apps / App Service built-in auth ("Easy
-Auth") with Microsoft Entra ID, per the project's AskUserQuestion answer:
+Auth") with Microsoft Entra ID and/or Google, per the project's AskUserQuestion answer:
 no real sign-in flow is wired up in this pass, but the backend is written
 to trust Easy Auth's forwarded headers once it's turned on in front of the
 Container App (see infra/modules/containerapp.bicep).
@@ -35,6 +35,22 @@ _EMAIL_CLAIM_TYPES = {
 }
 _NAME_CLAIM_TYPES = {"name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"}
 
+# Easy Auth's `auth_typ` / X-MS-CLIENT-PRINCIPAL-IDP value for Google.
+GOOGLE_PROVIDER = "google"
+# Users are keyed by email alone (see app/permissions.py), so an email
+# Google hasn't verified must never be trusted: a Google account can be
+# created with someone else's non-Gmail address as its login.
+_EMAIL_VERIFIED_CLAIM = "email_verified"
+
+
+class _Rejected:
+    """A principal header that parsed fine but must not be trusted. Distinct
+    from None (unparseable) so get_principal doesn't fall back to the
+    simpler headers, which carry the same unverified identity."""
+
+
+_REJECTED = _Rejected()
+
 
 @dataclass(frozen=True)
 class Principal:
@@ -44,7 +60,7 @@ class Principal:
     identity_provider: str | None
 
 
-def _parse_client_principal_header(raw: str) -> Principal | None:
+def _parse_client_principal_header(raw: str, principal_id: str | None) -> Principal | _Rejected | None:
     try:
         decoded = base64.b64decode(raw)
         payload = json.loads(decoded)
@@ -64,11 +80,15 @@ def _parse_client_principal_header(raw: str) -> Principal | None:
     if not email:
         return None
 
+    provider = payload.get("auth_typ")
+    if provider == GOOGLE_PROVIDER and claim_map.get(_EMAIL_VERIFIED_CLAIM, "").lower() != "true":
+        return _REJECTED
+
     return Principal(
-        object_id=payload.get("userId"),
+        object_id=payload.get("userId") or principal_id,
         email=email,
         display_name=name or email.split("@")[0],
-        identity_provider=payload.get("auth_typ"),
+        identity_provider=provider,
     )
 
 
@@ -79,13 +99,16 @@ def get_principal(request: Request) -> Principal | None:
 
     header = request.headers.get(CLIENT_PRINCIPAL_HEADER)
     if header:
-        principal = _parse_client_principal_header(header)
+        principal = _parse_client_principal_header(header, request.headers.get(CLIENT_PRINCIPAL_ID_HEADER))
+        if principal is _REJECTED:
+            return None
         if principal:
             return principal
 
     # Fallback: the simpler always-present headers Easy Auth also sets.
+    # Not for Google: these carry no email_verified claim to check.
     name = request.headers.get(CLIENT_PRINCIPAL_NAME_HEADER)
-    if name:
+    if name and request.headers.get(CLIENT_PRINCIPAL_IDP_HEADER) != GOOGLE_PROVIDER:
         return Principal(
             object_id=request.headers.get(CLIENT_PRINCIPAL_ID_HEADER),
             email=name,

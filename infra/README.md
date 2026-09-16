@@ -106,6 +106,8 @@ operation, no Bicep/ARM resource type for it).
    - Create a client secret under "Certificates & secrets".
    - Note the client ID and secret value (tenant ID isn't used here --
      see above).
+   - Optional: Google sign-in as well (or instead) -- see "Set up Google
+     sign-in" below. Either provider alone is enough to turn Easy Auth on.
 
 4. **Push a real backend image** to the registry (or let
    `.github/workflows/deploy.yml` do it) — `main.bicep`'s default image is
@@ -121,14 +123,14 @@ operation, no Bicep/ARM resource type for it).
    instead (see that file's comment). Leave them unset for the first
    pass:
    ```
-   unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET
+   unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET EASY_AUTH_GOOGLE_CLIENT_ID EASY_AUTH_GOOGLE_CLIENT_SECRET
    az deployment group create \
      -g vacationplanner-dev \
      -p infra/main.parameters.dev.bicepparam
    ```
    note the backend fqdn. prod:
    ```
-   unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET
+   unset ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET EASY_AUTH_GOOGLE_CLIENT_ID EASY_AUTH_GOOGLE_CLIENT_SECRET
    az deployment group create \
      -g vacationplanner \
      -p infra/main.parameters.prod.bicepparam
@@ -140,6 +142,8 @@ operation, no Bicep/ARM resource type for it).
    ```
    export ENTRA_CLIENT_ID='...'
    export ENTRA_CLIENT_SECRET='...'
+   export EASY_AUTH_GOOGLE_CLIENT_ID='...'   # optional, see "Set up Google sign-in"
+   export EASY_AUTH_GOOGLE_CLIENT_SECRET='...'
    az deployment group create -g vacationplanner-dev -p infra/main.parameters.dev.bicepparam
    ```
    Note the `backendIdentityObjectId` and `postgresFqdn` outputs. Repeat
@@ -452,3 +456,32 @@ reconnect on an auth error.
   adding a pin never waits on a slow third-party image host, but it does
   mean the very first render of a newly-added pin's photo, and the odd
   cache lookup for that URL, load a page you're not actually storing yet.
+
+## Set up Google sign-in
+
+Optional, per environment. Easy Auth's Google provider sits alongside the
+Entra one (`modules/container-app-backend.bicep`); each is turned on only
+when its client ID is supplied.
+
+1. In [console.cloud.google.com](https://console.cloud.google.com), create
+   (or pick) a project. No billing account or APIs are needed.
+2. **Google Auth Platform** (APIs & Services -> OAuth consent screen):
+   External audience; app name and support email; add `amandasanti.com`
+   under Branding -> Authorized domains. While the app is in Testing,
+   only the listed test users can sign in -- publish it to open sign-in to
+   any Google account (the default openid/email/profile scopes need no
+   verification).
+3. **Clients -> Create client -> Web application**, with the authorized
+   redirect URI `https://<backend host>/.auth/login/google/callback`
+   (`vacations-api.dev.amandasanti.com` / `vacations-api.amandasanti.com`).
+   No JavaScript origins -- Easy Auth runs the flow server-side.
+4. Copy the client ID and secret. Set them as `EASY_AUTH_GOOGLE_CLIENT_ID`
+   (variable) and `EASY_AUTH_GOOGLE_CLIENT_SECRET` (secret) on the GitHub
+   environment, or as the same-named env vars for a manual deploy (step 5).
+
+Users are keyed by email (`backend/app/auth.py`), so someone who signs in
+with Google and with a Microsoft account under the same address is the
+same contributor. The backend rejects Google sign-ins whose email Google
+hasn't verified. The frontend offers a button per configured provider
+(`VITE_AUTH_PROVIDERS`, set by the deploy workflow) and remembers the last
+one used, so an expired session goes straight back to it.

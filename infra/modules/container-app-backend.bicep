@@ -64,6 +64,11 @@ param entraClientId string = ''
 @secure()
 param entraClientSecret string = ''
 
+@description('Set to enable Google sign-in through Easy Auth, alongside or instead of Entra ID. Leave empty to leave Google off (see infra/README.md "Set up Google sign-in").')
+param googleClientId string = ''
+@secure()
+param googleClientSecret string = ''
+
 @description('''Full resource ID of an already-existing managed
 certificate for customDomainName, when one was created outside this
 template's naming scheme -- e.g. via `az containerapp hostname bind`,
@@ -80,7 +85,10 @@ yet; this template will create+own one under its own deterministic
 name.''')
 param existingCertificateResourceId string = ''
 
-var authEnabled = !empty(entraClientId)
+var entraEnabled = !empty(entraClientId)
+var googleEnabled = !empty(googleClientId)
+// Easy Auth is on as soon as either provider is configured.
+var authEnabled = entraEnabled || googleEnabled
 
 // Single source of truth for CORS: enforced entirely at the Container
 // Apps ingress (below), not in application code -- see
@@ -158,7 +166,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         [
           { name: 'registry-password', value: registryPassword }
         ],
-        authEnabled ? [{ name: 'entra-client-secret', value: entraClientSecret }] : []
+        entraEnabled ? [{ name: 'entra-client-secret', value: entraClientSecret }] : [],
+        googleEnabled ? [{ name: 'google-client-secret', value: googleClientSecret }] : []
       )
     }
     template: {
@@ -216,10 +225,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 // Easy Auth: Azure Container Apps' built-in authentication, terminating the
-// Entra ID sign-in at the platform edge and forwarding the signed-in user
-// to the app via X-MS-CLIENT-PRINCIPAL* headers — see backend/app/auth.py.
-// Only created once an Entra app registration's client ID is supplied;
-// until then the Container App deploys without auth turned on. See
+// Entra ID and/or Google sign-in at the platform edge and forwarding the
+// signed-in user to the app via X-MS-CLIENT-PRINCIPAL* headers — see
+// backend/app/auth.py. Only created once at least one provider's client ID
+// is supplied; until then the Container App deploys without auth turned on. See
 // infra/README.md for the app-registration steps (manual, one-time).
 resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (authEnabled) {
   parent: containerApp
@@ -228,7 +237,7 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (a
     platform: { enabled: true }
     // The SPA lives on a different host than this API (vacations.<env>
     // .amandasanti.com vs vacations-api.<env>.amandasanti.com), so the
-    // post_login_redirect_uri it sends to /.auth/login/aad (see
+    // post_login_redirect_uri it sends to /.auth/login/<provider> (see
     // frontend/src/lib/api.js loginUrl()) is "external" as far as Easy
     // Auth is concerned. Without the host listed here Easy Auth silently
     // drops the parameter and finishes on its own /.auth/login/done page
@@ -241,29 +250,47 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (a
     globalValidation: {
       unauthenticatedClientAction: 'Return401'
     }
-    identityProviders: {
-      azureActiveDirectory: {
-        enabled: true
-        registration: {
-          clientId: entraClientId
-          clientSecretSettingName: 'entra-client-secret'
-          // The 'consumers' endpoint, not a tenant-specific one: this app
-          // registration is deliberately Personal Microsoft accounts only
-          // (any contributor's outlook.com/hotmail/live account, or any
-          // other Microsoft account -- not scoped to this deployment's own
-          // Entra tenant), so end-user sign-in has no dependency on
-          // entraTenantId at all -- see infra/README.md "Register an Entra
-          // ID app for Easy Auth". Postgres AAD auth (modules/postgres.bicep)
-          // is a separate, still tenant-scoped concern.
-          openIdIssuer: '${environment().authentication.loginEndpoint}consumers/v2.0'
-        }
-        validation: {
-          defaultAuthorizationPolicy: {
-            allowedApplications: [entraClientId]
+    // union() so each provider block exists only when that provider is
+    // configured -- an Entra-only, Google-only, or both deployment.
+    identityProviders: union(
+      entraEnabled ? {
+        azureActiveDirectory: {
+          enabled: true
+          registration: {
+            clientId: entraClientId
+            clientSecretSettingName: 'entra-client-secret'
+            // The 'consumers' endpoint, not a tenant-specific one: this app
+            // registration is deliberately Personal Microsoft accounts only
+            // (any contributor's outlook.com/hotmail/live account, or any
+            // other Microsoft account -- not scoped to this deployment's own
+            // Entra tenant), so end-user sign-in has no dependency on
+            // entraTenantId at all -- see infra/README.md "Register an Entra
+            // ID app for Easy Auth". Postgres AAD auth (modules/postgres.bicep)
+            // is a separate, still tenant-scoped concern.
+            openIdIssuer: '${environment().authentication.loginEndpoint}consumers/v2.0'
+          }
+          validation: {
+            defaultAuthorizationPolicy: {
+              allowedApplications: [entraClientId]
+            }
           }
         }
-      }
-    }
+      } : {},
+      googleEnabled ? {
+        google: {
+          enabled: true
+          registration: {
+            clientId: googleClientId
+            clientSecretSettingName: 'google-client-secret'
+          }
+          // Easy Auth asks for openid, profile and email by default; email
+          // is what backend/app/auth.py keys users on.
+          login: {
+            scopes: ['openid', 'profile', 'email']
+          }
+        }
+      } : {}
+    )
   }
 }
 

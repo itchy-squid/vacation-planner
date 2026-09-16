@@ -24,3 +24,5 @@ param backendExistingCertificateResourceId = '/subscriptions/d0f0c175-8220-4f62-
 // before this file existed.
 param entraClientId = readEnvironmentVariable('ENTRA_CLIENT_ID', '')
 param entraClientSecret = readEnvironmentVariable('ENTRA_CLIENT_SECRET', '')
+param googleClientId = readEnvironmentVariable('EASY_AUTH_GOOGLE_CLIENT_ID', '')
+param googleClientSecret = readEnvironmentVariable('EASY_AUTH_GOOGLE_CLIENT_SECRET', '')
