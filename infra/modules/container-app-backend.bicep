@@ -248,5 +248,5 @@ domain for this app -- see infra/README.md "Custom domains". Kept as an
 output purely for convenience during that manual, one-time step; nothing
 in this template consumes it.''')
 output customDomainVerificationId string = containerApp.properties.customDomainVerificationId
-@description('The public URL to reach this API at: customDomainName once it has actually been bound out-of-band (see that param's description), otherwise the auto-generated fqdn. This is what the frontend build targets and what Easy Auth\'s sign-in redirect must match -- see infra/README.md "Custom domains".')
+@description('The public URL to reach this API at: customDomainName once it has actually been bound out-of-band (see that param\'s description), otherwise the auto-generated fqdn. This is what the frontend build targets and what Easy Auth\'s sign-in redirect must match -- see infra/README.md "Custom domains".')
 output url string = 'https://${!empty(customDomainName) ? customDomainName : containerApp.properties.configuration.ingress.fqdn}'
