@@ -334,82 +334,76 @@ workflow" deploys either one on demand.
 
 ## Custom domains
 
-Neither app gets a custom domain by default — both use their
-auto-generated hostname until `frontendCustomDomainName`/
-`backendCustomDomainName` (`infra/main.bicep`) are set. Two-pass, same
-shape as Easy Auth: deploy with the param empty to learn the hostname,
-point DNS at it, redeploy with the param set.
+The frontend gets a custom domain via `frontendCustomDomainName`
+(`infra/main.bicep`) -- two-pass, same shape as Easy Auth: deploy with the
+param empty to learn the auto-generated hostname, point DNS at it,
+redeploy with the param set. Static Web Apps binds it in one step with no
+certificate complications.
 
-The backend needs a third param, `backendBindCustomDomain`
-(`bindCustomDomain` in `modules/container-app-backend.bicep`), left
-`false` until the managed certificate has actually finished issuing —
-Container Apps issues them asynchronously, and moving the ingress onto a
-certificate before Azure finishes issuing it is a known source of
-non-deterministic failures
-([microsoft/azure-container-apps#796](https://github.com/microsoft/azure-container-apps/issues/796),
-[#1652](https://github.com/microsoft/azure-container-apps/issues/1652) —
-open upstream issues, not specific to this template). Static Web Apps has
-no equivalent problem, so `frontendCustomDomainName` binds in one step.
+The backend's custom domain is **not managed by this template at all** --
+`modules/container-app-backend.bicep` has no `customDomainName` /
+`bindCustomDomain` / certificate parameters. Binding one is a manual,
+one-time step per environment, done directly against the deployed
+Container App -- the same shape as the Postgres AAD Administrator and
+storage role assignments above:
 
-(An earlier revision referenced the certificate via `managedCertificate.id`
-directly in the ingress, which fails template validation —
-`InvalidTemplate: The resource 'Microsoft.App/managedEnvironments/<name>'
-is not defined in the template` — even with `customDomainName` left empty,
-i.e. on every fresh environment's first-ever deploy. Cause: Bicep adds an
-*unconditional* `dependsOn` the moment a resource is referenced by symbol
-anywhere in another resource's body, regardless of what conditional
-guards that reference — and the certificate only exists once
-`customDomainName` is set. Fixed by building `certificateId` with a plain
-`resourceId(...)` call instead of the symbolic `.id` accessor, which
-carries no such side effect — see the comment in
-`modules/container-app-backend.bicep`.)
-
-For dev: `vacations.dev.amandasanti.com` (frontend),
-`vacations-api.dev.amandasanti.com` (backend).
-
-1. Deploy with all three params at their defaults (`frontendCustomDomainName`
-   / `backendCustomDomainName` empty, `backendBindCustomDomain` false).
-   Note `frontendUrl`, `backendUrl`, and `backendCustomDomainVerificationId`
-   outputs.
-2. DNS records at whichever provider hosts `amandasanti.com`:
+1. Deploy normally (no backend custom-domain params exist to set). Note
+   the `backendUrl` output -- the auto-generated
+   `*.azurecontainerapps.io` hostname. `deploy.yml` always builds the
+   frontend against this value; binding a custom domain in the steps
+   below sits in front of it and never changes what Bicep or CI point at.
+2. Get the verification ID Azure needs before it will accept a custom
+   domain for this app:
+   ```bash
+   az containerapp show -g <resource-group> -n <app-name> --query properties.customDomainVerificationId -o tsv
+   ```
+3. DNS records at whichever provider hosts `amandasanti.com` (dev example
+   shown; drop `.dev` for prod):
 
    | Record | Host | Value |
    |---|---|---|
-   | CNAME | `vacations.dev` | `frontendUrl` output's hostname (strip `https://`) |
-   | CNAME | `vacations-api.dev` | `backendUrl` output's hostname (strip `https://`) |
-   | TXT | `asuid.vacations-api.dev` | `backendCustomDomainVerificationId` output |
+   | CNAME | `vacations-api.dev` | the `backendUrl` output's hostname (strip `https://`) |
+   | TXT | `asuid.vacations-api.dev` | the verification ID from step 2 |
 
-   (Frontend needs no TXT/asuid record unless on the Enterprise edge SKU;
-   backend always needs the TXT record.)
-3. Wait for DNS to resolve (`dig CNAME vacations-api.dev.amandasanti.com`,
-   `dig TXT asuid.vacations-api.dev.amandasanti.com`).
-4. Redeploy with `frontendCustomDomainName` and `backendCustomDomainName`
-   set, `backendBindCustomDomain` still false. Binds the frontend's
-   domain immediately; on the backend, creates + validates the managed
-   certificate only — ingress doesn't move yet.
-5. Confirm the certificate issued before touching `backendBindCustomDomain`:
-   `az containerapp env certificate list -g vacationplanner-dev -n vacationplanner-dev -o table`
-   — wait for `Succeeded` on `vacations-api.dev.amandasanti.com`.
-6. Redeploy once more with `backendBindCustomDomain=true`. This moves the
-   ingress onto the custom domain; `backendUrl` now resolves to it, and
-   `deploy.yml` builds the frontend against that value automatically, no
-   further changes needed.
+4. Wait for DNS to resolve (`dig CNAME vacations-api.dev.amandasanti.com`,
+   `dig TXT asuid.vacations-api.dev.amandasanti.com`), then bind it:
+   ```bash
+   az containerapp hostname add --hostname vacations-api.dev.amandasanti.com -g <resource-group> -n <app-name>
+   az containerapp hostname bind --hostname vacations-api.dev.amandasanti.com -g <resource-group> -n <app-name> --environment <env-name>
+   ```
+   (`<resource-group>`, `<app-name>` and `<env-name>` are all
+   `vacationplanner-dev` for dev, all `vacationplanner` for prod -- see
+   the `suffix` variable in `main.bicep`.) `hostname bind` creates and
+   binds a managed certificate in one step, under Azure's own
+   auto-generated certificate name.
 
-If a managed certificate for `backendCustomDomainName` already exists in
-the environment under a name this template didn't generate (e.g. one
-created by `az containerapp hostname bind` instead of this rollout --
-those auto-generate their own certificate name), step 6 fails with
-`DuplicateManagedCertificateInEnvironment` (this template tries to create
-a second certificate for the same subject name) plus `CertificateNotFound`
-(ingress looks for the name this template expects, which was never
-created). Rather than deleting and reissuing an already-validated
-certificate, set `backendExistingCertificateResourceId`
-(`infra/main.bicep`) to that certificate's full resource ID -- find it with
-`az containerapp env certificate list -g <resource-group> -n <env-name> -o table`
--- and this template points ingress at it directly instead of trying to
-create its own.
+Azure auto-renews managed certificates in place (same resource, refreshed
+automatically ahead of expiry), so this is a genuine one-time step per
+environment, not a recurring one.
 
-`corsOrigins` feeds the Container App ingress's own `corsPolicy` (`modules/container-app-backend.bicep`) -- the only place CORS is configured; the app itself (`backend/app/main.py`) runs no CORS middleware, and local dev avoids the question entirely via the Vite dev server's proxy (`frontend/vite.config.js`). It's already set to `https://vacations.dev.amandasanti.com` for dev, ahead of the custom domain being bound -- testing against whichever origin you're actually serving from partway through this rollout may fail CORS until step 6 completes, or until `corsOrigins` temporarily includes both hostnames.
+**Why this isn't in Bicep:** it used to be, until prod's first deploy hit
+a chicken-and-egg failure (`CertificateNotFound` +
+`RequireCustomHostnameInEnvironment`) that dev's setup had never actually
+exercised end-to-end -- dev's certificate was created via `az
+containerapp hostname bind` from the start, and Bicep was only ever
+pointed at it afterwards via `existingCertificateResourceId`. The
+template could only express "no custom domain" or "fully SNI-bound with a
+certificate," never the intermediate "hostname registered, no certificate
+yet" state Azure actually requires before it will issue one for the
+backend, and even fixing that gap would leave Bicep trying to own the
+lifecycle of a resource Azure already manages and renews on its own.
+Letting the CLI be the one source of truth for the binding avoids that
+fight entirely.
+
+`corsOrigins` feeds the Container App ingress's own `corsPolicy`
+(`modules/container-app-backend.bicep`) -- the only place CORS is
+configured; the app itself (`backend/app/main.py`) runs no CORS
+middleware, and local dev avoids the question entirely via the Vite dev
+server's proxy (`frontend/vite.config.js`). It's set to the frontend's
+custom domain (e.g. `https://vacations.dev.amandasanti.com` for dev) --
+if you're testing against the backend's auto-generated hostname before
+binding its custom domain, that origin may need to be added to
+`corsOrigins` temporarily too.
 
 ## Adding a maintainer
 

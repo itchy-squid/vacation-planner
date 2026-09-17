@@ -290,10 +290,11 @@ jobs:
         env:
           # Baked into the built JS at build time (Vite env vars are not
           # read at runtime) -- see frontend/src/lib/api.js. Sourced from
-          # the infra job's backendUrl output so it always matches
-          # whatever main.bicep actually deployed: the backend's custom
-          # domain once backendCustomDomainName is set, otherwise its
-          # auto-generated *.azurecontainerapps.io hostname.
+          # the infra job's backendUrl output, which is always the backend
+          # Container App's auto-generated *.azurecontainerapps.io hostname
+          # -- the backend's custom domain is bound out-of-band via `az
+          # containerapp hostname bind` and isn't managed by this template
+          # at all, see infra/README.md "Custom domains".
           VITE_API_BASE_URL: ${{ needs.infra.outputs.backend-fqdn }}
           # Which Easy Auth providers the sign-in screen offers -- derived
           # from the same variables the infra job turns them on with, so
