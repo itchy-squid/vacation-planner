@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import SignedOut from "./pages/SignedOut.jsx";
-import { ensureSignedIn, isSignInLanding, isSignedOutLanding } from "./lib/api";
+import { clearReturnPath, ensureSignedIn, isSignInLanding, isSignedOutLanding, restoreReturnPath } from "./lib/api";
 import "./styles/styles.css";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
@@ -16,6 +16,10 @@ const root = ReactDOM.createRoot(document.getElementById("root"));
 // one sign-in provider is on and it can't tell which one they use. Same
 // screen, same reason not to call ensureSignedIn().
 if (isSignedOutLanding() || isSignInLanding()) {
+  // After a deliberate sign-out, don't later drop them on whatever page a
+  // stale session was trying to reach. The chooser keeps it — that's the
+  // page they're about to sign in for.
+  if (isSignedOutLanding()) clearReturnPath();
   root.render(
     <React.StrictMode>
       <SignedOut mode={isSignedOutLanding() ? "signedOut" : "signIn"} />
@@ -27,6 +31,9 @@ if (isSignedOutLanding() || isSignInLanding()) {
   // rather than after the first API call fails. Resolves immediately in
   // local dev and for anyone already signed in.
   ensureSignedIn().then(() => {
+    // Back from Easy Auth at "/": reopen the page (e.g. a /join/:token
+    // share link) they were on before being sent to sign in.
+    restoreReturnPath();
     root.render(
       <React.StrictMode>
         <App />

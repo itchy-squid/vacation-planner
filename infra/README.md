@@ -327,9 +327,10 @@ one-time setup per environment first:
      after the first Bicep deploy).
 4. **Optionally add a required reviewer** on `prod` for manual approval.
 
-Once set up: every push to `main` deploys dev automatically; prod only
-deploys via Actions tab → "Deploy" → "Run workflow" → `prod` (paused for
-approval if a required reviewer is set).
+Once set up: every PR opened or updated against `main` deploys its
+branch to dev, and every merge (push) to `main` deploys prod (paused for
+approval if a required reviewer is set). Actions tab → "Deploy" → "Run
+workflow" deploys either one on demand.
 
 ## Custom domains
 
