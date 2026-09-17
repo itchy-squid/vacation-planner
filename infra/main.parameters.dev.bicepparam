@@ -5,6 +5,12 @@ param envName = 'dev'
 param postgresSkuName = 'Standard_B1ms'
 param corsOrigins = 'https://vacations.dev.amandasanti.com'
 param frontendCustomDomainName = 'vacations.dev.amandasanti.com'
+// The backend's custom domain is bound out-of-band (az containerapp
+// hostname add/bind), not by this template -- see infra/README.md
+// "Custom domains". Set here purely so backendUrl (what the frontend
+// build targets, and what Easy Auth's sign-in redirect must match)
+// reflects the actually-bound hostname instead of the auto-generated one.
+param backendCustomDomainName = 'vacations-api.dev.amandasanti.com'
 
 // Optional -- only needed for the one-time manual Easy Auth rollout
 // (infra/README.md step 5's second pass). The GitHub Actions workflow

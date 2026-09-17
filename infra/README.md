@@ -340,18 +340,19 @@ param empty to learn the auto-generated hostname, point DNS at it,
 redeploy with the param set. Static Web Apps binds it in one step with no
 certificate complications.
 
-The backend's custom domain is **not managed by this template at all** --
-`modules/container-app-backend.bicep` has no `customDomainName` /
-`bindCustomDomain` / certificate parameters. Binding one is a manual,
-one-time step per environment, done directly against the deployed
+The backend's custom domain and certificate are **not managed by this
+template** -- `modules/container-app-backend.bicep` has no
+`bindCustomDomain` / certificate parameters, and never touches ingress's
+`customDomains` or any managed certificate resource. Binding one is a
+manual, one-time step per environment, done directly against the deployed
 Container App -- the same shape as the Postgres AAD Administrator and
 storage role assignments above:
 
-1. Deploy normally (no backend custom-domain params exist to set). Note
-   the `backendUrl` output -- the auto-generated
-   `*.azurecontainerapps.io` hostname. `deploy.yml` always builds the
-   frontend against this value; binding a custom domain in the steps
-   below sits in front of it and never changes what Bicep or CI point at.
+1. Deploy with `backendCustomDomainName` empty (the default). Note the
+   `backendUrl` output -- the auto-generated `*.azurecontainerapps.io`
+   hostname, since nothing has told the template about a custom domain
+   yet. `deploy.yml` builds the frontend against whatever `backendUrl`
+   currently is, so it targets this auto-generated hostname for now.
 2. Get the verification ID Azure needs before it will accept a custom
    domain for this app:
    ```bash
@@ -376,10 +377,21 @@ storage role assignments above:
    the `suffix` variable in `main.bicep`.) `hostname bind` creates and
    binds a managed certificate in one step, under Azure's own
    auto-generated certificate name.
+5. **Set `backendCustomDomainName` to that same hostname and redeploy.**
+   This is informational only -- it doesn't touch ingress or any
+   certificate, it just moves `backendUrl` (and therefore what the
+   frontend build targets, and what Easy Auth's sign-in redirect will be
+   built against) onto the now-bound custom domain instead of the
+   auto-generated one. Also update the Entra app registration's
+   redirect URI to match this hostname
+   (`https://<hostname>/.auth/login/aad/callback`) if it doesn't already
+   -- a mismatch here is what produces Microsoft's
+   `invalid_request: ... redirect_uri ...` error at sign-in.
 
 Azure auto-renews managed certificates in place (same resource, refreshed
-automatically ahead of expiry), so this is a genuine one-time step per
-environment, not a recurring one.
+automatically ahead of expiry), so steps 1-4 are a genuine one-time step
+per environment, not a recurring one. Step 5 only needs repeating if the
+hostname itself ever changes.
 
 **Why this isn't in Bicep:** it used to be, until prod's first deploy hit
 a chicken-and-egg failure (`CertificateNotFound` +

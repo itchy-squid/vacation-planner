@@ -25,6 +25,16 @@ param backendContainerImage string = 'mcr.microsoft.com/k8se/quickstart:latest' 
 @description('Comma-separated allowed CORS origins for the backend, typically the Static Web App URL.')
 param corsOrigins string = '*'
 
+@description('''Informational only -- forwarded to
+modules/container-app-backend.bicep's own customDomainName param, which
+this template never applies to ingress or a certificate (see that param's
+description and infra/README.md "Custom domains"). Set this once the
+backend's custom domain has actually been bound out-of-band via `az
+containerapp hostname add`/`hostname bind`, so backendUrl -- what the
+frontend build targets and what Easy Auth\'s sign-in redirect must match
+-- reflects it. Leave empty until then.''')
+param backendCustomDomainName string = ''
+
 @description('''Optional custom domain for the frontend Static Web App, e.g.
 vacations.dev.amandasanti.com. Leave empty on the first deploy of a new
 environment -- see modules/static-web-app.bicep and infra/README.md
@@ -133,6 +143,7 @@ module backend 'modules/container-app-backend.bicep' = {
     storageBlobEndpoint: photoStorage.outputs.blobEndpoint
     storageContainerName: photoStorage.outputs.containerName
     corsOrigins: corsOrigins
+    customDomainName: backendCustomDomainName
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
     googleClientId: googleClientId
