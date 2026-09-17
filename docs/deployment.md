@@ -20,16 +20,24 @@ Two fully separate environments (no shared resources):
 | GitHub Environment | `dev` | `prod` |
 | Resource group | `vacationplanner-dev` | `vacationplanner` |
 | Parameters file | `infra/main.parameters.dev.bicepparam` | `infra/main.parameters.prod.bicepparam` |
-| Triggers on | every push to `main` | manual only |
+| Triggers on | every PR opened/updated against `main` | every push (merge) to `main` |
 
-Add a required reviewer on the `prod` GitHub Environment for a manual
-approval gate.
+Add a required reviewer on the `prod` GitHub Environment if you want a
+manual approval before a merge goes out to prod.
 
 ## How to deploy
 
-- **Dev**: push to `main` — `.github/workflows/deploy.yml` runs
-  automatically.
-- **Prod**: Actions tab → **Deploy** → **Run workflow** → `prod`.
+- **Dev**: open a PR against `main` (or push to its branch) —
+  `.github/workflows/deploy.yml` deploys that branch to dev. All open PRs
+  share dev; the most recently updated one wins. PRs from forks and
+  Dependabot don't deploy.
+- **Prod**: merge the PR into `main` — the push deploys prod.
+- **Either, on demand**: Actions tab → **Deploy** → **Run workflow** →
+  pick `dev` or `prod` (deploys the branch you choose there).
+- Deploys to the same environment are queued, never run in parallel.
+- **Migrations on dev**: a PR's migration is applied to dev when it
+  deploys. A later deploy of a PR without that migration fails at
+  `alembic upgrade head` until dev's database is brought back in line.
 - **Manually**: see `infra/README.md` "Deploy the infrastructure" for the
   equivalent `az` commands — useful for a first deploy of a new
   environment or debugging without CI.

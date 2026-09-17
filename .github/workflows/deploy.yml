@@ -9,11 +9,27 @@ name: Deploy
 # infra/sql/provision_roles.sql and claude/db-privilege-provisioning.md.
 #
 # Which environment a run targets:
-#   - Push to `main` deploys "dev" automatically.
+#   - A pull request against `main` (opened, new commits pushed, or
+#     reopened) deploys that PR's branch to "dev". Every open PR deploys
+#     to the same dev environment, so dev always shows whichever PR was
+#     updated most recently. PRs from forks and from Dependabot are
+#     skipped: GitHub doesn't give those runs the OIDC token or the
+#     environment secrets a deploy needs.
+#   - A push to `main` (i.e. merging a PR) deploys "prod" automatically.
+#     Add a required reviewer on the "prod" GitHub Environment if you
+#     want a manual approval before it goes out.
 #   - Manually running this workflow (Actions tab -> Deploy -> Run
-#     workflow) lets you pick "dev" or "prod" from a dropdown. This is the
-#     only way to reach prod — there's no branch that auto-deploys it, so
-#     a prod release is always a deliberate, one-off action.
+#     workflow) lets you pick "dev" or "prod" from a dropdown, e.g. to
+#     put `main` back on dev or to redeploy prod.
+# Runs are queued per environment (see `concurrency` below), never run
+# side by side and never cancelled halfway, so two deploys can't
+# interleave migrations or image swaps on the same environment.
+#
+# Watch out for Alembic migrations on dev: a PR's migration is applied to
+# dev's database when that PR deploys. If a different PR (without that
+# migration) deploys to dev afterwards, its `alembic upgrade head` fails
+# because the database is at a revision its code doesn't know. Redeploy
+# the PR with the migration, or downgrade dev's database by hand.
 #
 # One-time setup this workflow assumes (see infra/README.md for the manual
 # steps and infra/main.bicep for what gets provisioned), per environment:
@@ -80,6 +96,9 @@ name: Deploy
 #     login related is a secret anymore — that's the point of OIDC.
 
 on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
   workflow_dispatch:
@@ -97,8 +116,21 @@ permissions:
   id-token: write
   contents: read
 
+# One deploy at a time per environment. Queued runs wait rather than
+# cancel the one in progress (cancelling mid-migration is worse than
+# waiting). The environment here must match resolve-environment below.
+concurrency:
+  group: deploy-${{ github.event_name == 'push' && 'prod' || inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
 jobs:
   resolve-environment:
+    # Skip PRs that can't deploy: forks and Dependabot get no OIDC token
+    # and no environment secrets.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.resolve.outputs.environment }}
@@ -106,12 +138,18 @@ jobs:
     steps:
       - id: resolve
         run: |
-          ENVIRONMENT="${{ inputs.environment || 'dev' }}"
+          case "${{ github.event_name }}" in
+            push)              ENVIRONMENT="prod" ;;   # merged to main
+            pull_request)      ENVIRONMENT="dev" ;;    # PR against main
+            workflow_dispatch) ENVIRONMENT="${{ inputs.environment }}" ;;
+            *) echo "Unexpected event ${{ github.event_name }}"; exit 1 ;;
+          esac
           if [ "$ENVIRONMENT" = "prod" ]; then
             PARAMS_FILE="infra/main.parameters.prod.bicepparam"
           else
             PARAMS_FILE="infra/main.parameters.dev.bicepparam"
           fi
+          echo "Deploying ${{ github.event_name }} of ${{ github.ref }} to $ENVIRONMENT"
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "params-file=$PARAMS_FILE" >> "$GITHUB_OUTPUT"
 
@@ -271,11 +309,14 @@ jobs:
           npm ci
           npm run build
 
+      # Uses the SWA CLI rather than Azure/static-web-apps-deploy: on a
+      # pull_request run that action uploads to a per-PR *preview*
+      # environment instead of the site itself, so PR deploys would never
+      # reach dev's real URL. `--env production` always targets the
+      # Static Web App's main site (dev's or prod's, depending on which
+      # environment's token this job has).
       - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: upload
-          app_location: frontend/dist
-          skip_app_build: true
+        working-directory: frontend
+        env:
+          SWA_CLI_DEPLOYMENT_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        run: npx --yes @azure/static-web-apps-cli@2 deploy ./dist --env production
