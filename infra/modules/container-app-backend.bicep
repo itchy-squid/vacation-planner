@@ -16,6 +16,20 @@ param registryUsername string
 param registryPassword string
 param corsOrigins string
 
+@description('''Informational only -- NOT applied to ingress and does not
+create or reference any certificate. This template never manages the
+backend's custom domain or TLS certificate (see infra/README.md "Custom
+domains" for why: Azure auto-renews managed certificates in place, and
+letting this template also model that lifecycle created an ongoing
+source-of-truth conflict). Once a custom domain has been bound out-of-band
+via `az containerapp hostname add` / `hostname bind`, set this to that
+same hostname so this module's `url` output -- which the frontend build
+reads as its API base URL, and which Easy Auth's sign-in redirect must
+match -- reflects the domain that's actually publicly reachable, rather
+than the auto-generated fqdn nothing but this template still uses. Leave
+empty until the domain is actually bound.''')
+param customDomainName string = ''
+
 @description('Resource ID of the user-assigned managed identity (infra/modules/managed-identity.bicep) to attach to this Container App.')
 param managedIdentityId string
 @description('Client ID of that same managed identity — read back by the app as AZURE_CLIENT_ID so DefaultAzureCredential targets this identity specifically.')
@@ -234,5 +248,5 @@ domain for this app -- see infra/README.md "Custom domains". Kept as an
 output purely for convenience during that manual, one-time step; nothing
 in this template consumes it.''')
 output customDomainVerificationId string = containerApp.properties.customDomainVerificationId
-@description('The public URL to reach this API at -- always the auto-generated fqdn, since custom domain binding is managed outside this template. See infra/README.md "Custom domains".')
-output url string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+@description('The public URL to reach this API at: customDomainName once it has actually been bound out-of-band (see that param's description), otherwise the auto-generated fqdn. This is what the frontend build targets and what Easy Auth\'s sign-in redirect must match -- see infra/README.md "Custom domains".')
+output url string = 'https://${!empty(customDomainName) ? customDomainName : containerApp.properties.configuration.ingress.fqdn}'

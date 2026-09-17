@@ -103,7 +103,12 @@ deploy:
    the Container App gets a backend FQDN.
 3. Register the Easy Auth Entra app using that FQDN as redirect URI
    (`infra/README.md` step 3), then set `EASY_AUTH_CLIENT_ID` and
-   `EASY_AUTH_CLIENT_SECRET`.
+   `EASY_AUTH_CLIENT_SECRET`. **If a custom domain is bound later**
+   (`infra/README.md` "Custom domains"), the redirect URI must be updated
+   to match it too -- Easy Auth builds its redirect_uri from whatever
+   host the sign-in request actually arrives on, and a mismatch here is
+   what produces Microsoft's `invalid_request: ... redirect_uri ...`
+   error at sign-in, not a bug in the app itself.
 4. After that deploy, grab the Static Web App's deployment token from the
    portal and set `AZURE_STATIC_WEB_APPS_API_TOKEN`.
 5. Re-run the workflow.
