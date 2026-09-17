@@ -25,26 +25,6 @@ param backendContainerImage string = 'mcr.microsoft.com/k8se/quickstart:latest' 
 @description('Comma-separated allowed CORS origins for the backend, typically the Static Web App URL.')
 param corsOrigins string = '*'
 
-@description('''Optional custom domain for the backend Container App, e.g.
-vacations-api.dev.amandasanti.com. Leave empty on the first deploy of a new
-environment -- see modules/container-app-backend.bicep and
-infra/README.md "Custom domains" for the rollout this needs.''')
-param backendCustomDomainName string = ''
-
-@description('''Set to true only once backendCustomDomainName's managed
-certificate (created by a prior deploy with this still false) shows status
-"Succeeded" in Azure. See modules/container-app-backend.bicep's
-bindCustomDomain parameter and infra/README.md "Custom domains" for why
-this is a separate step from setting backendCustomDomainName.''')
-param backendBindCustomDomain bool = true
-
-@description('''Forwarded to modules/container-app-backend.bicep's
-existingCertificateResourceId -- set only when a managed certificate for
-backendCustomDomainName already exists under a name this template didn't
-generate (see that param's description and infra/README.md "Custom
-domains"). Leave empty otherwise.''')
-param backendExistingCertificateResourceId string = ''
-
 @description('''Optional custom domain for the frontend Static Web App, e.g.
 vacations.dev.amandasanti.com. Leave empty on the first deploy of a new
 environment -- see modules/static-web-app.bicep and infra/README.md
@@ -153,9 +133,6 @@ module backend 'modules/container-app-backend.bicep' = {
     storageBlobEndpoint: photoStorage.outputs.blobEndpoint
     storageContainerName: photoStorage.outputs.containerName
     corsOrigins: corsOrigins
-    customDomainName: backendCustomDomainName
-    bindCustomDomain: backendBindCustomDomain
-    existingCertificateResourceId: backendExistingCertificateResourceId
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
     googleClientId: googleClientId
@@ -174,8 +151,6 @@ module frontend 'modules/static-web-app.bicep' = {
 
 output backendUrl string = backend.outputs.url
 output frontendUrl string = frontend.outputs.url
-@description('Put this as the value of a TXT record at asuid.<backendCustomDomainName> before setting backendCustomDomainName -- see infra/README.md "Custom domains".')
-output backendCustomDomainVerificationId string = backend.outputs.customDomainVerificationId
 output registryLoginServer string = registry.outputs.loginServer
 output postgresFqdn string = postgres.outputs.fqdn
 output postgresServerName string = postgres.outputs.serverName
