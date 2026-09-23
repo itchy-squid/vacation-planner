@@ -246,6 +246,23 @@ def mirror_photo_to_blob(url: str, *, trip_id: int, pin_id: int, settings: Setti
         return None
 
 
+def delete_trip_photos(trip_id: int, settings: Settings | None = None) -> None:
+    """Best-effort: delete every photo mirrored for `trip_id` (all blobs
+    under its trip-<id>/ prefix, see _blob_name). Run after a trip is
+    deleted (routers/account.py). Never raises — a failure is logged and
+    leaves the blobs behind, unreachable, since nothing links to them any
+    more and the signed URLs handed out earlier expire within hours."""
+    settings = settings or get_settings()
+    if not is_configured(settings):
+        return
+    try:
+        container = _container_client(settings)
+        for blob in container.list_blobs(name_starts_with=f"trip-{trip_id}/"):
+            container.delete_blob(blob.name, delete_snapshots="include")
+    except Exception:
+        logger.exception("Couldn't delete the photos of deleted trip %s", trip_id)
+
+
 def _user_delegation_key(settings: Settings):
     global _delegation_key, _delegation_key_expiry
     with _delegation_lock:

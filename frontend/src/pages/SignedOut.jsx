@@ -15,6 +15,10 @@ import { AUTH_PROVIDERS, PROVIDER_LABELS, signIn } from "../lib/api";
 const COPY = {
   signedOut: { title: "You\u2019re signed out", body: "Sign back in to get to your trips." },
   signIn: { title: "Sign in", body: "Sign in to get to your trips." },
+  accountDeleted: {
+    title: "Your account is deleted",
+    body: "You\u2019re off all your trips and your details are gone. Sign in again any time to start fresh.",
+  },
 };
 
 export default function SignedOut({ mode = "signedOut" }) {

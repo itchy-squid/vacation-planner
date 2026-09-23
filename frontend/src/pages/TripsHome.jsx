@@ -241,22 +241,25 @@ function JoinedToast({ name, onDismiss }) {
 // is the only screen that isn't about a particular trip. Quiet on purpose —
 // it's the rarest thing on the screen and the only irreversible one.
 function SignOut() {
+  const navigate = useNavigate();
+  const linkStyle = {
+    padding: "0 16px",
+    background: "none",
+    border: "none",
+    font: "500 12.5px var(--font-sans)",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+  };
+  // "Delete account" sits beside it for the same reasons: rare, about you
+  // rather than a trip, and it opens a confirmation screen
+  // (pages/DeleteAccount.jsx) rather than doing anything on the spot.
   return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "28px 0 4px" }}>
-      <button
-        type="button"
-        className="tap hit-target"
-        onClick={logout}
-        style={{
-          padding: "0 16px",
-          background: "none",
-          border: "none",
-          font: "500 12.5px var(--font-sans)",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-        }}
-      >
+    <div style={{ display: "flex", justifyContent: "center", gap: 4, padding: "28px 0 4px" }}>
+      <button type="button" className="tap hit-target" onClick={() => logout()} style={linkStyle}>
         Sign out
+      </button>
+      <button type="button" className="tap hit-target" onClick={() => navigate("/account/delete")} style={linkStyle}>
+        Delete account
       </button>
     </div>
   );

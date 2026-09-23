@@ -24,6 +24,22 @@ class MeOut(BaseModel):
     identity_provider: str | None = None
 
 
+class DeletionTripOut(BaseModel):
+    id: int
+    name: str
+    # Only for a trip being handed over: who becomes its owner.
+    new_owner_name: str | None = None
+
+
+class AccountDeletionPreviewOut(BaseModel):
+    """What deleting your account does to each of your trips — see
+    routers/account.py."""
+
+    handed_over: list[DeletionTripOut]  # you own it; someone else takes over
+    deleted: list[DeletionTripOut]  # you own it and nobody else is on it
+    left: list[DeletionTripOut]  # you're a member; you leave it
+
+
 class ContributorOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

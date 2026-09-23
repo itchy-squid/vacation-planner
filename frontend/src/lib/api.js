@@ -175,8 +175,28 @@ export function isSignedOutLanding() {
 // frontend origin). Note this signs the user out of *this app* only; it
 // deliberately doesn't hit Entra's own /oauth2/logout, which would sign
 // them out of their Microsoft account everywhere.
-export function logout() {
-  const returnTo = `${window.location.origin}/?${SIGNED_OUT_PARAM}=1`;
+//
+// With `accountDeleted` (pages/DeleteAccount.jsx, once DELETE /api/me has
+// succeeded) this browser also forgets which provider it used and any
+// page it meant to return to, and the signed-out screen says the account
+// is gone rather than just signed out.
+export const ACCOUNT_DELETED_PARAM = "deleted";
+
+export function isAccountDeletedLanding() {
+  return new window.URLSearchParams(window.location.search).has(ACCOUNT_DELETED_PARAM);
+}
+
+export function logout({ accountDeleted = false } = {}) {
+  let returnTo = `${window.location.origin}/?${SIGNED_OUT_PARAM}=1`;
+  if (accountDeleted) {
+    try {
+      window.localStorage.removeItem(PROVIDER_KEY);
+    } catch {
+      // Nothing to forget.
+    }
+    clearReturnPath();
+    returnTo += `&${ACCOUNT_DELETED_PARAM}=1`;
+  }
   window.location.href = `${API_BASE}/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(returnTo)}`;
 }
 
@@ -272,6 +292,9 @@ async function request(path, { method = "GET", body } = {}) {
 
 export const api = {
   me: () => request("/api/me"),
+  // Your own account — see backend/app/routers/account.py.
+  accountDeletionPreview: () => request("/api/me/deletion-preview"),
+  deleteAccount: () => request("/api/me", { method: "DELETE" }),
   listTrips: () => request("/api/trips"),
   getTrip: (tripId) => request(`/api/trips/${tripId}`),
   createTrip: (payload) => request("/api/trips", { method: "POST", body: payload }),

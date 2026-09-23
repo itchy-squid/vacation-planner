@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from .routers import (
+    account,
     comments,
     contests,
     events,
@@ -33,6 +34,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(me.router)
+app.include_router(account.router)
 app.include_router(trips.router)
 app.include_router(pins.router)
 app.include_router(plans.router)

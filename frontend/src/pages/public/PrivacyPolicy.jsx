@@ -7,11 +7,11 @@ import { PublicFooter, PublicHeader } from "./PublicLayout";
 //
 // Keep it true to the code: if what we collect or where it goes changes
 // (backend/app/models.py, photo_storage.py, infra/), update this page and
-// LAST_UPDATED. CONTACT_EMAIL must be a real, monitored address before
-// the page is submitted to Google.
+// LAST_UPDATED. CONTACT_EMAIL is a Namecheap forwarder to Amanda's own
+// inbox (receive-only).
 
 const LAST_UPDATED = "September 22, 2026";
-const CONTACT_EMAIL = "[CONTACT EMAIL]";
+const CONTACT_EMAIL = "support@amandasanti.com";
 
 export default function PrivacyPolicy() {
   return (
@@ -124,11 +124,24 @@ export default function PrivacyPolicy() {
             <h2>Keeping and deleting your information</h2>
             <p>
               We keep a trip’s content for as long as the trip exists. You can delete places and proposals you’ve
-              added, and a trip’s owner can remove people from the trip.
+              added, leave a trip, and a trip’s owner can remove people from it.
             </p>
             <p>
-              To have your account information and everything you’ve added deleted, email us at {CONTACT_EMAIL}. We’ll
-              do it within 30 days. Server logs are deleted automatically after 30 days.
+              <strong>You can delete your account yourself at any time.</strong> Sign in, and at the bottom of your
+              trips choose Delete account. Before anything happens, you’ll see what will happen to each of your trips:
+            </p>
+            <ul>
+              <li>You’re taken off every trip, and your name and email address are deleted.</li>
+              <li>Trips you own that other people are on are handed to one of them, who becomes the new owner.</li>
+              <li>Trips you own that nobody else is on are deleted, along with their photos.</li>
+              <li>
+                Places, travel items and plans you added to trips that carry on stay for the group, without your name.
+                Your votes, comments and drafts are deleted.
+              </li>
+            </ul>
+            <p>
+              If you can’t sign in any more, email us at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we’ll delete it for you within 30 days.
+              Server logs are deleted automatically after 30 days.
             </p>
           </section>
 

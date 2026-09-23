@@ -6,10 +6,8 @@ param postgresSkuName = 'Standard_B1ms'
 param corsOrigins = 'https://vacations.amandasanti.com'
 param frontendCustomDomainName = 'vacations.amandasanti.com'
 param backendCustomDomainName = 'vacations-api.amandasanti.com'
-// TODO: set to the managed certificate `az containerapp hostname bind`
-// created for this hostname. Until then prod deploys don't restate the
-// binding, so they will drop it. See infra/README.md "Custom domains".
-param backendCertificateName = ''
+// Created by `az containerapp hostname bind`, not by this template.
+param backendCertificateName = 'vacations-api.amandasanti.co-vacation-260917052839'
 
 param entraClientId = readEnvironmentVariable('ENTRA_CLIENT_ID', '')
 param entraClientSecret = readEnvironmentVariable('ENTRA_CLIENT_SECRET', '')

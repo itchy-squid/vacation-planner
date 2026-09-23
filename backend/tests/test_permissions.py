@@ -62,6 +62,9 @@ def test_roles_nest():
 _UNSCOPED = {
     ("GET", "/api/health"),
     ("GET", "/api/me"),
+    # Your own account, not a trip (routers/account.py).
+    ("GET", "/api/me/deletion-preview"),
+    ("DELETE", "/api/me"),
     ("GET", "/api/trips"),
     ("POST", "/api/trips"),
     ("GET", "/api/invites/{token}"),

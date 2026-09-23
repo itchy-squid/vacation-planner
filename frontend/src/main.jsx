@@ -7,6 +7,7 @@ import PrivacyPolicy from "./pages/public/PrivacyPolicy.jsx";
 import {
   clearReturnPath,
   ensureSignedIn,
+  isAccountDeletedLanding,
   isSignedIn,
   isSignInLanding,
   isSignedOutLanding,
@@ -53,7 +54,8 @@ if (path === "/privacy") {
   // stale session was trying to reach. The chooser keeps it — that's the
   // page they're about to sign in for.
   if (isSignedOutLanding()) clearReturnPath();
-  render(<SignedOut mode={isSignedOutLanding() ? "signedOut" : "signIn"} />);
+  const mode = !isSignedOutLanding() ? "signIn" : isAccountDeletedLanding() ? "accountDeleted" : "signedOut";
+  render(<SignedOut mode={mode} />);
 } else if (path === "/") {
   // A signed-out visitor at the root gets the homepage instead of being
   // sent straight to log in; its Sign in buttons take it from there.

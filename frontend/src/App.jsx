@@ -14,6 +14,7 @@ import FinalItinerary from "./pages/FinalItinerary";
 import Expenses from "./pages/Expenses";
 import ProposeBlock from "./pages/ProposeBlock";
 import JoinTrip from "./pages/JoinTrip";
+import DeleteAccount from "./pages/DeleteAccount";
 import BottomNav from "./components/core/BottomNav";
 
 // Every trip-scoped screen lives under /trips/:tripId/... so a URL always
@@ -52,6 +53,7 @@ function AppRoutes() {
         <Route path="/" element={<TripsHome />} />
         <Route path="/new-trip" element={<NewTrip />} />
         <Route path="/join/:token" element={<JoinTrip />} />
+        <Route path="/account/delete" element={<DeleteAccount />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -64,6 +66,7 @@ function AppRoutes() {
       {/* An invite link. Works whether or not the person has any trips
           yet, so it's in both route tables. */}
       <Route path="/join/:token" element={<JoinTrip />} />
+      <Route path="/account/delete" element={<DeleteAccount />} />
       <Route path="/trips/:tripId/board" element={<PinBoard />} />
       <Route
         path="/trips/:tripId/new-pin"
