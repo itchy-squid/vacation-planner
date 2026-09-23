@@ -3,6 +3,9 @@ import { usePlannerDispatch, usePlannerState, useCan, useMyTraveler } from "../.
 import { copyText, inviteUrl } from "../sharing/links";
 
 // Add or edit one traveler (components/travelers/TravelerRoster.jsx).
+// Adding and editing are the same screen with the same fields, so a
+// traveler can be changed in exactly the words they were added in; only
+// the title, the save button's label and Remove differ.
 //
 // - Name, and who pays for them: "Themselves", or anyone who pays their
 //   own way. One level only (backend routers/travelers.py): someone paid
@@ -12,7 +15,7 @@ import { copyText, inviteUrl } from "../sharing/links";
 //   Hua joining becomes this row rather than a second Hua.
 // - Remove, which takes them off every group and cost split.
 export default function TravelerSheet({ traveler, onClose }) {
-  const { travelers } = usePlannerState();
+  const { travelers, contributors, currentUserId } = usePlannerState();
   const dispatch = usePlannerDispatch();
   const can = useCan();
   const me = useMyTraveler();
@@ -22,7 +25,12 @@ export default function TravelerSheet({ traveler, onClose }) {
 
   const [name, setName] = useState(traveler?.name ?? "");
   const [paidById, setPaidById] = useState(traveler?.paidById ?? null);
-  const [onApp, setOnApp] = useState("list"); // new traveler: "list" | "invite"
+  // "list" (no account), "invite" (a link that signs them in as this
+  // traveler) or "member" (they're already on the app: link them).
+  const [onApp, setOnApp] = useState(
+    traveler?.contributorId != null ? "member" : traveler?.invited ? "invite" : "list"
+  );
+  const [memberId, setMemberId] = useState(traveler?.contributorId ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [link, setLink] = useState("");
@@ -34,6 +42,15 @@ export default function TravelerSheet({ traveler, onClose }) {
   // only choice is themselves.
   const paysForOthers = traveler ? travelers.some((t) => t.paidById === traveler.id) : false;
   const payers = paysForOthers ? [] : travelers.filter((t) => t.paidById == null && t.id !== traveler?.id);
+
+  // Members who could be this traveler: anyone on the app not already
+  // listed as someone else.
+  const linkable = contributors.filter(
+    (c) => c.id === traveler?.contributorId || !travelers.some((t) => t.contributorId === c.id)
+  );
+  // Who is on the app is a planner's call; editing yourself doesn't
+  // include unlinking your own account.
+  const canChangeApp = canManage && !(traveler?.contributorId != null && traveler.contributorId === currentUserId);
 
   async function makeInvite(travelerId) {
     const result = await dispatch({ type: "INVITE_TRAVELER", id: travelerId, role: "companion" });
@@ -49,22 +66,32 @@ export default function TravelerSheet({ traveler, onClose }) {
     setBusy(true);
     setError("");
     try {
+      const linkTo = canChangeApp && onApp === "member" ? memberId : null;
+      if (canChangeApp && onApp === "member" && linkTo == null) throw new Error("Pick who they are on the app.");
+      let id = traveler?.id;
       if (isNew) {
-        const result = await dispatch({ type: "CREATE_TRAVELER", payload: { name: name.trim(), paid_by_id: paidById } });
+        const payload = { name: name.trim(), paid_by_id: paidById };
+        if (linkTo != null) payload.contributor_id = linkTo;
+        const result = await dispatch({ type: "CREATE_TRAVELER", payload });
         if (!result.ok) throw new Error(result.error);
-        if (onApp === "invite" && canInvite) {
-          await makeInvite(result.traveler.id);
-          setBusy(false);
-          return; // stay open to show the link
-        }
+        id = result.traveler.id;
       } else {
         const fields = {};
         if (name.trim() !== traveler.name) fields.name = name.trim();
         if (paidById !== traveler.paidById) fields.paid_by_id = paidById;
+        // "Just list them" / "Invite" on someone linked to an account
+        // unlinks it (the account stays on the trip); "already a member"
+        // links the one picked.
+        if (canChangeApp && (linkTo ?? null) !== (traveler.contributorId ?? null)) fields.contributor_id = linkTo;
         if (Object.keys(fields).length) {
           const result = await dispatch({ type: "PATCH_TRAVELER", id: traveler.id, fields });
           if (!result.ok) throw new Error(result.error);
         }
+      }
+      if (canChangeApp && onApp === "invite" && canInvite) {
+        await makeInvite(id);
+        setBusy(false);
+        return; // stay open to show the link
       }
       onClose();
     } catch (err) {
@@ -88,17 +115,6 @@ export default function TravelerSheet({ traveler, onClose }) {
     }
   }
 
-  async function inviteExisting() {
-    setBusy(true);
-    setError("");
-    try {
-      await makeInvite(traveler.id);
-    } catch (err) {
-      setError(err.message);
-    }
-    setBusy(false);
-  }
-
   const who = name.trim() || "them";
   const isMe = me?.id === traveler?.id;
 
@@ -114,7 +130,7 @@ export default function TravelerSheet({ traveler, onClose }) {
       >
         <div style={{ width: 38, height: 4, borderRadius: 99, background: "var(--stone-250)", margin: "0 auto 2px" }} />
         <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>
-          {isNew ? "Add a traveler" : isMe ? "You" : traveler.name}
+          {isNew ? "Add a traveler" : "Edit traveler"}
         </div>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -152,23 +168,52 @@ export default function TravelerSheet({ traveler, onClose }) {
           </span>
         </div>
 
-        {isNew && canInvite && (
+        {canChangeApp && !link && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span className="mono-caption">On the app?</span>
-            <Radio on={onApp === "list"} onClick={() => setOnApp("list")} title="Just list them" sub="Counted on groups and costs. No login needed." />
             <Radio
-              on={onApp === "invite"}
-              onClick={() => setOnApp("invite")}
-              title="Invite them as a companion"
-              sub="You get a link that signs them in as this traveler, so nothing is duplicated."
+              on={onApp === "list"}
+              onClick={() => setOnApp("list")}
+              title={isNew ? "Just list them" : "Not on the app"}
+              sub={
+                !isNew && traveler.contributorId != null
+                  ? "Unlinks their account from this traveler. The account stays on the trip."
+                  : "Counted on groups and costs. No login needed."
+              }
             />
+            {canInvite && (
+              <Radio
+                on={onApp === "invite"}
+                onClick={() => setOnApp("invite")}
+                title={!isNew && traveler.invited ? "Invited — get their link again" : "Invite them as a companion"}
+                sub="You get a link that signs them in as this traveler, so nothing is duplicated."
+              />
+            )}
+            {linkable.length > 0 && (
+              <Radio
+                on={onApp === "member"}
+                onClick={() => setOnApp("member")}
+                title="They're already on the app"
+                sub="Link this traveler to someone on the People list."
+              />
+            )}
+            {onApp === "member" && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingLeft: 4 }}>
+                {linkable.map((c) => (
+                  <Chip key={c.id} on={memberId === c.id} onClick={() => setMemberId(c.id)}>
+                    {c.name}
+                  </Chip>
+                ))}
+              </div>
+            )}
           </div>
         )}
-
-        {!isNew && traveler.contributorId == null && canInvite && !link && (
-          <button type="button" disabled={busy} onClick={inviteExisting} style={secondaryButton}>
-            {traveler.invited ? "Copy their invite link" : `Invite ${traveler.name} to the app`}
-          </button>
+        {!canChangeApp && !isNew && (
+          <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)" }}>
+            {traveler.contributorId != null
+              ? `On the app as ${isMe ? "you" : contributors.find((c) => c.id === traveler.contributorId)?.name ?? "a member"}.`
+              : "Not on the app."}
+          </div>
         )}
 
         {link && (

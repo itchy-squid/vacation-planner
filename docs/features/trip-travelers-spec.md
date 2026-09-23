@@ -110,6 +110,12 @@ is no more `traveller_count`).
     just list them or invite them.
   - Members who aren't going are listed under "Planning, not going", with
     an "Add as traveler" button.
+  - Every row you can change has a chevron. Tapping it opens **Edit
+    traveler**, which has the same fields as Add a traveler: name, who pays,
+    and whether they're on the app (not on the app / invite them / they're
+    already a member). On an existing traveler, "not on the app" unlinks
+    their account, which stays on the trip. Edit also has Remove. Someone
+    editing their own row sees only name and who pays.
 - **Join screen**: "Are you one of these travelers?", with options to pick
   a listed traveler, say you're new, or say you're not going. A link made
   for one traveler just shows who you'll be.

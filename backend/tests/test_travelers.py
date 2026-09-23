@@ -68,6 +68,20 @@ def test_paying_for_others_is_one_level(client, trip):
     assert client.patch(f"/api/travelers/{jae}", json={"paid_by_id": jae}, headers=MEI).json()["paid_by_id"] is None
 
 
+def test_editing_a_traveler_can_unlink_and_relink_an_account(client, trip, db):
+    """The edit screen is the add screen: a planner can say someone isn't
+    on the app after all, or link them to a member, as well as rename them."""
+    kai = add(client, trip, "Kai")
+    lin = tid(trip, "lin")
+    res = client.patch(f"/api/travelers/{lin}", json={"contributor_id": None, "name": "Lin W"}, headers=MEI)
+    assert res.status_code == 200, res.text
+    assert res.json()["contributor_id"] is None and res.json()["name"] == "Lin W"
+    # Lin's account is free again, so it can be linked to another row.
+    res = client.patch(f"/api/travelers/{kai['id']}", json={"contributor_id": trip.lin.id}, headers=MEI)
+    assert res.status_code == 200, res.text
+    assert res.json()["contributor_id"] == trip.lin.id
+
+
 def test_linking_a_member_who_is_already_listed_is_refused(client, trip):
     res = client.post(f"/api/trips/{trip.id}/travelers", json={"name": "Jae again", "contributor_id": trip.jae.id}, headers=MEI)
     assert res.status_code == 409

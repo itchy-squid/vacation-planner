@@ -74,6 +74,7 @@ export default function TravelerRoster() {
               type="button"
               disabled={!tappable}
               onClick={() => setEditing(t)}
+              aria-label={tappable ? `Edit ${t.name}` : undefined}
               style={{
                 width: "100%",
                 display: "flex",
@@ -108,6 +109,14 @@ export default function TravelerRoster() {
               <span title={`Paid by ${payer.name}`}>
                 <Avatar person={payer} size={20} />
               </span>
+              {/* Rows you can change say so: tap to edit, on the same
+                  screen travelers are added on. */}
+              <span
+                aria-hidden="true"
+                style={{ width: 10, flex: "none", textAlign: "right", font: "400 16px var(--font-sans)", color: tappable ? "var(--text-muted)" : "transparent" }}
+              >
+                ›
+              </span>
             </button>
           );
         })}
@@ -135,6 +144,7 @@ export default function TravelerRoster() {
       )}
       <div style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>
         Costs are split between travelers, whether or not they&rsquo;re on the app.
+        {canManage ? " Tap someone to edit them." : me ? " Tap yourself to change your name or who pays for you." : ""}
       </div>
 
       {notGoing.length > 0 && (
