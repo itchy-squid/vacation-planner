@@ -162,9 +162,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
+      // Cost floor for dev and prod: scale to zero when idle (first request
+      // after idle pays a cold start), and never more than one replica —
+      // which also keeps the in-memory SSE fan-out (app/events.py) correct,
+      // since every client lands on the same replica.
       scale: {
-        minReplicas: 1
-        maxReplicas: 3
+        minReplicas: 0
+        maxReplicas: 1
       }
     }
   }

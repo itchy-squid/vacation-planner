@@ -127,9 +127,9 @@ From `infra/README.md`:
   Container App to its existing user-assigned identity with `AcrPull`
   when ready.
 - SSE fan-out is in-memory, single-replica (`backend/app/events.py`).
-  Fine at `maxReplicas: 3` today; pin to `maxReplicas: 1` or move to a
-  shared event bus (Azure Web PubSub or Redis) before relying on live
-  updates in production.
+  Safe today because the backend is pinned to `maxReplicas: 1` (and
+  `minReplicas: 0` to scale to zero for cost). Move to a shared event bus
+  (Azure Web PubSub or Redis) before raising `maxReplicas`.
 
 ## Reference
 

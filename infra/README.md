@@ -445,10 +445,14 @@ reconnect on an auth error.
   Container App to its existing user-assigned identity with `AcrPull`
   when ready.
 - **SSE fan-out is in-memory, single-replica** (`backend/app/events.py`).
-  `maxReplicas: 3` is fine for CPU/HTTP scaling today, but an SSE client
-  can connect to a replica that never sees another replica's event. Pin
-  to `maxReplicas: 1` or move to a shared event bus (Azure Web PubSub or
-  Redis) before relying on live updates in production.
+  The backend is pinned to `minReplicas: 0` / `maxReplicas: 1` to
+  minimize cost, which also keeps SSE correct (one replica sees every
+  event). With more than one replica an SSE client could connect to a
+  replica that never sees another replica's event, so move to a shared
+  event bus (Azure Web PubSub or Redis) before raising `maxReplicas`.
+  Trade-off of `minReplicas: 0`: the first request after an idle period
+  pays a cold start (container pull + app boot), and open SSE
+  connections keep the replica alive while they're connected.
 - **Mirrored pin photos are never deleted from blob storage**
   (`backend/app/photo_storage.py`) — deleting a pin, or editing its photo
   to a different link, leaves the old blob behind. Photos are small and
