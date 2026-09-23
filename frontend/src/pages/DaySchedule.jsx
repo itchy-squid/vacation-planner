@@ -521,6 +521,39 @@ export default function DaySchedule() {
           )}
         </div>
 
+        {/* Whose day to show. Pinned to the header with the day strip so it
+            stays in reach wherever the grid is scrolled — inside the scroll
+            body it sat above 00:00 and meant scrolling to midnight to use. */}
+        {dayHasSplit && myTraveler && (
+          <div
+            role="group"
+            aria-label="Whose day to show"
+            style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2, margin: "0 var(--gutter-screen) 12px" }}
+          >
+            {[
+              { value: false, label: "Everyone" },
+              { value: true, label: `Just me · ${myTraveler.name}` },
+            ].map((opt) => (
+              <button
+                key={String(opt.value)}
+                type="button"
+                aria-pressed={justMe === opt.value}
+                onClick={() => setJustMe(opt.value)}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  borderRadius: "calc(var(--radius-md) - 2px)",
+                  background: justMe === opt.value ? "var(--surface-card)" : "transparent",
+                  boxShadow: justMe === opt.value ? "var(--shadow-raised)" : "none",
+                  font: "600 11.5px var(--font-sans)",
+                  color: justMe === opt.value ? "var(--text-primary)" : "var(--text-secondary)",
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Pinned to the header (not the .screen-scroll body below) so it
             stays visible the whole time placing mode is armed, even once
             the user has scrolled the grid down to find a slot — it used to
@@ -546,36 +579,6 @@ export default function DaySchedule() {
         )}
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-          {dayHasSplit && myTraveler && (
-            <div
-              role="group"
-              aria-label="Whose day to show"
-              style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2, marginBottom: 14 }}
-            >
-              {[
-                { value: false, label: "Everyone" },
-                { value: true, label: `Just me · ${myTraveler.name}` },
-              ].map((opt) => (
-                <button
-                  key={String(opt.value)}
-                  type="button"
-                  aria-pressed={justMe === opt.value}
-                  onClick={() => setJustMe(opt.value)}
-                  style={{
-                    flex: 1,
-                    padding: "6px 0",
-                    borderRadius: "calc(var(--radius-md) - 2px)",
-                    background: justMe === opt.value ? "var(--surface-card)" : "transparent",
-                    boxShadow: justMe === opt.value ? "var(--shadow-raised)" : "none",
-                    font: "600 11.5px var(--font-sans)",
-                    color: justMe === opt.value ? "var(--text-primary)" : "var(--text-secondary)",
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
           <DayGrid cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
             {splitBands.map((band) => {
               const top = topForMinute(Math.max(band.startMin, DAY_START_MIN));
