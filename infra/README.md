@@ -455,18 +455,20 @@ reconnect on an auth error.
   Container App to its existing user-assigned identity with `AcrPull`
   when ready.
 - **SSE fan-out is in-memory, single-replica** (`backend/app/events.py`).
-  The backend is pinned to `minReplicas: 0` / `maxReplicas: 1` to
-  minimize cost, which also keeps SSE correct (one replica sees every
-  event). With more than one replica an SSE client could connect to a
-  replica that never sees another replica's event, so move to a shared
+  The backend is capped at `maxReplicas: 1`, which keeps SSE correct
+  (one replica sees every event). `minReplicas` is per environment
+  (`backendMinReplicas` in main.bicep): dev is 0 (scale to zero), prod
+  is 1 (always one warm replica). With more than one replica an SSE
+  client could connect to a replica that never sees another replica's
+  event, so move to a shared
   event bus (Azure Web PubSub or Redis) before raising `maxReplicas`.
-  Trade-off of `minReplicas: 0`: the first request after an idle period
+  Trade-off of `minReplicas: 0` (dev): the first request after an idle period
   pays a cold start (container pull + app boot), and open SSE
   connections keep the replica alive while they're connected.
   Easy Auth runs inside the replica, so even a sign-in redirect waits
   out that cold start; the frontend shows a "waking up the server"
   screen meanwhile (`frontend/src/pages/BootScreen.jsx`) and retries
-  the session check through platform 502/503/504s. Setting
+  the session check through platform 502/503/504s. Prod's
   `minReplicas: 1` removes the wait at the cost of an always-on (idle-
   rate) replica.
 - **Mirrored pin photos are never deleted from blob storage**

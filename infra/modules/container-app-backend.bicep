@@ -69,6 +69,14 @@ param googleClientSecret string = ''
 @description('How long an Easy Auth sign-in lasts before the user has to sign in again, as d.hh:mm:ss. Fixed from sign-in, not sliding (Container Apps has no sliding option). Platform default is 08:00:00.')
 param sessionLifetime string = '30.00:00:00'
 
+@description('''Replicas kept running when idle. 0 scales to zero (cheapest;
+the first request after idle pays a cold start); 1 keeps one replica always
+on (no cold start, billed at the idle rate). Capped at 1 because maxReplicas
+is 1 -- see the scale block below.''')
+@minValue(0)
+@maxValue(1)
+param minReplicas int = 0
+
 var entraEnabled = !empty(entraClientId)
 var googleEnabled = !empty(googleClientId)
 // Easy Auth is on as soon as either provider is configured.
@@ -153,7 +161,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'FRONTEND_URL', value: corsOriginList[0] == '*' ? '' : corsOriginList[0] }
           ]
           probes: [
-            // Tight on purpose: with minReplicas: 0 every cold start waits on
+            // Tight on purpose: with minReplicas 0 every cold start waits on
             // this probe before the replica takes traffic, and at 5s/10s a
             // boot that missed the first check by a moment sat idle for
             // another ~10s. /healthz is a constant, in-replica and cheap,
@@ -174,12 +182,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
-      // Cost floor for dev and prod: scale to zero when idle (first request
-      // after idle pays a cold start), and never more than one replica —
-      // which also keeps the in-memory SSE fan-out (app/events.py) correct,
-      // since every client lands on the same replica.
+      // minReplicas comes from the caller: dev scales to zero when idle
+      // (first request after idle pays a cold start); prod keeps one
+      // replica warm. Never more than one replica — which also keeps the
+      // in-memory SSE fan-out (app/events.py) correct, since every client
+      // lands on the same replica.
       scale: {
-        minReplicas: 0
+        minReplicas: minReplicas
         maxReplicas: 1
       }
     }

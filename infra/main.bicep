@@ -19,6 +19,11 @@ param envName string = 'dev'
 
 param location string = resourceGroup().location
 
+@description('Backend replicas kept running when idle: 0 scales to zero (dev), 1 keeps one warm (prod). See modules/container-app-backend.bicep.')
+@minValue(0)
+@maxValue(1)
+param backendMinReplicas int = 0
+
 @description('Backend container image, e.g. myregistry.azurecr.io/vacation-planner-backend:sha-abc1234. Set by CI after building the image.')
 param backendContainerImage string = 'mcr.microsoft.com/k8se/quickstart:latest' // placeholder until CI pushes a real image
 
@@ -186,6 +191,7 @@ module backend 'modules/container-app-backend.bicep' = {
     entraClientSecret: entraClientSecret
     googleClientId: googleClientId
     googleClientSecret: googleClientSecret
+    minReplicas: backendMinReplicas
   }
 }
 

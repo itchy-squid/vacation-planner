@@ -42,6 +42,12 @@ that isn't for everyone, because the old overlap rule can't represent them.
 - **`POST /plans/{id}/split`** `{ leaving, label? }` (`plans:write`): the
   people leaving come off this plan and get a new, empty plan over the
   same hours. It's one transaction and returns `[this, new]`.
+- **`DELETE /plans/{id}`** on one group of a split (a plan for part of
+  the trip with another group's plan in the same hours) clears its stops
+  but keeps the group as an empty plan, the way a fresh split leaves it.
+  Deleting the plan outright used to leave its people on no plan next to
+  the other group's, and every way into those hours then landed on the
+  other group. Deleting the empty group removes it.
 - **`PUT /plans/{id}/party`** `{ party }` (`plans:write`): sets who a plan
   is for. Sending `[]` brings a branch back together with everyone, which
   409s by name until the other branch's plans in those hours are gone.
@@ -108,7 +114,8 @@ that isn't for everyone, because the old overlap rule can't represent them.
 ## Known gaps
 
 - There's no single "merge" action. Bringing a group back is: remove the
-  other group's plans, then choose Bring everyone back.
+  other group's plans, remove that group's now-empty plan, then choose
+  Bring everyone back.
 - The step-2 hour picker still clips at *any* locked plan, including one
   for another group. The server only refuses locked plans for the
   proposal's own party.

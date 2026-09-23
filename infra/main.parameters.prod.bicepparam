@@ -3,6 +3,9 @@ using 'main.bicep'
 param appName = 'vacationplanner'
 param envName = 'prod'
 param postgresSkuName = 'Standard_B1ms'
+// Keep one backend replica warm in prod so users never wait on a cold start.
+// Dev leaves this at the default 0 (scale to zero).
+param backendMinReplicas = 1
 param corsOrigins = 'https://vacations.amandasanti.com'
 param frontendCustomDomainName = 'vacations.amandasanti.com'
 param backendCustomDomainName = 'vacations-api.amandasanti.com'

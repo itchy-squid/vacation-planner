@@ -402,13 +402,46 @@ def delete_plan(
     # list — see app/custom_events.py. Pins are untouched and go back to
     # the tray as before.
     orphan_candidates = travel_item_ids_of([plan])
-    db.delete(plan)
+    keep_group = not was_draft and bool(plan.items) and _is_split_group(db, plan)
+    if keep_group:
+        # One group of a split day: clear what it was doing but keep the
+        # group, empty, exactly as a fresh split leaves it. Deleting the
+        # plan outright would leave its people on no plan at all in those
+        # hours, next to another group's plan — and every way into those
+        # hours (tapping, proposing, placing) lands on that other group, so
+        # nobody could plan for them again without clearing the whole
+        # block. Removing the now-empty group is a second, deliberate step
+        # (the "bring everyone back" path).
+        plan.items.clear()
+    else:
+        db.delete(plan)
     forgotten = forget_orphaned_travel_items(db, orphan_candidates)
     db.commit()
-    if not was_draft:
+    if keep_group:
+        bus.publish(trip_id, "plan.cleared", {"plan_id": plan_id})
+    elif not was_draft:
         bus.publish(trip_id, "plan.removed", {"plan_id": plan_id})
     publish_forgotten(forgotten)
     return None
+
+
+def _is_split_group(db: Session, plan: Plan) -> bool:
+    """Whether this plan is one group of a split: it's for part of the
+    trip, and some other group has a plan over the same hours."""
+    party = party_of(plan)
+    if party.is_everyone:
+        return False
+    roster = roster_ids(db, plan.trip_id)
+    others = db.scalars(
+        select(Plan).where(
+            Plan.trip_id == plan.trip_id,
+            Plan.id != plan.id,
+            Plan.status.in_(_OCCUPYING_STATUSES),
+            Plan.starts_at < plan.ends_at,
+            Plan.ends_at > plan.starts_at,
+        )
+    )
+    return any(not parties_meet(party_of(other), party, roster) for other in others)
 
 
 @router.post("/plans/{plan_id}/lock", response_model=PlanOut)

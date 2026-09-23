@@ -166,10 +166,65 @@ def test_bringing_a_branch_back_needs_the_other_branch_gone(client, trip, db):
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["double_booked"] == ["Mei", "Jae"]
 
+    # Removing what the other group is doing leaves that group, empty;
+    # removing the empty group is what makes room to bring everyone back.
+    assert client.delete(f"/api/plans/{b.id}", headers=as_user("mei@example.com")).status_code == 204
+    assert client.put(f"/api/plans/{a.id}/party", json={"party": []}, headers=as_user("mei@example.com")).status_code == 409
     assert client.delete(f"/api/plans/{b.id}", headers=as_user("mei@example.com")).status_code == 204
     ok = client.put(f"/api/plans/{a.id}/party", json={"party": []}, headers=as_user("mei@example.com"))
     assert ok.status_code == 200
     assert ok.json()["party"] == []
+
+
+# ---- removing what one group is doing ----
+
+
+def test_deleting_a_groups_custom_event_keeps_the_group(client, trip, db):
+    """The reported bug: custom event, split, delete the event. The people
+    who were on it used to end up on no plan at all, next to the other
+    group's plan, and every way back into those hours landed on the other
+    group. Now their group stays, empty, so it can be planned for again."""
+    from app.models import TravelItem
+
+    plan = trip.place(start=540, end=720, travel_item="ferry")
+    ferry_id = trip.travel_items["ferry"].id
+    split = client.post(
+        f"/api/plans/{plan.id}/split",
+        json={"leaving": ids(trip, "ana", "lin"), "label": "Taroko Gorge"},
+        headers=as_user("mei@example.com"),
+    )
+    assert split.status_code == 201, split.text
+    stayed, branch = split.json()
+
+    assert client.delete(f"/api/plans/{plan.id}", headers=as_user("mei@example.com")).status_code == 204
+    reload(db)
+    # The custom event is gone, as it always was...
+    assert db.get(TravelItem, ferry_id) is None
+    # ...but the people who were on it are still a group in those hours.
+    kept = client.get(f"/api/plans/{plan.id}", headers=as_user("mei@example.com"))
+    assert kept.status_code == 200
+    assert kept.json()["items"] == []
+    assert kept.json()["party_members"] == stayed["party_members"]
+
+    # Something new for them goes onto their group, not the other one's.
+    res = place_via_api(client, trip, start=540, end=720, pin="tide", party=stayed["party_members"])
+    assert res.status_code == 409
+    assert res.json()["detail"]["occupying_plan_id"] == plan.id
+    contest = propose(client, trip, start=540, end=720, stops=["tide"], party=stayed["party_members"])
+    assert contest.status_code == 201, contest.text
+    assert contest.json()["party_members"] == stayed["party_members"]
+    # The other group is untouched.
+    assert client.get(f"/api/plans/{branch['id']}", headers=as_user("mei@example.com")).json()["status"] == "placed"
+
+
+def test_unplacing_a_plan_that_isnt_split_still_deletes_it(client, trip, db):
+    alone = with_party(trip, trip.place(start=540, end=720, pin="trail"), "ana", "lin")
+    everyone = trip.place(start=780, end=840, pin="tide")
+    plan_ids = [alone.id, everyone.id]
+    for plan_id in plan_ids:
+        assert client.delete(f"/api/plans/{plan_id}", headers=as_user("mei@example.com")).status_code == 204
+    reload(db)
+    assert all(db.get(Plan, plan_id) is None for plan_id in plan_ids)
 
 
 def test_a_companion_can_move_themselves_between_branches(client, trip, db):
