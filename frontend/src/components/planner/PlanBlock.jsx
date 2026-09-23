@@ -32,7 +32,10 @@ function ContinuationMark({ icon, color }) {
 // `tight` is for a block squeezed into a third of the grid or less (a
 // vote inside one group of a split day): there the faces would take the
 // whole title, so one face stands in with a count beside it.
-function Faces({ people, tight = false }) {
+//
+// `newcomers` marks the group anyone added to the trip later will join
+// (backend/app/party.py: an "except" party) with a small + after the faces.
+function Faces({ people, tight = false, newcomers = false }) {
   if (!people?.length) return null;
   const shown = people.slice(0, tight ? 1 : 3);
   const more = people.length - shown.length;
@@ -67,11 +70,20 @@ function Faces({ people, tight = false }) {
           +{more}
         </span>
       )}
+      {newcomers && (
+        <span
+          className="mono-data-sm"
+          title="Anyone added to the trip later joins this group"
+          style={{ marginLeft: 3, color: "var(--accent)", fontSize: 9, letterSpacing: "0.04em" }}
+        >
+          {tight ? "+" : "+NEW"}
+        </span>
+      )}
     </span>
   );
 }
 
-export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false }) {
+export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false, newcomers = false }) {
   // A branch made by splitting the group starts with no stops, only a name
   // (or not even that): it's somebody's hours with nothing in them yet.
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || (faces?.length ? "Nothing planned yet" : "Untitled");
@@ -118,7 +130,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
           {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--accent)" />}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--accent)" />}
-          <Faces people={faces} tight={tightFaces} />
+          <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
@@ -163,7 +175,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
           <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
-          <Faces people={faces} tight={tightFaces} />
+          <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
@@ -193,7 +205,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
         {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
-        <Faces people={faces} tight={tightFaces} />
+        <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
       </div>
       {!compact && (
         <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>

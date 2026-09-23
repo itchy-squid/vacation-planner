@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from .auth import Principal, get_current_principal
 from .db import get_db
-from .models import Contest, Contributor, Pin, Plan, TravelItem, Trip, TripInvite
+from .models import Contest, Contributor, Pin, Plan, TravelItem, Traveler, Trip, TripInvite
 
 
 class Role(str, enum.Enum):
@@ -70,12 +70,13 @@ COMMENTS_WRITE = "comments:write"
 COSTS_READ = "costs:read"  # any cost figure, and who shares it
 COSTS_WRITE = "costs:write"  # set cost_cents / heads on anything
 COSTS_OWN = "costs:own"  # see and set cost_cents / heads on what you added
-TRIP_MANAGE = "trip:manage"  # name, dates, traveller count
+TRIP_MANAGE = "trip:manage"  # name, dates
+TRAVELERS_MANAGE = "travelers:manage"  # add, edit and remove anyone on the traveler roster
 MEMBERS_MANAGE = "members:manage"  # invite links, roles, removing people
 
 _READER = frozenset({TRIP_READ, IDEAS_READ, PLANS_READ})
 _COMPANION = _READER | {IDEAS_ADD, PLANS_PROPOSE, PLANS_JOIN, VOTES_WRITE, COMMENTS_WRITE, COSTS_OWN}
-_PLANNER = _COMPANION | {IDEAS_WRITE, PLANS_WRITE, COSTS_READ, COSTS_WRITE}
+_PLANNER = _COMPANION | {IDEAS_WRITE, PLANS_WRITE, COSTS_READ, COSTS_WRITE, TRAVELERS_MANAGE}
 _OWNER = _PLANNER | {PLANS_DECIDE, TRIP_MANAGE, MEMBERS_MANAGE}
 
 ROLE_SCOPES: dict[Role, frozenset[str]] = {
@@ -187,6 +188,7 @@ _OWNING_MODELS = {
     "plan_id": (Plan, "Plan not found"),
     "contest_id": (Contest, "Contest not found"),
     "travel_item_id": (TravelItem, "Travel item not found"),
+    "traveler_id": (Traveler, "Traveler not found"),
 }
 
 

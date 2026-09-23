@@ -5,13 +5,13 @@ import MapPin from "../components/planner/MapPin";
 import RouteSegment from "../components/planner/RouteSegment";
 import SetCard from "../components/planner/SetCard";
 import ConsensusMeter from "../components/planner/ConsensusMeter";
-import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin, slackColor } from "../data/derive";
 import { clockLabel } from "../lib/planTime";
 import { coordsForPin } from "../lib/mapLayout";
-import { namesOf, partyMembers } from "../lib/party";
+import { namesOf, travelersWithIds } from "../lib/party";
 import AvatarStack from "../components/planner/AvatarStack";
 
 // Screen 5, rebuilt against the spec's Contest/Plan model. Handoff README
@@ -39,6 +39,7 @@ export default function CompareSets() {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const currentUser = useCurrentUser();
+  const myTraveler = useMyTraveler();
   const can = useCan();
   // Adding a set, or editing your own, is proposing (plans:propose) —
   // companions do it too.
@@ -242,10 +243,11 @@ export default function CompareSets() {
   const isResolved = contest.status === "resolved";
   // A decision for one group of a split day (lib/party.js): only they
   // vote, and the tally and majority are counted against them.
-  const contestParty = contest.party ?? [];
-  const partyPeople = partyMembers(contestParty, state.contributors);
-  const inParty = !contestParty.length || contestParty.includes(currentUser.id);
-  const outsiders = contestParty.length ? state.contributors.filter((c) => !contestParty.includes(c.id)) : [];
+  const forEveryone = contest.for_everyone ?? true;
+  const partyIds = contest.party_members ?? [];
+  const partyPeople = travelersWithIds(partyIds, state.travelers);
+  const inParty = forEveryone || (myTraveler != null && partyIds.includes(myTraveler.id));
+  const outsiders = forEveryone ? [] : state.travelers.filter((t) => !partyIds.includes(t.id));
 
   return (
     <div className="screen">
@@ -312,7 +314,7 @@ export default function CompareSets() {
             </div>
           </div>
 
-          {contestParty.length > 0 && (
+          {!forEveryone && (
             <div style={{ marginTop: 10, padding: "9px 12px", borderRadius: "var(--radius-lg)", background: "var(--teal-50)", display: "flex", alignItems: "center", gap: 10 }}>
               <AvatarStack contributors={partyPeople} size={20} />
               <div style={{ font: "400 12px/1.4 var(--font-sans)", color: "var(--text-primary)" }}>

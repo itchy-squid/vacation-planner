@@ -66,6 +66,9 @@ param googleClientId string = ''
 @secure()
 param googleClientSecret string = ''
 
+@description('How long an Easy Auth sign-in lasts before the user has to sign in again, as d.hh:mm:ss. Fixed from sign-in, not sliding (Container Apps has no sliding option). Platform default is 08:00:00.')
+param sessionLifetime string = '30.00:00:00'
+
 var entraEnabled = !empty(entraClientId)
 var googleEnabled = !empty(googleClientId)
 // Easy Auth is on as soon as either provider is configured.
@@ -150,11 +153,17 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'FRONTEND_URL', value: corsOriginList[0] == '*' ? '' : corsOriginList[0] }
           ]
           probes: [
+            // Tight on purpose: with minReplicas: 0 every cold start waits on
+            // this probe before the replica takes traffic, and at 5s/10s a
+            // boot that missed the first check by a moment sat idle for
+            // another ~10s. /healthz is a constant, in-replica and cheap,
+            // and probes don't count as ingress traffic, so polling it
+            // doesn't stop the app scaling to zero.
             {
               type: 'Readiness'
               httpGet: { path: '/healthz', port: 8000 }
-              initialDelaySeconds: 5
-              periodSeconds: 10
+              initialDelaySeconds: 1
+              periodSeconds: 2
             }
             {
               type: 'Liveness'
@@ -197,8 +206,21 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (a
     // on THIS host instead of returning to the frontend. Reuses
     // corsOriginList so the frontend origin is declared once per
     // environment, in the .bicepparam file's corsOrigins.
+    //
+    // cookieExpiration: Easy Auth's session cookie defaults to a fixed 8
+    // hours on Container Apps, and there's no refresh (no token store --
+    // see claude/easy-auth-session-check.md) and no sliding window, so
+    // anyone who came back the next day was signed out, and found out only
+    // after waiting through a cold start (see the probes above). A longer
+    // fixed lifetime trades that for a slower revocation of a stolen
+    // cookie, which is acceptable here; deleting an account (DELETE
+    // /api/me) still removes its trips server-side regardless.
     login: {
       allowedExternalRedirectUrls: corsOriginList
+      cookieExpiration: {
+        convention: 'FixedTime'
+        timeToExpiration: sessionLifetime
+      }
     }
     globalValidation: {
       unauthenticatedClientAction: 'Return401'

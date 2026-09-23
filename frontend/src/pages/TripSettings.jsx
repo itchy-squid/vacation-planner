@@ -10,6 +10,7 @@ import InviteLinks from "../components/sharing/InviteLinks";
 import InviteSheet from "../components/sharing/InviteSheet";
 import { LinkIcon } from "../components/sharing/icons";
 import TripInfo from "./TripInfo";
+import TravelerRoster from "../components/travelers/TravelerRoster";
 
 // Not one of the handoff README's numbered screens. Reachable from any of
 // the trip's main screens via the gear in components/core/TripHeader.jsx.
@@ -52,12 +53,6 @@ function OwnerSettings() {
   const [name, setName] = useState(trip.name);
   const [startDate, setStartDate] = useState(trip.startDate || "");
   const [endDate, setEndDate] = useState(trip.endDate || "");
-  // Blank means "as many as there are contributors" — the Expenses screen
-  // reads it that way too (see data/expenses.js headcountFor), so an empty
-  // field is a real answer rather than an unset one.
-  const [travellerCount, setTravellerCount] = useState(
-    trip.travellerCount == null ? "" : String(trip.travellerCount)
-  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -74,7 +69,6 @@ function OwnerSettings() {
           name: name.trim(),
           start_date: startDate || null,
           end_date: endDate || null,
-          traveller_count: travellerCount.trim() === "" ? null : Math.max(1, Number(travellerCount)),
         },
       });
       navigate(-1);
@@ -130,24 +124,6 @@ function OwnerSettings() {
             </div>
           </div>
 
-          <div>
-            <TextField
-              type="number"
-              label="Travellers"
-              value={travellerCount}
-              onChange={(e) => setTravellerCount(e.target.value)}
-              placeholder={String(contributors.length)}
-              min={1}
-            />
-            <div style={{ marginTop: 6, font: "400 11px var(--font-sans)", color: "var(--text-muted)" }}>
-              {/* Not the same as the number of people planning: a child
-                  along for the ride is a head the tickets are bought for
-                  and never a contributor (feature spec decision 9). */}
-              How many people costs are split between. Leave it blank to use the {contributors.length}{" "}
-              {contributors.length === 1 ? "person" : "people"} planning this trip.
-            </div>
-          </div>
-
           {error ? (
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{error}</div>
           ) : null}
@@ -156,8 +132,15 @@ function OwnerSettings() {
             {submitting ? "Saving…" : "Save changes"}
           </Button>
 
+          {/* Who is going — applies immediately, like People below; not
+              part of Save. Replaces the old Travellers number: the count is
+              now simply how many people are listed. */}
+          <div style={{ marginTop: 18 }}>
+            <TravelerRoster />
+          </div>
+
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: 18 }}>
-            <span className="mono-caption">People · {contributors.length}</span>
+            <span className="mono-caption">People on the app · {contributors.length}</span>
             <span style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>Tap a role to change it</span>
           </div>
           <div style={{ marginTop: -6 }}>

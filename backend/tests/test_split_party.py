@@ -4,7 +4,7 @@ A plan's `party` says who it's for ([] = everyone). Two plans may share
 hours only if nobody is on both. See app/party.py.
 """
 
-from app.models import Contest, Plan, Vote
+from app.models import Contest, Plan
 
 from conftest import as_user, at
 
@@ -14,11 +14,13 @@ def reload(db):
 
 
 def ids(trip, *keys):
-    return sorted(trip.contributors[k].id for k in keys)
+    """Traveler ids — parties and heads are travelers (app/models.py)."""
+    return sorted(trip.travelers[k].id for k in keys)
 
 
 def with_party(trip, plan, *keys):
     plan.party = ids(trip, *keys)
+    plan.party_mode = "only"
     trip.db.commit()
     trip.db.refresh(plan)
     return plan
@@ -114,8 +116,13 @@ def test_split_moves_the_leavers_onto_a_new_plan(client, trip, db):
     assert res.status_code == 201, res.text
     stayed, branch = res.json()
     assert stayed["id"] == plan.id
-    assert stayed["party"] == ids(trip, "mei", "jae")
-    assert branch["party"] == ids(trip, "ana", "lin")
+    assert stayed["party_members"] == ids(trip, "mei", "jae")
+    assert stayed["party_mode"] == "only"
+    assert branch["party_members"] == ids(trip, "ana", "lin")
+    # By default the new group is where anyone added later goes: it's
+    # stored as "everyone except the people who stayed".
+    assert branch["party_mode"] == "except"
+    assert branch["party"] == ids(trip, "mei", "jae")
     assert branch["label"] == "Taroko Gorge"
     assert branch["items"] == []
     assert branch["starts_at"] == stayed["starts_at"] and branch["ends_at"] == stayed["ends_at"]
@@ -289,26 +296,36 @@ def test_a_branch_draft_publishes_into_a_branch_vote(client, trip):
 # ---- people leaving the trip ----
 
 
-def test_removing_someone_collapses_a_branch_only_they_were_on(client, trip, db):
+def test_removing_a_traveler_collapses_a_branch_only_they_were_on(client, trip, db):
     solo = with_party(trip, trip.place(start=540, end=720, pin="trail"), "lin")
     solo_id = solo.id
     rest = with_party(trip, trip.place(start=540, end=640, pin="tide"), "mei", "jae", "ana")
     rest_id = rest.id
 
-    res = client.delete(f"/api/trips/{trip.id}/contributors/{trip.lin.id}", headers=as_user("mei@example.com"))
+    res = client.delete(f"/api/travelers/{trip.travelers['lin'].id}", headers=as_user("mei@example.com"))
     assert res.status_code == 204
 
     reload(db)
     assert db.get(Plan, solo_id) is None
     # Everyone who's left is on it, so it's simply a plan for everyone now.
     assert db.get(Plan, rest_id).party == []
+    assert db.get(Plan, rest_id).party_mode == "except"
 
 
-def test_removing_someone_takes_them_out_of_a_branch_vote(client, trip, db):
+def test_removing_a_traveler_takes_them_out_of_a_branch_vote(client, trip, db):
     with_party(trip, trip.place(start=540, end=640, pin="tide"), "jae", "ana")
     contest = propose(client, trip, start=540, end=720, stops=["vase"], party=ids(trip, "jae", "ana")).json()
-    res = client.delete(f"/api/trips/{trip.id}/contributors/{trip.ana.id}", headers=as_user("mei@example.com"))
+    res = client.delete(f"/api/travelers/{trip.travelers['ana'].id}", headers=as_user("mei@example.com"))
     assert res.status_code == 204
     reload(db)
     assert db.get(Contest, contest["id"]).party == ids(trip, "jae")
-    assert db.query(Vote).count() == 0
+
+
+def test_a_member_leaving_the_app_stays_on_their_group(client, trip, db):
+    """Removing a member unlinks their traveler; they're still going."""
+    plan = with_party(trip, trip.place(start=540, end=720, pin="trail"), "lin")
+    plan_id = plan.id
+    res = client.delete(f"/api/trips/{trip.id}/contributors/{trip.lin.id}", headers=as_user("mei@example.com"))
+    assert res.status_code == 204
+    reload(db)
+    assert db.get(Plan, plan_id).party == ids(trip, "lin")

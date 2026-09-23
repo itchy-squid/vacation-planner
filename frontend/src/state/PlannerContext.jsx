@@ -93,6 +93,23 @@ export function ownershipLine(trip) {
 
 export { roleLabel };
 
+// Someone going on the trip (backend Traveler) — which may or may not be
+// someone on the app. `contributorId` links them to their member row;
+// `paidById` is the traveler who pays their costs, null for someone who
+// pays their own.
+function normalizeTraveler(t) {
+  return {
+    id: t.id,
+    name: t.name,
+    initial: t.initial,
+    tint: t.tint,
+    contributorId: t.contributor_id ?? null,
+    paidById: t.paid_by_id ?? null,
+    position: t.position,
+    invited: Boolean(t.invited),
+  };
+}
+
 function normalizePin(p, contributorsById) {
   const addedBy = p.added_by_id ? contributorsById[p.added_by_id] : null;
   const { cx, cy } = coordsForPin(p);
@@ -108,9 +125,11 @@ function normalizePin(p, contributorsById) {
     dur: p.duration_minutes,
     cost: dollarsOrNull(p.cost_cents),
     costCents: p.cost_cents ?? null,
-    // Contributor ids sharing this cost; [] means everyone on the trip.
-    // Kept as raw ids rather than resolved contributors so a head who has
-    // since left the trip doesn't silently vanish from the split.
+    // "per_head" (what one person pays) or "group" (one price for everyone
+    // sharing it) — see backend/app/derive.py item_money.
+    costBasis: p.cost_basis ?? "per_head",
+    // Traveler ids sharing this cost; [] means whoever is on the plan it's
+    // scheduled in.
     heads: p.heads ?? [],
     who: addedBy?.id ?? null,
     whoName: addedBy?.name ?? "Someone",
@@ -140,6 +159,7 @@ function normalizeTravelItem(t, contributorsById) {
     dur: t.duration_minutes,
     cost: dollarsOrNull(t.cost_cents),
     costCents: t.cost_cents ?? null,
+    costBasis: t.cost_basis ?? "per_head",
     heads: t.heads ?? [],
     notes: t.notes,
     link: t.link,
@@ -168,7 +188,14 @@ function normalizePlanItem(it) {
     // Served pre-computed by the API so no screen re-derives packing.
     startMinuteOfDay: it.start_minute_of_day ?? null,
     costCents: source ? source.cost_cents ?? null : 0,
+    costBasis: source?.cost_basis ?? "per_head",
     heads: source?.heads ?? [],
+    // Worked out on the server, because they depend on who's on the plan:
+    // the travelers sharing this stop, what each pays, and the whole bill.
+    // null when the viewer can't see this cost.
+    sharerIds: it.sharer_ids ?? [],
+    eachCents: it.each_cents ?? null,
+    totalCents: it.total_cents ?? null,
     position: it.position,
   };
 }
@@ -189,8 +216,12 @@ function normalizePlan(p) {
     // The proposer's case for this plan, shown to voters on the compare
     // screen. Empty for anything not proposed through the block flow.
     rationale: p.rationale ?? "",
-    // Contributor ids this plan is for; [] is everyone (lib/party.js).
+    // Who this plan is for (lib/party.js): the stored ids and mode, plus
+    // the travelers that comes to and whether it's simply everyone.
     party: p.party ?? [],
+    partyMode: p.party_mode ?? "except",
+    partyMembers: p.party_members ?? [],
+    forEveryone: p.for_everyone ?? true,
     items: (p.items ?? []).map(normalizePlanItem),
     totalDurationMinutes: p.total_duration_minutes,
     totalCostCents: p.total_cost_cents ?? null,
@@ -264,6 +295,7 @@ function emptyTripView() {
     overrides: {},
     plans: [],
     travelItems: {},
+    travelers: [],
     currentUserId: null,
   };
 }
@@ -277,12 +309,14 @@ async function loadTripView(tripId, trips) {
   rememberLastTripId(trip.id);
   const otherTripRows = trips.filter((t) => t.id !== trip.id);
 
-  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw] = await Promise.all([
+  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw] = await Promise.all([
     api.listContributors(trip.id),
     api.listPins(trip.id),
     api.listPlans(trip.id),
     api.listTravelItems(trip.id),
+    api.listTravelers(trip.id),
   ]);
+  const travelers = travelersRaw.map(normalizeTraveler);
 
   const contributors = contributorsRaw.map(normalizeContributor);
   const contributorsById = Object.fromEntries(contributors.map((c) => [c.id, c]));
@@ -367,10 +401,11 @@ async function loadTripView(tripId, trips) {
     endDate: trip.end_date,
     phase: trip.phase,
     contributorCount: contributors.length,
-    // How many people the trip is *costed* for, which is not how many are
-    // planning it. null means "as many as there are contributors" — see
-    // headcountFor below, the one place that fallback is spelled out.
-    travellerCount: trip.traveller_count ?? null,
+    // How many travelers are listed — the people going, which is not how
+    // many are planning (state.travelers has who they are).
+    travelerCount: trip.traveler_count ?? travelers.length,
+    // The viewer's own traveler; null when they're planning but not going.
+    myTravelerId: trip.my_traveler_id ?? null,
     metrics: { pins: pinsList.length, regions: regionCount, toDecide: toDecideCount },
     // The viewer's role and scopes on this trip, plus who owns it. Used to
     // hide controls the server would refuse anyway — see useCan below.
@@ -390,6 +425,7 @@ async function loadTripView(tripId, trips) {
     overrides,
     plans,
     travelItems,
+    travelers,
     currentUserId,
   };
 }
@@ -405,6 +441,7 @@ const initialState = {
   overrides: {}, // "<pinId>|<day>-<band>": boolean
   plans: [], // Plan[], each carrying contestId (null unless contested/locked-from-a-contest)
   travelItems: {}, // travelItemId -> TravelItem
+  travelers: [], // Traveler[], roster order — who is going (see normalizeTraveler)
   currentUserId: null,
   switchingTripId: null, // id of an "also planning" trip currently being opened, or null
 
@@ -474,6 +511,13 @@ function reducer(state, action) {
 
     case "SET_CURRENT_USER":
       return { ...state, currentUserId: action.id };
+
+    case "SET_TRAVELERS":
+      return {
+        ...state,
+        travelers: action.travelers,
+        trip: state.trip ? { ...state.trip, ...action.trip } : state.trip,
+      };
 
     case "SET_MEMBERS":
       return {
@@ -612,7 +656,7 @@ export function PlannerProvider({ children }) {
         // Accept an invite link and make that trip the active one.
         case "JOIN_TRIP": {
           try {
-            const joined = await api.acceptInvite(action.token);
+            const joined = await api.acceptInvite(action.token, action.claim);
             const trips = await api.listTrips();
             const payload = await loadTripView(joined.id, trips);
             dispatch({ type: "LOADED", payload });
@@ -705,6 +749,7 @@ export function PlannerProvider({ children }) {
                 proposeSheet: {
                   targetPlanId: err.body.detail.occupying_plan_id,
                   party: target?.party ?? [],
+                  partyMode: target?.partyMode ?? "only",
                   dayIndex: action.dayIndex,
                   startMinute: action.startMinute,
                   kind: placing.kind,
@@ -767,6 +812,7 @@ export function PlannerProvider({ children }) {
               rationale: action.rationale ?? "",
               items: action.items,
               party: action.party ?? [],
+              party_mode: action.partyMode ?? "only",
             });
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, contestId: contest.id };
@@ -810,6 +856,7 @@ export function PlannerProvider({ children }) {
             // for that branch's people only (backend/app/routers/
             // contests.py open_block_contest).
             party: sheet.party ?? [],
+            partyMode: sheet.partyMode ?? "only",
           });
           if (result.ok) dispatch({ type: "CLOSE_PROPOSE" });
           return result;
@@ -837,6 +884,7 @@ export function PlannerProvider({ children }) {
               rationale: action.rationale ?? "",
               items: action.items,
               party: action.party ?? [],
+              party_mode: action.partyMode ?? "only",
             });
             if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
@@ -877,7 +925,11 @@ export function PlannerProvider({ children }) {
         // act on.
         case "SPLIT_PLAN": {
           try {
-            const [, branch] = await api.splitPlan(action.planId, { leaving: action.leaving, label: action.label ?? "" });
+            const [, branch] = await api.splitPlan(action.planId, {
+              leaving: action.leaving,
+              label: action.label ?? "",
+              newcomers: action.newcomers ?? "leave",
+            });
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, branchPlanId: branch.id };
           } catch (err) {
@@ -887,7 +939,7 @@ export function PlannerProvider({ children }) {
 
         case "SET_PLAN_PARTY": {
           try {
-            await api.setPlanParty(action.planId, action.party);
+            await api.setPlanParty(action.planId, action.party, action.partyMode ?? "only");
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true };
           } catch (err) {
@@ -900,6 +952,42 @@ export function PlannerProvider({ children }) {
             await api.joinPlan(action.planId);
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true };
+          } catch (err) {
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        // The traveler roster (backend/app/routers/travelers.py). Every
+        // change re-reads the roster and the trip's count, and — since who
+        // is on a group and who shares a cost can change — the plans too.
+        case "CREATE_TRAVELER":
+        case "PATCH_TRAVELER":
+        case "DELETE_TRAVELER": {
+          if (!state.trip) return { ok: false };
+          try {
+            let result = null;
+            if (action.type === "CREATE_TRAVELER") result = await api.createTraveler(state.trip.id, action.payload);
+            else if (action.type === "PATCH_TRAVELER") result = await api.patchTraveler(action.id, action.fields);
+            else await api.deleteTraveler(action.id);
+            const [travelersRaw, tripRaw] = await Promise.all([api.listTravelers(state.trip.id), api.getTrip(state.trip.id)]);
+            dispatch({
+              type: "SET_TRAVELERS",
+              travelers: travelersRaw.map(normalizeTraveler),
+              trip: { travelerCount: tripRaw.traveler_count ?? travelersRaw.length, myTravelerId: tripRaw.my_traveler_id ?? null },
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, traveler: result ? normalizeTraveler(result) : null };
+          } catch (err) {
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "INVITE_TRAVELER": {
+          try {
+            const invite = await api.inviteTraveler(action.id, action.role ?? "companion");
+            const travelersRaw = await api.listTravelers(state.trip.id);
+            dispatch({ type: "SET_TRAVELERS", travelers: travelersRaw.map(normalizeTraveler), trip: {} });
+            return { ok: true, invite };
           } catch (err) {
             return { ok: false, error: apiMessage(err) };
           }
@@ -1043,7 +1131,6 @@ export function PlannerProvider({ children }) {
               startDate: updated.start_date,
               endDate: updated.end_date,
               phase: updated.phase,
-              travellerCount: updated.traveller_count ?? null,
             },
           });
           return updated;
@@ -1088,6 +1175,7 @@ export function PlannerProvider({ children }) {
           if ("region" in f) backendFields.region = f.region;
           if ("dur" in f) backendFields.duration_minutes = f.dur;
           if ("cost" in f) backendFields.cost_cents = Math.round(f.cost * 100);
+          if ("costBasis" in f) backendFields.cost_basis = f.costBasis;
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;
@@ -1236,6 +1324,14 @@ export function useIdeaAccess() {
       canSetCost: (item) => can("costs:write") || (can("costs:own") && mine(item)),
     };
   }, [can, currentUserId]);
+}
+
+// The viewer's own traveler on the active trip, or null when they're
+// planning but not going.
+export function useMyTraveler() {
+  const { travelers, trip } = usePlannerState();
+  const id = trip?.myTravelerId ?? null;
+  return useMemo(() => travelers.find((t) => t.id === id) ?? null, [travelers, id]);
 }
 
 export function useCurrentUser() {

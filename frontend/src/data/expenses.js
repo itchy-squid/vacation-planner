@@ -1,54 +1,36 @@
 import { dayIndexForDate } from "../lib/planTime";
 import { tripDayLabel } from "./trip";
 
-// What the trip costs, derived from the plans the app has already
-// fetched — there is no expenses endpoint (see docs/features/
+// What the trip costs, derived from the plans the app has already fetched
+// — there is no expenses endpoint (see docs/features/
 // proposals-and-expenses-feature-spec.md §2).
 //
-// The one rule worth stating plainly, because every number here depends on
-// it: an item's `costCents` is the *whole* cost, for everyone sharing it.
-// Per-head is a division done for display and never stored, so a row total
-// and the trip total can't drift apart no matter how the rounding falls —
-// three people splitting $10.00 each see $3.33, and the trip still shows
-// $10.00 rather than $9.99.
+// Prices are per person unless an item says "for the group"
+// (backend/app/derive.py item_money). The server works out each scheduled
+// stop's money, because it depends on who is on the plan: `sharerIds` (the
+// travelers sharing it), `eachCents` (what one of them pays) and
+// `totalCents` (the whole bill). Everything here adds those up.
 
 // A cost counts once it's on the calendar for real. A contested plan is a
 // proposal and a draft is private, so neither is money the group has
 // agreed to spend yet.
 export const SCHEDULED_STATUSES = ["placed", "pencilled", "locked"];
 
-// Who a cost is split between. An empty `heads` means everyone, which is
-// the common case — and "everyone" is the trip's traveller count, not its
-// contributor count, because the people planning a trip and the people
-// going on it are different questions (feature spec decision 9). Floors at
-// 1 so the division below can never blow up on a trip with neither.
-//
-// Between the two sits the plan's own party (lib/party.js): on a day the
-// group has split, a cost with no heads of its own is shared by the people
-// on the plan it's in — Ana and Lin's guide is split two ways, not six.
-export function headcountFor(item, trip, contributors, party = []) {
-  const heads = item.heads ?? [];
-  if (heads.length) return heads.length;
-  if (party?.length) return party.length;
-  return trip?.travellerCount || contributors.length || 1;
-}
-
-// Who actually shares an item's cost: its own heads, else the plan's
-// party, else everyone ([]).
-export function sharersOf(item, party = []) {
-  const heads = item.heads ?? [];
-  if (heads.length) return heads;
-  return party ?? [];
-}
-
-export function perHeadCents(item, headcount) {
-  return Math.round((item.costCents ?? 0) / Math.max(1, headcount));
+// Money for a stop that isn't saved yet (the propose screen's stop list):
+// the same rule the server applies. `memberIds` is who the block is for.
+export function stopMoney(stop, memberIds) {
+  const heads = stop.heads ?? [];
+  const sharers = heads.length ? heads : memberIds ?? [];
+  const count = Math.max(1, sharers.length);
+  const price = stop.costCents ?? 0;
+  if ((stop.costBasis ?? "per_head") === "group") {
+    return { headcount: sharers.length, perHeadCents: Math.round(price / count), totalCents: price };
+  }
+  return { headcount: sharers.length, perHeadCents: price, totalCents: price * count };
 }
 
 // Whole dollars where the amount is whole, cents where it isn't. The
-// cents matter specifically on the per-head figure: $15 split four ways is
-// $3.75, and rounding that to "$4 × 4" would print arithmetic that visibly
-// disagrees with the $15 total sitting next to it.
+// cents matter on the per-person figure: $15 split four ways is $3.75.
 export function formatMoney(cents) {
   const value = (cents ?? 0) / 100;
   return `$${value.toLocaleString(undefined, {
@@ -57,17 +39,29 @@ export function formatMoney(cents) {
   })}`;
 }
 
-function initialsFor(heads, contributors) {
-  return heads
-    .map((id) => contributors.find((c) => c.id === id))
-    .filter(Boolean)
-    .map((c) => c.initial)
-    .join(", ");
+// Who pays for a traveler: whoever they point at, or themselves.
+export function payerOf(traveler) {
+  return traveler.paidById ?? traveler.id;
 }
 
-// One row per scheduled item, grouped by trip day, plus the two summary
-// numbers. Days with no priced items produce no card at all.
-export function buildExpenses(plans, { trip, contributors, viewerId }) {
+// The travelers whose costs a "Showing" choice covers:
+// - "paying": me and everyone I pay for (the default)
+// - "me": just me
+// - "everyone"
+// - a traveler id: just them
+export function travelersFor(scope, travelers, myTravelerId) {
+  if (scope === "everyone") return travelers;
+  if (scope === "me") return travelers.filter((t) => t.id === myTravelerId);
+  if (scope === "paying") return travelers.filter((t) => payerOf(t) === myTravelerId);
+  return travelers.filter((t) => t.id === scope);
+}
+
+// One row per scheduled stop with a visible price, grouped by trip day,
+// plus the summary for `shownIds` — the travelers the viewer chose to see.
+export function buildExpenses(plans, { trip, travelers, shownIds }) {
+  const shown = new Set(shownIds);
+  const initials = new Map(travelers.map((t) => [t.id, t.initial]));
+  const everyoneCount = travelers.length;
   const rows = [];
 
   plans
@@ -75,34 +69,31 @@ export function buildExpenses(plans, { trip, contributors, viewerId }) {
     .forEach((plan) => {
       const dayIndex = plan.startDt ? dayIndexForDate(plan.startDt, trip.startDate) : null;
       plan.items.forEach((item, index) => {
-        const heads = sharersOf(item, plan.party);
-        const headcount = headcountFor(item, trip, contributors, plan.party);
-        const isSubset = heads.length > 0;
+        if (item.totalCents == null) return; // a price this viewer can't see
+        const sharers = item.sharerIds ?? [];
+        const mine = sharers.filter((id) => shown.has(id));
+        const isSubset = sharers.length < everyoneCount;
         rows.push({
           key: `${plan.id}-${item.pinId ?? "t"}-${item.travelItemId ?? "p"}-${index}`,
-          pinId: item.pinId,
-          travelItemId: item.travelItemId,
           dayIndex,
           title: item.title,
-          // Served pre-computed by the API, so this agrees with the
-          // compare and itinerary stop lists by construction.
           startMinuteOfDay: item.startMinuteOfDay,
-          costCents: item.costCents ?? 0,
-          headcount,
-          perHeadCents: perHeadCents(item, headcount),
-          heads,
-          // A subset spells out whose cost it is; "everyone" doesn't need
-          // to name four people to say so.
-          headsLabel: isSubset ? initialsFor(heads, contributors) : "",
-          // Drives the accent bar's colour: the viewer's own money reads
-          // differently from the trip's.
-          viewerIsHead: isSubset ? heads.includes(viewerId) : true,
+          costBasis: item.costBasis,
+          eachCents: item.eachCents ?? 0,
+          totalCents: item.totalCents ?? 0,
+          headcount: sharers.length,
+          sharers,
+          // Only a subset is spelled out; "everyone" doesn't need seven
+          // initials to say so.
+          headsLabel: isSubset ? sharers.map((id) => initials.get(id)).filter(Boolean).join(", ") : "",
+          shownCount: mine.length,
+          shownCents: (item.eachCents ?? 0) * mine.length,
         });
       });
     });
 
-  const priced = rows.filter((r) => r.costCents > 0);
-  const free = rows.filter((r) => r.costCents === 0);
+  const priced = rows.filter((r) => r.totalCents > 0);
+  const free = rows.filter((r) => r.totalCents === 0);
 
   const byDay = new Map();
   priced.forEach((row) => {
@@ -119,14 +110,20 @@ export function buildExpenses(plans, { trip, contributors, viewerId }) {
       rows: [...dayRows].sort((a, b) => (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0)),
     }));
 
+  // What each shown traveler's costs come to, for settling up.
+  const perTraveler = travelers
+    .filter((t) => shown.has(t.id))
+    .map((t) => ({
+      traveler: t,
+      cents: priced.filter((r) => r.sharers.includes(t.id)).reduce((sum, r) => sum + r.eachCents, 0),
+    }));
+
   return {
     days,
     freeRows: free.sort((a, b) => (a.dayIndex ?? 0) - (b.dayIndex ?? 0) || (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0)),
-    // Your share divides; the trip total never does.
-    yourShareCents: priced
-      .filter((r) => r.viewerIsHead)
-      .reduce((sum, r) => sum + r.perHeadCents, 0),
-    tripTotalCents: priced.reduce((sum, r) => sum + r.costCents, 0),
+    shownCents: priced.reduce((sum, r) => sum + r.shownCents, 0),
+    tripTotalCents: priced.reduce((sum, r) => sum + r.totalCents, 0),
+    perTraveler,
     pricedCount: priced.length,
   };
 }

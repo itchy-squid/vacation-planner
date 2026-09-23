@@ -20,6 +20,7 @@ pair of stops rather than a constant, and is still not wired up.
 from __future__ import annotations
 
 from .models import Plan, PlanItem
+from .party import party_of
 from .tripclock import minutes_between
 
 
@@ -34,14 +35,15 @@ def item_duration_minutes(item: PlanItem) -> int:
     return item.travel_item.duration_minutes
 
 
+def item_source(item: PlanItem):
+    return item.pin if item.pin_id is not None else item.travel_item
+
+
 def item_cost_cents(item: PlanItem) -> int:
-    """The whole cost of the underlying pin/travel item, for everyone
-    sharing it. Never divided here: per-head is a display division, so the
-    authoritative row total can't drift from the trip total (feature spec
-    decision 3)."""
-    if item.pin_id is not None:
-        return item.pin.cost_cents
-    return item.travel_item.cost_cents
+    """The price as entered on the pin/travel item — per person or for
+    the group, depending on its cost_basis. See item_money for what that
+    comes to."""
+    return item_source(item).cost_cents
 
 
 def item_heads(item: PlanItem) -> list[int]:
@@ -63,9 +65,34 @@ def plan_range_minutes(plan: Plan) -> int:
     return minutes_between(plan.ends_at, plan.starts_at)
 
 
+def trip_roster(plan: Plan) -> set[int]:
+    return {t.id for t in plan.trip.travelers}
+
+
+def item_money(plan: Plan, item: PlanItem, roster: set[int] | None = None) -> tuple[list[int], int, int]:
+    """(sharers, each_cents, total_cents) for one stop.
+
+    Sharers are the item's own heads when it has any, otherwise whoever is
+    on the plan (its party — everyone, except on a day the group has
+    split). A "per_head" price is what each of them pays and the total is
+    that many times it; a "group" price is the total, and each person's
+    share is a display division rounded to the cent. Floors at one sharer so
+    a plan for nobody can't divide by zero."""
+    roster = trip_roster(plan) if roster is None else roster
+    source = item_source(item)
+    heads = [h for h in (source.heads or []) if h in roster]
+    sharers = sorted(heads) if heads else sorted(party_of(plan).members(roster))
+    count = max(1, len(sharers))
+    price = source.cost_cents or 0
+    if (source.cost_basis or "per_head") == "group":
+        return sharers, round(price / count), price
+    return sharers, price, price * count
+
+
 def plan_totals(plan: Plan, range_minutes: int) -> dict[str, int]:
     total_duration = sum(item_duration_minutes(i) for i in plan.items)
-    total_cost = sum(item_cost_cents(i) for i in plan.items)
+    roster = trip_roster(plan)
+    total_cost = sum(item_money(plan, i, roster)[2] for i in plan.items)
     return {
         "total_duration_minutes": total_duration,
         "total_cost_cents": total_cost,

@@ -23,12 +23,12 @@ from ..events import bus
 from ..models import (
     AvailabilityOverride,
     Comment,
-    Contest,
     Contributor,
     Pin,
     Plan,
     PlanStatus,
     TravelItem,
+    Traveler,
     Trip,
     TripInvite,
     Vote,
@@ -37,11 +37,13 @@ from ..permissions import MEMBERS_MANAGE, TRIP_READ, VOTING_ROLES, Access, Role,
 from ..schemas import (
     ContributorOut,
     ContributorRoleUpdate,
+    InviteAccept,
     InviteCreate,
     InviteOut,
     InvitePreviewOut,
     TripOut,
 )
+from .travelers import add_traveler, traveler_brief, traveler_for_member
 from .trips import member_count, owner_of, owner_out, trip_out
 
 router = APIRouter(prefix="/api", tags=["sharing"])
@@ -99,7 +101,7 @@ def _remove_member(db: Session, member: Contributor) -> list[tuple[int, int]]:
     Pins, travel items, placed plans and proposals stay, unattributed.
     Their private drafts go (nobody else can see them to keep them), as do
     their votes and comments, which only mean anything as theirs. Their id
-    comes out of every cost split on the trip."""
+    stays on the roster as a traveler without an account."""
     trip_id = member.trip_id
     member_id = member.id
 
@@ -120,59 +122,14 @@ def _remove_member(db: Session, member: Contributor) -> list[tuple[int, int]]:
     )
     db.execute(update(TripInvite).where(TripInvite.created_by_id == member_id).values(created_by_id=None))
 
-    for model in (Pin, TravelItem):
-        for row in db.scalars(select(model).where(model.trip_id == trip_id)).all():
-            if row.heads and member_id in row.heads:
-                row.heads = [h for h in row.heads if h != member_id]
-
-    orphan_candidates |= _strip_from_parties(db, trip_id, member_id)
+    # They're still going even though they've left the app: their
+    # traveler stays on every group and cost split, just without an
+    # account behind it (routers/travelers.py). Removing the *traveler* is
+    # a separate, deliberate act on the roster.
+    db.execute(update(Traveler).where(Traveler.contributor_id == member_id).values(contributor_id=None))
 
     db.delete(member)
     return forget_orphaned_travel_items(db, orphan_candidates)
-
-
-def _strip_from_parties(db: Session, trip_id: int, member_id: int) -> set[int]:
-    """Take someone out of every split on the trip (app/party.py).
-
-    A branch only they were on has nobody left to go, so it goes — a vote
-    for only them with it. And once they've gone, a branch that is now
-    everyone who's left *is* everyone, so it's stored as [] like any other
-    plan for the whole group. Returns travel item ids that may now be
-    orphaned, for the caller's custom-event cleanup."""
-    remaining = set(
-        db.scalars(select(Contributor.id).where(Contributor.trip_id == trip_id, Contributor.id != member_id)).all()
-    )
-
-    def after(party: list[int]) -> list[int] | None:
-        """The party without them; None when nobody is left on it."""
-        kept = sorted(set(party) - {member_id})
-        if not kept:
-            return None
-        return [] if set(kept) >= remaining else kept
-
-    orphan_candidates: set[int] = set()
-    for contest in db.scalars(select(Contest).where(Contest.trip_id == trip_id)).all():
-        if not contest.party:
-            continue
-        new = after(contest.party)
-        if new is None:
-            orphan_candidates |= travel_item_ids_of(contest.plans)
-            db.delete(contest)  # cascades to its options and votes
-        elif new != contest.party:
-            contest.party = new
-    db.flush()
-
-    for plan in db.scalars(select(Plan).where(Plan.trip_id == trip_id)).all():
-        if not plan.party:
-            continue
-        new = after(plan.party)
-        if new is None:
-            orphan_candidates |= travel_item_ids_of([plan])
-            db.delete(plan)
-        elif new != plan.party:
-            plan.party = new
-    db.flush()
-    return orphan_candidates
 
 
 @router.delete("/trips/{trip_id}/contributors/{contributor_id}", status_code=204)
@@ -227,13 +184,14 @@ def _invite_out(invite: TripInvite, joined: int) -> InviteOut:
         created_at=invite.created_at,
         created_by_id=invite.created_by_id,
         joined_count=joined,
+        traveler_id=invite.traveler_id,
     )
 
 
 def _live_invites(db: Session, trip_id: int) -> list[TripInvite]:
     return db.scalars(
         select(TripInvite)
-        .where(TripInvite.trip_id == trip_id, TripInvite.revoked_at.is_(None))
+        .where(TripInvite.trip_id == trip_id, TripInvite.revoked_at.is_(None), TripInvite.traveler_id.is_(None))
         .order_by(TripInvite.created_at, TripInvite.id)
     ).all()
 
@@ -309,12 +267,32 @@ def preview_invite(
         member_count=member_count(db, trip.id),
         already_member=existing is not None,
         my_role=existing.role if existing else None,
+        invite_traveler=_invite_traveler(db, invite),
+        unclaimed_travelers=[
+            traveler_brief(db, t)
+            for t in db.scalars(
+                select(Traveler)
+                .where(Traveler.trip_id == trip.id, Traveler.contributor_id.is_(None))
+                .order_by(Traveler.position, Traveler.id)
+            ).all()
+        ],
     )
+
+
+def _invite_traveler(db: Session, invite: TripInvite):
+    """The traveler a link was made for, while they're still unclaimed."""
+    if invite.traveler_id is None:
+        return None
+    traveler = db.get(Traveler, invite.traveler_id)
+    if traveler is None or traveler.contributor_id is not None:
+        return None
+    return traveler_brief(db, traveler)
 
 
 @router.post("/invites/{token}/accept", response_model=TripOut)
 def accept_invite(
     token: str,
+    payload: InviteAccept | None = None,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ):
@@ -337,7 +315,42 @@ def accept_invite(
             joined_via_invite_id=invite.id,
         )
         db.add(member)
+        db.flush()
+        _claim_traveler(db, trip.id, invite, member, payload or InviteAccept())
         db.commit()
         db.refresh(member)
         bus.publish(trip.id, "member.joined", {"contributor_id": member.id, "role": member.role})
     return trip_out(db, trip, member)
+
+
+def _claim_traveler(db: Session, trip_id: int, invite: TripInvite, member: Contributor, payload: InviteAccept) -> None:
+    """Which traveler a newly joined member is.
+
+    - A link made for one listed traveler claims them, and stops working.
+    - Otherwise the person picked a listed traveler on the join screen
+      ("are you one of these?"), said they're not going, or neither — in
+      which case they're added to the roster as themselves.
+
+    A traveler someone else has already claimed can't be claimed again;
+    racing for the same row is a 409, and the loser can simply try again
+    as someone new."""
+    target: Traveler | None = None
+    if invite.traveler_id is not None:
+        candidate = db.get(Traveler, invite.traveler_id)
+        if candidate is not None and candidate.contributor_id is None:
+            target = candidate
+            invite.revoked_at = _now()
+    elif payload.traveler_id is not None:
+        candidate = db.get(Traveler, payload.traveler_id)
+        if candidate is None or candidate.trip_id != trip_id:
+            raise HTTPException(status_code=404, detail="That traveler isn't on this trip")
+        if candidate.contributor_id is not None:
+            raise HTTPException(status_code=409, detail=f"{candidate.name} has already joined. Pick someone else, or join as yourself.")
+        target = candidate
+    if target is not None:
+        target.contributor_id = member.id
+        member.tint = target.tint
+        return
+    if payload.not_going or traveler_for_member(db, trip_id, member.id) is not None:
+        return
+    add_traveler(db, trip_id, member.display_name, contributor_id=member.id, tint=member.tint)

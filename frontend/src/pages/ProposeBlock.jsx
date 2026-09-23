@@ -7,13 +7,14 @@ import ComparisonColumns, { summariseStops } from "../components/planner/Compari
 import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
 import Stepper from "../components/forms/Stepper";
-import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess, useCurrentUser } from "../state/PlannerContext";
-import { namesOf, partiesMeet, partyKey, partyMembers } from "../lib/party";
+import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess, useMyTraveler } from "../state/PlannerContext";
+import { membersOf, namesOf, partiesMeet, partyKey, planIncludes } from "../lib/party";
 import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
 import { fmtMin } from "../data/derive";
-import { headcountFor, perHeadCents } from "../data/expenses";
+import { stopMoney } from "../data/expenses";
+import CostField from "../components/forms/CostField";
 import { bandsForMinuteRange, clockLabel, isoForDayMinute } from "../lib/planTime";
 import { reasonsFor, worksInAnyBand } from "../lib/availability";
 import {
@@ -90,8 +91,8 @@ export default function ProposeBlock() {
   const dayIndex = Number(useParams().day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, plans, pins, travelItems, contributors, overrides } = state;
-  const currentUser = useCurrentUser();
+  const { trip, plans, pins, travelItems, contributors, travelers, overrides } = state;
+  const myTraveler = useMyTraveler();
 
   const reopenedDraftId = location.state?.draftPlanId ?? null;
   const contestId = location.state?.contestId ?? null;
@@ -142,6 +143,7 @@ export default function ProposeBlock() {
             durationMinutes: item.durationMinutes,
             offsetMinutes: item.offsetMinutes,
             costCents: item.costCents,
+            costBasis: item.costBasis,
             heads: item.heads,
           }))
         )
@@ -234,43 +236,57 @@ export default function ProposeBlock() {
       .map((e) => e.plan);
   }, [dayEntries, selection]);
 
-  // Who this block is for (lib/party.js; [] = everyone). A running vote,
-  // or a reopened draft, already says. Otherwise the hours do: on a day
-  // the group has split, a block claimed over one group's plans is a
-  // decision for that group — and where the hours hold more than one
-  // group's, it's yours. Only the people it's for vote on it, and only
-  // their plans are swept up into "on the board" (backend/app/routers/
-  // contests.py open_block_contest).
-  const party = useMemo(() => {
-    if (contest) return contest.party ?? [];
-    if (reopenedDraft) return reopenedDraft.party ?? [];
-    if (location.state?.party) return location.state.party;
-    const groups = new Map();
-    plansInHours.forEach((p) => groups.set(partyKey(p.party), p.party ?? []));
-    if (groups.size === 1) return [...groups.values()][0];
-    if (groups.size > 1) {
-      const mine = [...groups.values()].find((p) => p.length && p.includes(currentUser.id));
-      return mine ?? [];
+  // Who this block is for (lib/party.js) — a { party, partyMode,
+  // partyMembers, forEveryone } like a plan's. A running vote, or a
+  // reopened draft, already says. Otherwise the hours do: on a day the
+  // group has split, a block claimed over one group's plans is a decision
+  // for that group — and where the hours hold more than one group's, it's
+  // yours. Only the people it's for vote on it, and only their plans are
+  // swept up into "on the board" (backend/app/routers/contests.py
+  // open_block_contest).
+  const group = useMemo(() => {
+    const everyone = { party: [], partyMode: "except", partyMembers: travelers.map((t) => t.id), forEveryone: true };
+    const pick = (p) => ({ party: p.party ?? [], partyMode: p.partyMode ?? "except", partyMembers: p.partyMembers ?? [], forEveryone: p.forEveryone ?? true });
+    if (contest) {
+      return {
+        party: contest.party ?? [],
+        partyMode: contest.party_mode ?? "except",
+        partyMembers: contest.party_members ?? [],
+        forEveryone: contest.for_everyone ?? true,
+      };
     }
-    return [];
-  }, [contest, reopenedDraft, location.state, plansInHours, currentUser.id]);
+    if (reopenedDraft) return pick(reopenedDraft);
+    if (location.state?.group) return location.state.group;
+    const groups = new Map();
+    plansInHours.forEach((p) => groups.set(partyKey(p), p));
+    if (groups.size === 1) return pick([...groups.values()][0]);
+    if (groups.size > 1) {
+      const mine = [...groups.values()].find((p) => !p.forEveryone && planIncludes(p, myTraveler?.id ?? null));
+      return mine ? pick(mine) : everyone;
+    }
+    return everyone;
+  }, [contest, reopenedDraft, location.state, plansInHours, myTraveler, travelers]);
 
   const insidePlans = useMemo(
-    () => plansInHours.filter((p) => partiesMeet(p.party, party)),
-    [plansInHours, party]
+    () => plansInHours.filter((p) => partiesMeet(p, group)),
+    [plansInHours, group]
   );
-  // The people who'd vote: the block's group, less anyone who can't vote.
-  const voters = useMemo(
-    () => partyMembers(party, contributors).filter((c) => c.role !== "reader"),
-    [party, contributors]
-  );
+  // The people who'd vote: members linked to a traveler in the block's
+  // group (everyone who can vote, for a block for everyone). Travelers
+  // without an account don't vote.
+  const voters = useMemo(() => {
+    const canVote = contributors.filter((c) => c.role !== "reader");
+    if (group.forEveryone) return canVote;
+    const linked = new Set(membersOf(group, travelers).map((t) => t.contributorId).filter((id) => id != null));
+    return canVote.filter((c) => linked.has(c.id));
+  }, [group, contributors, travelers]);
 
   // Only votes that are this group's business can clash with this block
   // or be joined by it; the other group's vote over the same hours is
   // their own (backend/app/routers/contests.py open_block_contest).
   const partyWindows = useMemo(
-    () => contestWindowsFrom(dayEntries.filter((e) => partiesMeet(e.plan.party, party))),
-    [dayEntries, party]
+    () => contestWindowsFrom(dayEntries.filter((e) => partiesMeet(e.plan, group))),
+    [dayEntries, group]
   );
 
   // The hours in the drag that are already out for a vote. An exactly
@@ -301,7 +317,6 @@ export default function ProposeBlock() {
   );
 
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
-  const travellerCount = trip.travellerCount || contributors.length || 1;
 
   // The availability question the claimed hours ask, in the currency
   // AvailabilityRule speaks: a calendar day-of-month and the AM/PM/EVE
@@ -356,6 +371,7 @@ export default function ProposeBlock() {
         baseDurationMinutes: item.baseDurationMinutes,
         durationMinutes: item.durationMinutes,
         costCents: item.costCents,
+        costBasis: item.costBasis,
         heads: item.heads,
         ...availability(item.pinId),
       });
@@ -379,6 +395,7 @@ export default function ProposeBlock() {
           baseDurationMinutes: pin.dur,
           durationMinutes: pin.dur,
           costCents: pin.costCents,
+          costBasis: pin.costBasis,
           heads: pin.heads,
           who: pin.who,
           ...availability(pin.id),
@@ -394,6 +411,7 @@ export default function ProposeBlock() {
           baseDurationMinutes: t.dur,
           durationMinutes: t.dur,
           costCents: t.costCents,
+          costBasis: t.costBasis,
           heads: t.heads,
           who: t.who,
           works: true,
@@ -433,7 +451,7 @@ export default function ProposeBlock() {
 
   function openNewStop() {
     setError("");
-    setStopForm({ option: null, title: "", dur: 60, cost: 0, heads: [], gap: 0, costEditable: ideaAccess.canSetCost(null) });
+    setStopForm({ option: null, title: "", dur: 60, cost: 0, costBasis: "per_head", heads: [], gap: 0, costEditable: ideaAccess.canSetCost(null) });
   }
 
   function openPullIn(option) {
@@ -443,6 +461,7 @@ export default function ProposeBlock() {
       title: option.title,
       dur: option.durationMinutes,
       cost: (option.costCents ?? 0) / 100,
+      costBasis: option.costBasis ?? "per_head",
       heads: option.heads ?? [],
       gap: 0,
       costEditable: ideaAccess.canSetCost(option),
@@ -495,15 +514,32 @@ export default function ProposeBlock() {
       const option = stopForm.option;
       setBusy(true);
       try {
-        if (stopForm.costEditable && costCents !== (option.costCents ?? 0)) {
+        const basisChanged = stopForm.costBasis !== (option.costBasis ?? "per_head");
+        if (stopForm.costEditable && (costCents !== (option.costCents ?? 0) || basisChanged)) {
           if (option.kind === "pin") {
-            const result = await dispatch({ type: "PATCH_PIN", id: option.refId, fields: { cost: costCents / 100 } });
+            const result = await dispatch({
+              type: "PATCH_PIN",
+              id: option.refId,
+              fields: { cost: costCents / 100, costBasis: stopForm.costBasis },
+            });
             if (!result.ok) throw new Error(result.error || "Couldn't update that cost.");
           } else {
-            await dispatch({ type: "PATCH_TRAVEL_ITEM", id: option.refId, fields: { cost_cents: costCents } });
+            await dispatch({
+              type: "PATCH_TRAVEL_ITEM",
+              id: option.refId,
+              fields: { cost_cents: costCents, cost_basis: stopForm.costBasis },
+            });
           }
         }
-        addStop({ ...option, durationMinutes, costCents: stopForm.costEditable ? costCents : option.costCents }, gap);
+        addStop(
+          {
+            ...option,
+            durationMinutes,
+            costCents: stopForm.costEditable ? costCents : option.costCents,
+            costBasis: stopForm.costEditable ? stopForm.costBasis : option.costBasis,
+          },
+          gap
+        );
         setStopForm(null);
       } catch (err) {
         setError(err.message || "Couldn't add that stop.");
@@ -526,6 +562,7 @@ export default function ProposeBlock() {
           kind: "other",
           duration_minutes: durationMinutes,
           cost_cents: stopForm.costEditable ? costCents : 0,
+          cost_basis: stopForm.costBasis,
         },
       });
       createdHereRef.current.add(created.id);
@@ -540,6 +577,7 @@ export default function ProposeBlock() {
           baseDurationMinutes: created.dur,
           durationMinutes: created.dur,
           costCents: created.costCents ?? costCents,
+          costBasis: created.costBasis ?? stopForm.costBasis,
           heads: stopForm.heads,
         },
         gap
@@ -649,7 +687,7 @@ export default function ProposeBlock() {
     const { startsAt, endsAt } = windowIso();
     const result = reopenedDraftId
       ? await publishExistingDraft(startsAt, endsAt)
-      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems(), party });
+      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems(), party: group.party, partyMode: group.partyMode });
     setBusy(false);
     if (result.ok) {
       committedRef.current = true;
@@ -672,7 +710,8 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
-      party,
+      party: group.party,
+      partyMode: group.partyMode,
     });
     if (!saved.ok) return saved;
     return dispatch({ type: "PUBLISH_DRAFT", planId: saved.planId });
@@ -691,7 +730,8 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
-      party,
+      party: group.party,
+      partyMode: group.partyMode,
     });
     setBusy(false);
     if (result.ok) {
@@ -772,8 +812,7 @@ export default function ProposeBlock() {
           windowMinutes={windowMinutes}
           plannedMinutes={plannedMinutes}
           stops={stops.map((s) => {
-            const headcount = headcountFor(s, trip, contributors, party);
-            return { ...s, headcount, perHeadCents: perHeadCents(s, headcount) };
+            return { ...s, ...stopMoney(s, group.partyMembers) };
           })}
           pullInGroups={pullInGroups}
           title={editing ? "Edit this set" : "Your block"}
@@ -790,8 +829,7 @@ export default function ProposeBlock() {
           onSubmitStop={submitStopForm}
           onCancelStop={() => setStopForm(null)}
           nextStartMin={selection.startMin + spanMinutes}
-          contributors={contributors}
-          travellerCount={travellerCount}
+          travelers={travelers}
           busy={busy}
           error={error}
           canReview={canReview}
@@ -824,10 +862,10 @@ export default function ProposeBlock() {
                 )
               : boardColumn(insideItems, selection, windowMinutes)
           }
-          yours={yoursColumn(stops, selection, windowMinutes)}
+          yours={yoursColumn(stops, selection, windowMinutes, group.partyMembers)}
           showTotals={seesAllCosts}
           contributors={voters}
-          groupLabel={party.length ? namesOf(voters) : ""}
+          groupLabel={group.forEveryone ? "" : namesOf(membersOf(group, travelers))}
           busy={busy}
           error={error}
           isDraft={Boolean(reopenedDraftId)}
@@ -924,6 +962,7 @@ function stopsFromOption(option) {
           durationMinutes: it.duration_minutes ?? source?.duration_minutes ?? 0,
           offsetMinutes: it.offset_minutes,
           costCents: source?.cost_cents ?? 0,
+          costBasis: source?.cost_basis ?? "per_head",
           heads: source?.heads ?? [],
         };
       })
@@ -975,11 +1014,11 @@ function boardColumn(insideItems, selection, windowMinutes) {
   return {
     lines,
     summary: summariseStops(insideItems.length, windowMinutes - planned),
-    totalCents: insideItems.reduce((sum, { item }) => sum + (item.costCents ?? 0), 0),
+    totalCents: insideItems.reduce((sum, { item }) => sum + (item.totalCents ?? 0), 0),
   };
 }
 
-function yoursColumn(stops, selection, windowMinutes) {
+function yoursColumn(stops, selection, windowMinutes, memberIds) {
   // Clock times, not offsets: the column beside this one shows "09:30 ·
   // National Palace Museum", and two columns meant to be compared at a
   // glance can't be measuring from different zeroes.
@@ -994,7 +1033,7 @@ function yoursColumn(stops, selection, windowMinutes) {
   return {
     lines,
     summary: summariseStops(stops.length, windowMinutes - planned),
-    totalCents: stops.reduce((sum, s) => sum + (s.costCents ?? 0), 0),
+    totalCents: stops.reduce((sum, s) => sum + stopMoney(s, memberIds).totalCents, 0),
   };
 }
 
@@ -1188,8 +1227,7 @@ function StepThree({
   onSubmitStop,
   onCancelStop,
   nextStartMin,
-  contributors,
-  travellerCount,
+  travelers,
   busy,
   error,
   canReview,
@@ -1232,8 +1270,7 @@ function StepThree({
             onCancel={onCancelStop}
             startMin={nextStartMin}
             windowEndMin={selection.endMin}
-            contributors={contributors}
-            travellerCount={travellerCount}
+            travelers={travelers}
             busy={busy}
           />
         )}
@@ -1343,7 +1380,7 @@ const fieldStyle = {
 // does on a stop already in the list (components/planner/StopList.jsx): it
 // edits the free time in front of the stop, so it can never be set earlier
 // than where the last stop ends and two stops still can't overlap.
-function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, contributors, travellerCount, busy }) {
+function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, travelers, busy }) {
   const ref = useRef(null);
   const pulling = Boolean(form.option);
   const formKey = pulling ? `${form.option.kind}:${form.option.refId}` : "new";
@@ -1412,20 +1449,13 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, c
         </label>
       </div>
       {form.costEditable && (
-        <div style={{ display: "flex", gap: 8 }}>
-          <label style={{ flex: 1, minWidth: 0 }}>
-            <div className="mono-caption">Cost, in total ($)</div>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.cost}
-              onChange={(e) => set("cost")(e.target.value)}
-              style={fieldStyle}
-            />
-          </label>
-          <div style={{ flex: 1, minWidth: 0 }} />
-        </div>
+        <CostField
+          id="stop-cost"
+          value={form.cost}
+          onChange={set("cost")}
+          basis={form.costBasis}
+          onBasis={set("costBasis")}
+        />
       )}
 
       <div className="mono-data-sm" style={{ color: pastEnd ? "var(--warn)" : "var(--text-faint)" }}>
@@ -1441,7 +1471,7 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, c
       )}
 
       {!pulling && form.costEditable && (
-        <HeadsPicker contributors={contributors} value={form.heads} onChange={set("heads")} travellerCount={travellerCount} />
+        <HeadsPicker travelers={travelers} value={form.heads} onChange={set("heads")} />
       )}
 
       <div style={{ display: "flex", gap: 8 }}>

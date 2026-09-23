@@ -8,8 +8,8 @@ from ..custom_events import forget_orphaned_travel_items, publish_forgotten, tra
 from ..db import get_db
 from ..derive import item_duration_minutes, item_start_minutes
 from ..events import bus
-from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Vote
-from ..party import names, normalize_party
+from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Traveler, Vote
+from ..party import apply_party, names, normalize_party, party_of, roster_ids
 from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, VOTES_WRITE, VOTING_ROLES, Access, require
 from ..tripclock import minutes_between, same_moment
 from ..schemas import (
@@ -96,11 +96,14 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
     #
     # On a split day a decision belongs to one branch: only the people it's
     # for can vote, so the count and the majority are theirs too.
+    party = party_of(contest)
+    roster = roster_ids(db, contest.trip_id)
+    allowed = contest_voter_ids(db, contest)
     voters = select(Contributor).where(
         Contributor.trip_id == contest.trip_id, Contributor.role.in_([r.value for r in VOTING_ROLES])
     )
-    if contest.party:
-        voters = voters.where(Contributor.id.in_(contest.party))
+    if allowed is not None:
+        voters = voters.where(Contributor.id.in_(allowed))
     contributor_count = len(db.scalars(voters).all())
 
     # Strictly more than half. Advisory: the owner still locks, and nothing
@@ -117,13 +120,33 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
         winning_plan_id=contest.winning_plan_id,
         starts_at=contest.starts_at,
         ends_at=contest.ends_at,
-        party=list(contest.party or []),
+        party=list(party.ids),
+        party_mode=party.mode,
+        party_members=sorted(party.members(roster)),
+        for_everyone=party.is_everyone,
         plans=plans,
         voted_count=len(contest.votes),
         contributor_count=contributor_count,
         majority_plan_id=majority_plan_id,
         my_vote_plan_id=my_vote_plan_id,
     )
+
+
+def contest_voter_ids(db: Session, contest: Contest) -> set[int] | None:
+    """The members who may vote on a decision for part of the group: those
+    linked to a traveler on its party. None when it's for everyone — then
+    every voting member votes, going or not, as before. Travelers without
+    an account never vote; Kai's say goes through whoever asks him."""
+    party = party_of(contest)
+    if party.is_everyone:
+        return None
+    members = party.members(roster_ids(db, contest.trip_id))
+    return {
+        cid
+        for cid in db.scalars(
+            select(Traveler.contributor_id).where(Traveler.id.in_(members), Traveler.contributor_id.is_not(None))
+        ).all()
+    }
 
 
 def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan]) -> Plan | None:
@@ -169,6 +192,7 @@ def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan])
         label=captured[0].label,
         color=captured[0].color,
         party=list(contest.party or []),
+        party_mode=contest.party_mode,
         status=PlanStatus.contested,
         contest_id=contest.id,
     )
@@ -208,6 +232,7 @@ def open_block_contest(
     items: list[PlanItemCreate],
     contributor: Contributor | None,
     party: list[int] | None = None,
+    party_mode: str | None = None,
 ) -> Contest:
     """The one server path behind both proposal entry points — the tray's
     four-step "Propose a block" flow and DaySchedule's quick tap-an-
@@ -242,7 +267,7 @@ def open_block_contest(
     # crossing it (feature spec §6.5), so reaching here means a race or a
     # client that skipped the clip — either way, refusing is what keeps
     # "everything in the window is in the contest" true.
-    party = normalize_party(db, trip_id, party)
+    party = normalize_party(db, trip_id, party, party_mode)
     locked = find_overlapping_plans(db, trip_id, starts_at, ends_at, (PlanStatus.locked,), party=party)
     if locked:
         raise HTTPException(
@@ -255,8 +280,9 @@ def open_block_contest(
 
     overlapping = find_overlapping_plans(db, trip_id, starts_at, ends_at, _CAPTURABLE_STATUSES, party=party)
     for plan in overlapping:
-        if list(plan.party or []) != party:
-            who = names(db, plan.party) if plan.party else "everyone"
+        theirs = party_of(plan)
+        if theirs != party:
+            who = "everyone" if theirs.is_everyone else names(db, theirs.members(roster_ids(db, trip_id)))
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -303,8 +329,8 @@ def open_block_contest(
             status=ContestStatus.open,
             starts_at=starts_at,
             ends_at=ends_at,
-            party=party,
         )
+        apply_party(contest, party)
         db.add(contest)
         db.flush()
         _capture_into_incumbent(db, contest, overlapping)
@@ -325,6 +351,7 @@ def open_block_contest(
         label=label,
         rationale=rationale,
         party=list(contest.party or []),
+        party_mode=contest.party_mode,
         status=PlanStatus.contested,
         contest_id=contest.id,
         created_by_id=contributor.id if contributor else None,
@@ -360,6 +387,7 @@ def propose_block(
         items=payload.items,
         contributor=access.member,
         party=payload.party,
+        party_mode=payload.party_mode,
     )
     db.commit()
     db.refresh(contest)
@@ -406,6 +434,7 @@ def publish_plan(
         items=items,
         contributor=viewer,
         party=plan.party,
+        party_mode=plan.party_mode,
     )
     db.delete(plan)
     db.commit()
@@ -522,10 +551,12 @@ def toggle_vote(
     if not contest:
         raise HTTPException(status_code=404, detail="Contest not found")
     contributor = access.member
-    if contest.party and contributor.id not in contest.party:
+    allowed = contest_voter_ids(db, contest)
+    if allowed is not None and contributor.id not in allowed:
+        members = party_of(contest).members(roster_ids(db, contest.trip_id))
         raise HTTPException(
             status_code=403,
-            detail={"message": f"This vote is for {names(db, contest.party)}.", "missing_scope": "party"},
+            detail={"message": f"This vote is for {names(db, members)}.", "missing_scope": "party"},
         )
 
     existing = db.scalar(select(Vote).where(Vote.contest_id == contest_id, Vote.contributor_id == contributor.id))
@@ -587,6 +618,7 @@ def pick_set(
             ends_at=chosen.starts_at + timedelta(minutes=start + duration),
             color=chosen.color,
             party=list(contest.party or []),
+            party_mode=contest.party_mode,
             status=PlanStatus.placed,
             created_by_id=chosen.created_by_id,
         )
@@ -640,9 +672,9 @@ def reopen_plan(
     # since been filled would create a silent overlap the calendar has no
     # way to draw, so refuse and name what's in the way instead (feature
     # spec §11).
-    occupying = find_overlapping_plan(db, plan.trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=plan.party)
+    occupying = find_overlapping_plan(db, plan.trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=party_of(plan))
     if occupying is not None:
-        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, plan.party))
+        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, party_of(plan)))
 
     plan.status = PlanStatus.placed
     if plan.contest_id:

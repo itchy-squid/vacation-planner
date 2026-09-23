@@ -5,6 +5,7 @@ import TextField, { TextArea, textFieldStyle } from "../components/forms/TextFie
 import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import HeadsPicker from "../components/planner/HeadsPicker";
+import CostField from "../components/forms/CostField";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
 import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
@@ -64,11 +65,13 @@ function baselineFrom(pin) {
     title: pin.title ?? "",
     region: pin.region ?? "",
     dur: pin.dur,
-    cost: pin.cost,
+    cost: pin.costCents == null ? null : pin.costCents / 100,
+    costBasis: pin.costBasis ?? "per_head",
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
-    // Contributor ids sharing this pin's cost; [] means everyone. Kept in
+    // Traveler ids sharing this pin's cost; [] means whoever is on the
+    // plan it's scheduled in. Kept in
     // the draft like every other field so Save writes it in the same PATCH
     // and the discard guard covers it.
     heads: pin.heads ?? [],
@@ -567,40 +570,30 @@ export default function EditVisit() {
               onUp={() => changeDuration(form.dur + 15)}
               disabled={!canEdit}
             />
-            {canSeeCosts ? (
-              <div style={{ flex: 1 }}>
-                {/* Not "cost each": this is the whole cost of the visit, for
-                    everyone it's split between. Per-head is a division done
-                    for display (see data/expenses.js), so storing the total
-                    is what keeps a row on the Expenses screen and the trip
-                    total agreeing to the cent. */}
-                <div className="mono-caption">Cost, in total</div>
-                <div style={{ marginTop: 6, display: "flex", alignItems: "center", background: "var(--surface-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-lg)", height: 46, padding: "0 13px" }}>
-                  <span style={{ font: "500 14px var(--font-sans)", color: "var(--text-muted)", marginRight: 4 }}>$</span>
-                  <input
-                    value={form.cost}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value.replace(/[^0-9]/g, ""), 10);
-                      setField("cost", Number.isNaN(v) ? 0 : v);
-                    }}
-                    inputMode="numeric"
-                    readOnly={!canSetCosts}
-                    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: 14, fontWeight: 600, color: "var(--text-primary)", background: "transparent" }}
-                  />
-                </div>
-              </div>
-            ) : null}
           </div>
 
-          {/* Sits directly under "Cost each" because it's the divisor of
-              exactly that number — see the Expenses screen, where the two
-              are shown together as "$85 × 4". */}
+          {/* Per person by default — what one traveler pays — or one price
+              for the group, divided among whoever shares it
+              (backend/app/derive.py item_money). */}
+          {canSeeCosts ? (
+            <CostField
+              id="visit-cost"
+              value={form.cost ?? 0}
+              onChange={(v) => setField("cost", Math.max(0, Number(v) || 0))}
+              basis={form.costBasis}
+              onBasis={(b) => setField("costBasis", b)}
+              disabled={saving || deleting || !canSetCosts}
+            />
+          ) : null}
+
+          {/* Sits directly under the cost because it's who pays it — see
+              the Expenses screen, where the two are shown together as
+              "$85 each · 4 people". */}
           {canSeeCosts ? (
             <HeadsPicker
-              contributors={state.contributors}
+              travelers={state.travelers}
               value={form.heads}
               onChange={(heads) => setField("heads", heads)}
-              travellerCount={state.trip.travellerCount || state.contributors.length || 1}
               disabled={saving || deleting || !canSetCosts}
             />
           ) : null}

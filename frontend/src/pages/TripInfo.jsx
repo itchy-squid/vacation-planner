@@ -5,6 +5,7 @@ import Button from "../components/core/Button";
 import PeopleList, { Avatar } from "../components/sharing/PeopleList";
 import { usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 import { ROLES, roleLabel } from "../lib/roles";
+import TravelerRoster from "../components/travelers/TravelerRoster";
 
 // What the gear opens for anyone who isn't the trip's owner (see
 // pages/TripSettings.jsx): who owns the trip, what you can do on it, who
@@ -37,7 +38,7 @@ export default function TripInfo() {
     setError(result.error || "Couldn't leave the trip. Try again.");
   }
 
-  const travellers = trip.travellerCount ?? contributors.length;
+  const travelers = trip.travelerCount ?? 0;
 
   return (
     <div className="screen">
@@ -57,7 +58,7 @@ export default function TripInfo() {
           <div style={{ padding: "0 4px" }}>
             <h1 className="serif-place" style={{ font: "var(--type-title)", color: "var(--text-primary)" }}>{trip.name}</h1>
             <div style={{ font: "var(--type-body)", color: "var(--text-secondary)", marginTop: 4 }}>
-              {trip.dateLine} · {travellers} traveller{travellers === 1 ? "" : "s"}
+              {trip.dateLine} · {travelers} traveler{travelers === 1 ? "" : "s"}
             </div>
           </div>
 
@@ -101,7 +102,13 @@ export default function TripInfo() {
             </div>
           </div>
 
-          <span className="mono-caption" style={{ marginTop: 6 }}>People · {contributors.length}</span>
+          {/* Who is going. Anyone can fix their own name and say who pays
+              for them; planners manage the whole list. */}
+          <div style={{ marginTop: 6 }}>
+            <TravelerRoster />
+          </div>
+
+          <span className="mono-caption" style={{ marginTop: 6 }}>People on the app · {contributors.length}</span>
           <div style={{ marginTop: -6 }}>
             <PeopleList contributors={contributors} currentUserId={currentUserId} />
           </div>

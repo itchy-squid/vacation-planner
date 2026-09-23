@@ -6,7 +6,7 @@ import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
-import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
@@ -26,7 +26,7 @@ import {
   topForMinute,
 } from "../lib/dayGrid";
 import TripHeader from "../components/core/TripHeader";
-import { namesOf, partiesMeet, partyMembers, planIncludes } from "../lib/party";
+import { membersOf, namesOf, partiesMeet, planIncludes, takesNewcomers } from "../lib/party";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
 // against the spec's Plan/PlanItem/Contest model (see docs/features/
@@ -48,7 +48,10 @@ export default function DaySchedule() {
   const dayIndex = Number(day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, pins, travelItems, plans, placing, proposeSheet, contributors } = state;
+  const { trip, pins, travelItems, plans, placing, proposeSheet, travelers } = state;
+  // Groups are made of travelers; "just me" is the traveler you are.
+  const myTraveler = useMyTraveler();
+  const myTravelerId = myTraveler?.id ?? null;
 
   const currentUser = useCurrentUser();
   // Readers see the day but can't place, drag or propose. Companions can
@@ -91,12 +94,12 @@ export default function DaySchedule() {
   // you're not on, so the day reads as your day. The brackets always come
   // from the whole day — a split you're on one side of is still a split.
   const splitBands = useMemo(() => splitBandsFrom(dayEntries), [dayEntries]);
-  const dayHasSplit = splitBands.length > 0 || dayEntries.some((e) => e.plan.party?.length);
+  const dayHasSplit = splitBands.length > 0 || dayEntries.some((e) => !e.plan.forEveryone);
   const [justMe, setJustMe] = useState(false);
-  const showJustMe = justMe && dayHasSplit;
+  const showJustMe = justMe && dayHasSplit && myTravelerId != null;
   const visibleEntries = useMemo(
-    () => (showJustMe ? dayEntries.filter((e) => planIncludes(e.plan, currentUser.id)) : dayEntries),
-    [showJustMe, dayEntries, currentUser.id]
+    () => (showJustMe ? dayEntries.filter((e) => planIncludes(e.plan, myTravelerId)) : dayEntries),
+    [showJustMe, dayEntries, myTravelerId]
   );
   const laidOut = useMemo(() => layoutDayPlans(visibleEntries), [visibleEntries]);
 
@@ -189,17 +192,17 @@ export default function DaySchedule() {
   // both the plan (to target a proposal at it) and the hours it occupies
   // on this particular day.
   //
-  // `party` is who the plan being placed or moved is for ([] = everyone);
-  // only a plan someone would be on twice is in the way, the same rule the
-  // server applies (backend/app/party.py).
-  function findOverlap(startMinute, endMinute, excludePlanId, party = []) {
+  // `forPlan` is the plan being moved (null for something new, which is
+  // for everyone); only a plan someone would be on twice is in the way,
+  // the same rule the server applies (backend/app/party.py).
+  function findOverlap(startMinute, endMinute, excludePlanId, forPlan = null) {
     return (
       dayEntries.find(
         (e) =>
           e.plan.id !== excludePlanId &&
           startMinute < e.endMin &&
           endMinute > e.startMin &&
-          partiesMeet(e.plan.party, party)
+          partiesMeet(e.plan, forPlan)
       ) ?? null
     );
   }
@@ -228,6 +231,7 @@ export default function DaySchedule() {
           targetPlanId: occupying.plan.id,
           // Proposing against a branch is a decision for that branch.
           party: occupying.plan.party ?? [],
+          partyMode: occupying.plan.partyMode ?? "only",
           dayIndex,
           startMinute,
           kind: placing.kind,
@@ -351,10 +355,10 @@ export default function DaySchedule() {
     if (previewStart === info.originStart) return; // dropped back where it started
 
     const endMinute = previewStart + info.durationMinutes;
-    const inTheWay = findOverlap(previewStart, endMinute, plan.id, plan.party);
+    const inTheWay = findOverlap(previewStart, endMinute, plan.id, plan);
     if (inTheWay) {
-      const clash = plan.party?.length || inTheWay.plan.party?.length
-        ? partyMembers(inTheWay.plan.party, contributors).filter((c) => planIncludes(plan, c.id))
+      const clash = !plan.forEveryone || !inTheWay.plan.forEveryone
+        ? membersOf(inTheWay.plan, travelers).filter((t) => planIncludes(plan, t.id))
         : [];
       setMoveError(
         clash.length
@@ -542,7 +546,7 @@ export default function DaySchedule() {
         )}
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-          {dayHasSplit && (
+          {dayHasSplit && myTraveler && (
             <div
               role="group"
               aria-label="Whose day to show"
@@ -550,7 +554,7 @@ export default function DaySchedule() {
             >
               {[
                 { value: false, label: "Everyone" },
-                { value: true, label: `Just me · ${currentUser.name}` },
+                { value: true, label: `Just me · ${myTraveler.name}` },
               ].map((opt) => (
                 <button
                   key={String(opt.value)}
@@ -576,10 +580,10 @@ export default function DaySchedule() {
             {splitBands.map((band) => {
               const top = topForMinute(Math.max(band.startMin, DAY_START_MIN));
               const height = (Math.min(band.endMin, DAY_END_MIN) - Math.max(band.startMin, DAY_START_MIN)) * PX_PER_MIN;
-              const elsewhere = band.parties
-                .filter((p) => p.length && !p.includes(currentUser.id))
-                .flatMap((p) => partyMembers(p, contributors));
-              const counts = band.parties.map((p) => (p.length ? p.length : contributors.length)).join(" + ");
+              const elsewhere = band.groups
+                .filter((g) => !planIncludes(g, myTravelerId))
+                .flatMap((g) => membersOf(g, travelers));
+              const counts = band.groups.map((g) => membersOf(g, travelers).length).join(" + ");
               return (
                 <div
                   key={`split-${band.startMin}`}
@@ -666,7 +670,8 @@ export default function DaySchedule() {
                       continuesBefore={startMin < DAY_START_MIN}
                       continuesAfter={endMin > DAY_END_MIN}
                       onTap={() => {}}
-                      faces={plan.party?.length ? partyMembers(plan.party, contributors) : null}
+                      faces={plan.forEveryone ? null : membersOf(plan, travelers)}
+                      newcomers={takesNewcomers(plan)}
                       tightFaces={numCols >= 3}
                     />
                   </div>

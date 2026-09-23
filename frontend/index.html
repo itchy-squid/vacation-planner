@@ -14,9 +14,35 @@
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
     <title>Vacation Planner</title>
+    <!-- Boot screen (src/pages/BootScreen.jsx). Styled here, not in
+         styles.css, so the static copy inside #root below is styled before
+         any JS or CSS bundle has loaded -- the session check can sit behind
+         a backend cold start, and a bare white page reads as "hung".
+         Colors/fonts mirror src/styles/tokens. -->
+    <style>
+      .boot { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 24px; text-align: center; background: #f4f3f5; color: #1b1a1f; font-family: "Libre Franklin", system-ui, -apple-system, sans-serif; }
+      body:has(> #root > .boot) { margin: 0; background: #f4f3f5; }
+      .boot-mark { width: 44px; display: flex; flex-direction: column; gap: 6px; }
+      .boot-line { display: block; height: 8px; width: 100%; border-radius: 2px; background: #1b1a1f; opacity: .18; animation: boot-pulse 1.4s ease-in-out infinite; }
+      .boot-line:nth-child(2) { animation-delay: .2s; }
+      .boot-line:nth-child(3) { animation-delay: .4s; }
+      .boot-line-live { width: 62%; background: #8f4478; }
+      @keyframes boot-pulse { 0%, 100% { opacity: .18; } 50% { opacity: .85; } }
+      @media (prefers-reduced-motion: reduce) { .boot-line { animation: none; opacity: .5; } }
+      .boot-caption { font: 500 10px/1.2 "IBM Plex Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: .06em; color: #8c8a95; }
+      .boot-copy { display: flex; flex-direction: column; gap: 8px; max-width: 34ch; }
+      .boot-title { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; }
+      .boot-detail { margin: 0; font-size: 14px; line-height: 1.45; color: #6f6d78; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Replaced as soon as main.jsx renders; keep in step with BootScreen.jsx. -->
+      <main class="boot" role="status">
+        <div class="boot-mark" aria-hidden="true"><span class="boot-line"></span><span class="boot-line boot-line-live"></span><span class="boot-line"></span></div>
+        <div class="boot-caption">Loading&hellip;</div>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -67,13 +67,9 @@ class Trip(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     phase: Mapped[TripPhase] = mapped_column(Enum(TripPhase), default=TripPhase.ideation)
-    # How many people the trip is *costed* for, which is not the same
-    # question as how many people are planning it: a couple sharing one
-    # cabin plans as two contributors but a child along for the ride is a
-    # head the tickets are bought for and never a contributor. NULL falls
-    # back to len(contributors) — see app/routers/plans.py and the
-    # frontend's Expenses screen, which both go through that same fallback.
-    traveller_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # There is no traveller count any more: the people going are the
+    # Traveler rows below, and how many there are is simply how many are
+    # listed (see Traveler).
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     contributors: Mapped[list["Contributor"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
@@ -82,6 +78,9 @@ class Trip(Base):
     plans: Mapped[list["Plan"]] = relationship(back_populates="trip", cascade="all, delete-orphan", foreign_keys="Plan.trip_id")
     contests: Mapped[list["Contest"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
     invites: Mapped[list["TripInvite"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    travelers: Mapped[list["Traveler"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan", order_by="Traveler.position, Traveler.id"
+    )
 
 
 class Contributor(Base):
@@ -129,6 +128,40 @@ class Contributor(Base):
         return self.role == "owner"
 
 
+class Traveler(Base):
+    """Someone going on the trip — which is a different question from
+    who is on the app. Mei's nine-year-old and her mother are going and
+    will never sign in; Priya is helping plan and isn't going. Members
+    (Contributor) are who can see and change the trip; travelers are who
+    the plan is for and who the costs are split between.
+
+    - `contributor_id` links a traveler to the member who is them, when
+      there is one. At most one traveler per member.
+    - `paid_by_id` is the traveler who pays this one's costs, None for
+      someone who pays their own. One level only: a traveler paid for by
+      someone else can't pay for others (routers/travelers.py enforces it),
+      so "what I'm paying" is always me plus the people pointing at me.
+
+    Plan.party, Contest.party and Pin/TravelItem.heads all hold traveler
+    ids."""
+
+    __tablename__ = "travelers"
+    __table_args__ = (UniqueConstraint("trip_id", "contributor_id", name="uq_traveler_trip_contributor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    initial: Mapped[str] = mapped_column(String(4))
+    tint: Mapped[str] = mapped_column(String(32), default="var(--who-1)")
+    contributor_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id", ondelete="SET NULL"), nullable=True)
+    paid_by_id: Mapped[int | None] = mapped_column(ForeignKey("travelers.id", ondelete="SET NULL"), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    trip: Mapped[Trip] = relationship(back_populates="travelers")
+    contributor: Mapped["Contributor | None"] = relationship()
+
+
 class TripInvite(Base):
     """A shareable join link for one trip. Anyone signed in who opens it can
     add the trip to their list with `role`. One live link per role is
@@ -145,6 +178,11 @@ class TripInvite(Base):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # A link made for one listed traveler ("Invite Grandma Hua"): whoever
+    # accepts it becomes that traveler rather than a new one. Not one of
+    # the per-role links — each is its own row, and it stops working once
+    # the traveler is claimed.
+    traveler_id: Mapped[int | None] = mapped_column(ForeignKey("travelers.id", ondelete="CASCADE"), nullable=True)
 
     trip: Mapped[Trip] = relationship(back_populates="invites")
 
@@ -171,10 +209,14 @@ class Pin(Base):
     # wrong trip total; see docs/features/proposals-and-expenses-feature-
     # spec.md decision 3.
     cost_cents: Mapped[int] = mapped_column(Integer, default=0)
-    # Which contributors share cost_cents. [] means "everyone on the trip",
-    # which is the common case and is why it's the default rather than a
-    # list of every contributor id (which would go stale the moment someone
-    # joined). Headcount for an empty list is Trip.traveller_count.
+    # What cost_cents means: "per_head" is what one person pays (the
+    # default for anything new), "group" is one price for everyone sharing
+    # it, like a van or a villa. Items from before per-person prices are
+    # "group", so their totals didn't move. See app/derive.py item_money.
+    cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")
+    # Which travelers share this cost. [] means whoever is on the plan it's
+    # scheduled in — the plan's party, which is everyone except on a day
+    # the group has split.
     heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
@@ -243,8 +285,9 @@ class TravelItem(Base):
     kind: Mapped[str] = mapped_column(String(20), default="other")
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     cost_cents: Mapped[int] = mapped_column(Integer, default=0)
-    # Same meaning as Pin.heads above: the contributors sharing this cost,
-    # empty meaning everyone.
+    cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")  # as Pin.cost_basis
+    # Same meaning as Pin.heads above: the travelers sharing this cost,
+    # empty meaning whoever is on the plan.
     heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
@@ -298,15 +341,15 @@ class Plan(Base):
     # screen ("Why (optional)" in the proposal flow's review step). Empty
     # for every plan that wasn't proposed through that flow.
     rationale: Mapped[str] = mapped_column(Text, default="")
-    # Who this plan is for, as contributor ids. [] means everyone on the
-    # trip, the same convention as Pin.heads, and it's what every plan made
-    # before split-party plans means. Two plans may share hours only when
-    # their parties don't share a person (app/party.py parties_meet), which
-    # is the whole of how the group splitting up is modelled: there is no
-    # "split" row, just plans for different people at the same time.
-    # Always stored normalized (sorted, de-duplicated, and [] rather than a
-    # list of the whole roster). See app/party.py normalize_party.
+    # Who this plan is for, as traveler ids read through party_mode:
+    # "only" means exactly these travelers; "except" means everyone on the
+    # trip but these — including anyone added later. Everyone is
+    # ("except", []). Two plans may share hours only when nobody is on both
+    # (app/party.py parties_meet); there is no "split" row, just plans for
+    # different people at the same time. Always stored normalized — see
+    # app/party.py normalize_party.
     party: Mapped[list[int]] = mapped_column(JSON, default=list)
+    party_mode: Mapped[str] = mapped_column(String(8), default="except")
     status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus), default=PlanStatus.placed)
     # Circular with Contest.winning_plan_id (a Contest is created only after
     # a Plan already exists to contest against) — use_alter, same pattern as
@@ -387,6 +430,7 @@ class Contest(Base):
     # people vote, and the majority is counted against them. [] is the
     # whole trip, as before.
     party: Mapped[list[int]] = mapped_column(JSON, default=list)
+    party_mode: Mapped[str] = mapped_column(String(8), default="except")
     winning_plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", use_alter=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

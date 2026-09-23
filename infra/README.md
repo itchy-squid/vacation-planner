@@ -463,6 +463,12 @@ reconnect on an auth error.
   Trade-off of `minReplicas: 0`: the first request after an idle period
   pays a cold start (container pull + app boot), and open SSE
   connections keep the replica alive while they're connected.
+  Easy Auth runs inside the replica, so even a sign-in redirect waits
+  out that cold start; the frontend shows a "waking up the server"
+  screen meanwhile (`frontend/src/pages/BootScreen.jsx`) and retries
+  the session check through platform 502/503/504s. Setting
+  `minReplicas: 1` removes the wait at the cost of an always-on (idle-
+  rate) replica.
 - **Mirrored pin photos are never deleted from blob storage**
   (`backend/app/photo_storage.py`) — deleting a pin, or editing its photo
   to a different link, leaves the old blob behind. Photos are small and

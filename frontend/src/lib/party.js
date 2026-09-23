@@ -1,41 +1,58 @@
 // Who a plan is for. Mirrors backend/app/party.py — read that module's
-// docstring for the model; the short version is:
+// docstring for the model. In short: a plan's party is a set of
+// travelers, stored as ids plus a mode — "only" these, or "except" these
+// (everyone else, including anyone added to the trip later). Everyone is
+// "except" nobody.
 //
-// A plan's `party` is a list of contributor ids, and [] means everyone on
-// the trip. The group splitting up for a morning is nothing more than two
-// plans at the same time for people who don't overlap, so every rule
-// here is about comparing two of those lists.
+// The client never has to apply that rule itself: every plan and contest
+// arrives with `partyMembers` (the travelers it comes to right now) and
+// `forEveryone`. Everything here reads those.
 
-// A stable key for grouping: "" for everyone, else the sorted ids.
-export function partyKey(party) {
-  const ids = party ?? [];
-  return ids.length ? [...ids].sort((a, b) => a - b).join(",") : "";
+// A stable key for grouping plans by who they're for.
+export function partyKey(plan) {
+  if (!plan || plan.forEveryone) return "";
+  return `${plan.partyMode}:${[...(plan.party ?? [])].sort((a, b) => a - b).join(",")}`;
 }
 
-// Would someone be on both? Everyone ([]) is on everything. Same rule as
-// backend/app/party.py parties_meet — the grid's own overlap checks have
-// to agree with the server's or a drag the grid allows comes back a 409.
+// Would someone be on both? Same rule as backend/app/party.py
+// parties_meet: two "except" parties always meet (the next person added
+// would be on both); otherwise it's whether their travelers overlap.
 export function partiesMeet(a, b) {
-  const x = a ?? [];
-  const y = b ?? [];
-  if (!x.length || !y.length) return true;
-  return x.some((id) => y.includes(id));
+  if (!a || !b) return true;
+  if (a.partyMode === "except" && b.partyMode === "except") return true;
+  const ids = new Set(a.partyMembers ?? []);
+  return (b.partyMembers ?? []).some((id) => ids.has(id));
 }
 
 export function isForEveryone(plan) {
-  return !(plan?.party ?? []).length;
+  return plan?.forEveryone ?? true;
 }
 
-export function planIncludes(plan, contributorId) {
-  const party = plan?.party ?? [];
-  return !party.length || party.includes(contributorId);
+// Whether a traveler is on a plan. A viewer who isn't travelling (null)
+// is on nothing but plans for everyone.
+export function planIncludes(plan, travelerId) {
+  if (!plan || plan.forEveryone) return true;
+  return travelerId != null && (plan.partyMembers ?? []).includes(travelerId);
 }
 
-// The contributors on a party, in roster order. [] is the whole roster.
-export function partyMembers(party, contributors) {
-  const ids = party ?? [];
-  if (!ids.length) return contributors;
-  return contributors.filter((c) => ids.includes(c.id));
+// Whether people added to the trip later land on this plan: its party is
+// "everyone except …" but not simply everyone.
+export function takesNewcomers(plan) {
+  return Boolean(plan && !plan.forEveryone && plan.partyMode === "except");
+}
+
+// The travelers on a plan (or any { partyMembers, forEveryone }), in
+// roster order.
+export function membersOf(plan, travelers) {
+  if (!plan || plan.forEveryone) return travelers;
+  const ids = new Set(plan.partyMembers ?? []);
+  return travelers.filter((t) => ids.has(t.id));
+}
+
+// The travelers with these ids, in roster order.
+export function travelersWithIds(ids, travelers) {
+  const set = new Set(ids ?? []);
+  return travelers.filter((t) => set.has(t.id));
 }
 
 // "Ana", "Ana and Lin", "Mei, Jae and Theo".

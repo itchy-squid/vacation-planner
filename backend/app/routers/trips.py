@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import Principal, get_current_principal
 from ..db import get_db
-from ..models import Contributor, Trip
+from ..models import Contributor, Traveler, Trip
 from ..permissions import TRIP_MANAGE, TRIP_READ, Access, Role, require, scopes_for
 from ..schemas import TripCreate, TripOut, TripOwnerOut, TripUpdate
 
@@ -41,11 +41,14 @@ def trip_out(db: Session, trip: Trip, member: Contributor) -> TripOut:
         start_date=trip.start_date,
         end_date=trip.end_date,
         phase=trip.phase.value,
-        traveller_count=trip.traveller_count,
+        traveler_count=db.scalar(select(func.count()).select_from(Traveler).where(Traveler.trip_id == trip.id)) or 0,
         created_at=trip.created_at,
         my_role=member.role,
         my_scopes=sorted(scopes_for(member.role)),
         my_contributor_id=member.id,
+        my_traveler_id=db.scalar(
+            select(Traveler.id).where(Traveler.trip_id == trip.id, Traveler.contributor_id == member.id)
+        ),
         owner=owner_out(owner_of(db, trip.id)),
         member_count=member_count(db, trip.id),
     )
@@ -93,6 +96,18 @@ def create_trip(
         role=Role.owner.value,
     )
     db.add(owner)
+    db.flush()
+    # ...and, until they say otherwise, the first traveler on it.
+    db.add(
+        Traveler(
+            trip_id=trip.id,
+            name=owner.display_name,
+            initial=owner.initial,
+            tint=owner.tint or "var(--who-1)",
+            contributor_id=owner.id,
+            position=0,
+        )
+    )
     db.commit()
     db.refresh(trip)
     db.refresh(owner)
@@ -112,7 +127,8 @@ def update_trip(
     access: Access = Depends(require(TRIP_MANAGE)),
     db: Session = Depends(get_db),
 ):
-    """Trip settings (name, regions, dates, travellers) — owner only. See
+    """Trip settings (name, regions, dates) — owner only. Who's going is
+    the traveler roster (routers/travelers.py). See
     the frontend's pages/TripSettings.jsx. Same immediate-edit,
     exclude_unset pattern as update_pin in app/routers/pins.py."""
     trip = db.get(Trip, trip_id)

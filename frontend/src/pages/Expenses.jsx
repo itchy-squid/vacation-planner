@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import TripHeader from "../components/core/TripHeader";
-import { usePlannerState, useCurrentUser } from "../state/PlannerContext";
-import { buildExpenses, formatMoney } from "../data/expenses";
+import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
+import { buildExpenses, formatMoney, payerOf, travelersFor } from "../data/expenses";
 import { getTripDays } from "../data/trip";
 import { clockLabel } from "../lib/planTime";
 
@@ -22,19 +22,62 @@ import { clockLabel } from "../lib/planTime";
 // answer the app doesn't have (decision 10).
 const CURRENCY = "USD";
 
+// Whose costs the screen shows, remembered per device (it's a view, not
+// a fact about the trip).
+const SCOPE_KEY = "expenses.scope";
+function readScope() {
+  try {
+    const v = window.localStorage.getItem(SCOPE_KEY);
+    if (v === "paying" || v === "me" || v === "everyone") return v;
+    return v && /^\d+$/.test(v) ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}
+function writeScope(v) {
+  try {
+    window.localStorage.setItem(SCOPE_KEY, String(v));
+  } catch {
+    // Private windows and blocked storage: the choice just isn't kept.
+  }
+}
+
 export default function Expenses() {
   const state = usePlannerState();
-  const viewer = useCurrentUser();
-  const { trip, plans, contributors } = state;
+  const { trip, plans, travelers } = state;
+  const me = useMyTraveler();
+  const myId = me?.id ?? null;
 
   const [showFree, setShowFree] = useState(false);
+  // What I'm paying (me plus the people I pay for) is the default; someone
+  // planning but not going has nobody's costs of their own, so they start
+  // on everyone.
+  const [scopeChoice, setScopeChoice] = useState(readScope);
+  const validScope = (s) =>
+    s === "everyone" || ((s === "paying" || s === "me") && myId != null) || travelers.some((t) => t.id === s);
+  const scope = validScope(scopeChoice) ? scopeChoice : myId != null ? "paying" : "everyone";
+  function choose(value) {
+    const next = /^\d+$/.test(value) ? Number(value) : value;
+    setScopeChoice(next);
+    writeScope(next);
+  }
 
+  const shown = useMemo(() => travelersFor(scope, travelers, myId), [scope, travelers, myId]);
   const expenses = useMemo(
-    () => buildExpenses(plans, { trip, contributors, viewerId: viewer.id }),
-    [plans, trip, contributors, viewer.id]
+    () => buildExpenses(plans, { trip, travelers, shownIds: shown.map((t) => t.id) }),
+    [plans, trip, travelers, shown]
   );
   const dayCount = useMemo(() => getTripDays(trip.startDate, trip.endDate).length, [trip.startDate, trip.endDate]);
-  const travellerCount = trip.travellerCount || contributors.length || 1;
+  const payingFor = myId != null ? travelers.filter((t) => payerOf(t) === myId) : [];
+
+  const summaryLabel =
+    scope === "paying"
+      ? `You pay · ${payingFor.length} ${payingFor.length === 1 ? "person" : "people"}`
+      : scope === "me"
+      ? "Your own costs"
+      : scope === "everyone"
+      ? "Everyone"
+      : `${shown[0]?.name ?? "Traveler"}’s costs`;
 
   return (
     <div className="screen">
@@ -47,15 +90,46 @@ export default function Expenses() {
           }
         />
 
-        <div style={{ padding: "6px var(--gutter-text) 0" }}>
+        <div style={{ padding: "6px var(--gutter-text) 0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <div className="mono-caption">
-            Expenses · {dayCount} {dayCount === 1 ? "day" : "days"} · {travellerCount}{" "}
-            {travellerCount === 1 ? "traveller" : "travellers"}
+            Expenses · {dayCount} {dayCount === 1 ? "day" : "days"} · {travelers.length}{" "}
+            {travelers.length === 1 ? "traveler" : "travelers"}
           </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span className="mono-caption">Showing</span>
+            <select
+              id="expenses-scope"
+              value={String(scope)}
+              onChange={(e) => choose(e.target.value)}
+              style={{
+                height: 30,
+                borderRadius: 15,
+                border: "1px solid var(--border)",
+                background: "var(--surface-card)",
+                padding: "0 10px",
+                font: "600 12px var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
+              {myId != null && <option value="paying">What I&rsquo;m paying</option>}
+              {myId != null && <option value="me">Just me</option>}
+              <option value="everyone">Everyone</option>
+              {travelers.map((t) => (
+                <option key={t.id} value={String(t.id)}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px var(--gutter-screen) 0" }}>
-          <SummaryCard yourShareCents={expenses.yourShareCents} tripTotalCents={expenses.tripTotalCents} />
+          <SummaryCard
+            label={summaryLabel}
+            shownCents={expenses.shownCents}
+            tripTotalCents={expenses.tripTotalCents}
+            perTraveler={shown.length > 1 ? expenses.perTraveler : []}
+          />
 
           {expenses.days.map((day) => (
             <DayCard key={day.dayIndex} label={day.label} rows={day.rows} />
@@ -84,7 +158,7 @@ export default function Expenses() {
   );
 }
 
-function SummaryCard({ yourShareCents, tripTotalCents }) {
+function SummaryCard({ label, shownCents, tripTotalCents, perTraveler }) {
   return (
     <div
       style={{
@@ -93,23 +167,42 @@ function SummaryCard({ yourShareCents, tripTotalCents }) {
         border: "1px solid var(--hairline)",
         padding: "16px 18px",
         display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: 14,
+        flexDirection: "column",
+        gap: 12,
       }}
     >
-      <div>
-        <div className="mono-caption">Your share</div>
-        <div className="serif-place" style={{ fontSize: 34, lineHeight: 1, marginTop: 6, color: "var(--text-primary)" }}>
-          {formatMoney(yourShareCents)}
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14 }}>
+        <div>
+          <div className="mono-caption">{label}</div>
+          <div className="serif-place" style={{ fontSize: 34, lineHeight: 1, marginTop: 6, color: "var(--text-primary)" }}>
+            {formatMoney(shownCents)}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="mono-caption">Trip total</div>
+          <div className="serif-place" style={{ fontSize: 22, lineHeight: 1, marginTop: 6, color: "var(--stone-700)" }}>
+            {formatMoney(tripTotalCents)}
+          </div>
         </div>
       </div>
-      <div style={{ textAlign: "right" }}>
-        <div className="mono-caption">Trip total</div>
-        <div className="serif-place" style={{ fontSize: 22, lineHeight: 1, marginTop: 6, color: "var(--stone-700)" }}>
-          {formatMoney(tripTotalCents)}
+      {perTraveler.length > 0 && (
+        // Each person's part of the number above — what settling up reads.
+        <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 10, display: "grid", gridTemplateColumns: "1fr auto", gap: "6px 12px" }}>
+          {perTraveler.map(({ traveler, cents }) => (
+            <div key={traveler.id} style={{ display: "contents" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 7, font: "500 12.5px var(--font-sans)", color: "var(--text-primary)" }}>
+                <span style={{ width: 18, height: 18, borderRadius: "50%", background: traveler.tint, display: "inline-flex", alignItems: "center", justifyContent: "center", font: "600 8.5px var(--font-sans)", color: "var(--text-secondary)" }}>
+                  {traveler.initial}
+                </span>
+                {traveler.name}
+              </span>
+              <span className="mono-data" style={{ fontSize: 12.5, textAlign: "right", color: "var(--text-primary)" }}>
+                {formatMoney(cents)}
+              </span>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -138,25 +231,33 @@ function DayCard({ label, rows }) {
 }
 
 function ExpenseRow({ row }) {
+  // Per person first — that's how prices are entered and compared. A
+  // group price says so, with what it comes to each.
+  const price =
+    row.costBasis === "group"
+      ? `${formatMoney(row.totalCents)} group · ${formatMoney(row.eachCents)} each`
+      : `${formatMoney(row.eachCents)} each`;
   const meta = [
     row.startMinuteOfDay != null ? clockLabel(row.startMinuteOfDay) : null,
-    `${formatMoney(row.perHeadCents)} × ${row.headcount}`,
+    price,
+    `${row.headcount} ${row.headcount === 1 ? "person" : "people"}`,
     row.headsLabel || null,
   ]
     .filter(Boolean)
     .join(" · ");
+  const involved = row.shownCount > 0;
 
   return (
     // A cost only other people share — the other group's half of a split
     // day, say — still counts toward the trip total, but it isn't yours,
     // so it steps back.
-    <div style={{ display: "flex", alignItems: "stretch", gap: 12, opacity: row.headsLabel && !row.viewerIsHead ? 0.6 : 1 }}>
+    <div style={{ display: "flex", alignItems: "stretch", gap: 12, opacity: involved ? 1 : 0.55 }}>
       {/* Teal for the trip's money, plum for money that's the viewer's own
           share — the same two meanings those hues carry everywhere else in
           the app (design_system readme, "Colour"). */}
       <div
         aria-hidden="true"
-        style={{ width: 3, borderRadius: 2, flex: "none", background: row.viewerIsHead ? "var(--accent)" : "var(--geo)" }}
+        style={{ width: 3, borderRadius: 2, flex: "none", background: involved ? "var(--accent)" : "var(--geo)" }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ font: "600 14px var(--font-sans)", color: "var(--text-primary)" }}>{row.title}</div>
@@ -164,8 +265,16 @@ function ExpenseRow({ row }) {
           {meta}
         </div>
       </div>
-      <div className="mono-data" style={{ fontSize: 14, color: "var(--text-primary)", flex: "none", paddingTop: 1 }}>
-        {formatMoney(row.costCents)}
+      <div style={{ flex: "none", paddingTop: 1, textAlign: "right" }}>
+        <div className="mono-data" style={{ fontSize: 14, color: involved ? "var(--text-primary)" : "var(--text-muted)" }}>
+          {involved ? formatMoney(row.shownCents) : "—"}
+        </div>
+        {/* The whole bill, when what's shown is only part of it. */}
+        {row.shownCents !== row.totalCents && (
+          <div className="mono-data-sm" style={{ color: "var(--text-muted)", marginTop: 2 }}>
+            of {formatMoney(row.totalCents)}
+          </div>
+        )}
       </div>
     </div>
   );

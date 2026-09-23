@@ -12,6 +12,7 @@ from .routers import (
     sharing,
     spa_redirect,
     travel_items,
+    travelers,
     trips,
 )
 
@@ -42,6 +43,7 @@ app.include_router(contests.router)
 app.include_router(travel_items.router)
 app.include_router(comments.router)
 app.include_router(sharing.router)
+app.include_router(travelers.router)
 app.include_router(events.router)
 
 # Must stay last: it's a catch-all for every GET path the routers above

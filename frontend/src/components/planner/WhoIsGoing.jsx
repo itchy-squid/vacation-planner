@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import AvatarStack from "./AvatarStack";
-import { usePlannerDispatch, usePlannerState, useCan, useCurrentUser } from "../../state/PlannerContext";
-import { namesOf, partiesMeet, partyMembers, planIncludes } from "../../lib/party";
+import { usePlannerDispatch, usePlannerState, useCan, useMyTraveler } from "../../state/PlannerContext";
+import { membersOf, namesOf, planIncludes, takesNewcomers } from "../../lib/party";
 import { clockLabel } from "../../lib/planTime";
 
 // "Who's going" on a calendar item's details sheet — where the group
 // splits up, comes back together, and where anyone going can move
 // themselves between the groups. See backend/app/party.py for the model:
-// a plan's `party` is who it's for, [] is everyone, and two plans can
-// share hours only when nobody is on both.
+// a plan is for a set of travelers ("only" these, or "except" these —
+// everyone else, including anyone added later), and two plans can share
+// hours only when nobody is on both.
 //
 // Three things live here:
 // - Splitting (plans:write): pick who goes off to do something else over
@@ -19,12 +20,15 @@ import { clockLabel } from "../../lib/planTime";
 //   refused by name — take them off that one first.
 // - Joining (plans:join, which companions have): "I'm going with Ana."
 //   Moves only you, off whatever you were on at the same time.
+// - Where newcomers go: when splitting, and afterwards, which group anyone
+//   added to the trip later joins. The new group, by default.
 export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
-  const { plans, contributors } = usePlannerState();
+  const { plans, travelers } = usePlannerState();
   const dispatch = usePlannerDispatch();
   const can = useCan();
-  const me = useCurrentUser();
+  const me = useMyTraveler();
   const canJoin = can("plans:join");
+  const [newcomers, setNewcomers] = useState("leave"); // "leave" | "stay" | "none"
 
   const [mode, setMode] = useState(null); // null | "split" | "edit"
   const [leaving, setLeaving] = useState([]);
@@ -36,11 +40,12 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
     setMode(null);
     setLeaving([]);
     setBranchName("");
+    setNewcomers("leave");
     setError("");
   }, [plan.id]);
 
-  const going = partyMembers(plan.party, contributors);
-  const forEveryone = !(plan.party ?? []).length;
+  const going = membersOf(plan, travelers);
+  const forEveryone = plan.forEveryone;
 
   // The other groups over these same hours: what the people not on this
   // plan are doing instead. Read off the plans already loaded.
@@ -53,18 +58,18 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
         (p) =>
           p.id !== plan.id &&
           p.status !== "draft" &&
-          (p.party ?? []).length &&
-          !partiesMeet(p.party, plan.party) &&
+          !p.forEveryone &&
+          !(p.partyMembers ?? []).some((id) => (plan.partyMembers ?? []).includes(id)) &&
           Date.parse(p.startsAt) < end &&
           Date.parse(p.endsAt) > start
       )
       .map((p) => ({
         id: p.id,
-        people: partyMembers(p.party, contributors),
+        people: membersOf(p, travelers),
         title: p.items.map((i) => i.title).join(" + ") || p.label || "nothing planned yet",
         until: p.endDt ? clockLabel(p.endDt.minuteOfDay) : "",
       }));
-  }, [plans, plan, forEveryone, contributors]);
+  }, [plans, plan, forEveryone, travelers]);
 
   async function run(action) {
     setBusy(true);
@@ -77,7 +82,7 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
 
   async function confirmSplit() {
     if (busy) return;
-    const ok = await run({ type: "SPLIT_PLAN", planId: plan.id, leaving, label: branchName.trim() });
+    const ok = await run({ type: "SPLIT_PLAN", planId: plan.id, leaving, label: branchName.trim(), newcomers });
     if (ok) {
       setMode(null);
       setLeaving([]);
@@ -93,7 +98,20 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
       setError("Someone has to be going. To cancel this plan instead, clear its start time above.");
       return;
     }
-    run({ type: "SET_PLAN_PARTY", planId: plan.id, party: next });
+    run(partyAction(next, plan.partyMode));
+  }
+
+  // The stored form for a set of travelers, keeping whether this group
+  // takes newcomers: "except" parties list everyone *not* on them.
+  function partyAction(memberIds, partyMode) {
+    const party =
+      partyMode === "except" ? travelers.map((t) => t.id).filter((id) => !memberIds.includes(id)) : memberIds;
+    return { type: "SET_PLAN_PARTY", planId: plan.id, party, partyMode };
+  }
+
+  function toggleNewcomers() {
+    if (busy) return;
+    run(partyAction(going.map((t) => t.id), takesNewcomers(plan) ? "only" : "except"));
   }
 
   const staying = going.filter((c) => !leaving.includes(c.id));
@@ -101,6 +119,7 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
   const canSplit = editable && going.length > 1;
   const canJoinThis =
     canJoin &&
+    me != null &&
     !forEveryone &&
     !planIncludes(plan, me.id) &&
     (plan.status === "placed" || plan.status === "pencilled");
@@ -111,7 +130,7 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
         <div className="mono-caption">Who&rsquo;s going</div>
         {!forEveryone && (
           <div className="mono-data-sm" style={{ color: "var(--text-muted)" }}>
-            {going.length} of {contributors.length}
+            {going.length} of {travelers.length}
           </div>
         )}
       </div>
@@ -120,12 +139,12 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {forEveryone ? (
             <>
-              <AvatarStack contributors={contributors.slice(0, 6)} overflowCount={Math.max(0, contributors.length - 6)} size={24} />
+              <AvatarStack contributors={travelers.slice(0, 6)} overflowCount={Math.max(0, travelers.length - 6)} size={24} />
               <span style={{ font: "500 13px var(--font-sans)", color: "var(--text-primary)" }}>Everyone</span>
             </>
           ) : mode === "edit" ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {contributors.map((c) => (
+              {travelers.map((c) => (
                 <PersonChip key={c.id} person={c} on={going.some((g) => g.id === c.id)} onClick={() => toggleOnBranch(c)} disabled={busy} />
               ))}
             </div>
@@ -134,6 +153,21 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
               <AvatarStack contributors={going} size={24} />
               <span style={{ font: "500 13px var(--font-sans)", color: "var(--text-primary)" }}>{namesOf(going)}</span>
             </>
+          )}
+        </div>
+      )}
+
+      {mode !== "split" && !forEveryone && (
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ font: "400 11.5px var(--font-sans)", color: takesNewcomers(plan) ? "var(--accent)" : "var(--text-muted)" }}>
+            {takesNewcomers(plan)
+              ? "Anyone added to the trip later joins this group."
+              : "People added to the trip later won\u2019t join this group."}
+          </span>
+          {editable && (
+            <button type="button" disabled={busy} onClick={toggleNewcomers} style={{ font: "600 11.5px var(--font-sans)", color: "var(--accent)" }}>
+              {takesNewcomers(plan) ? "Stop" : "Send them here"}
+            </button>
           )}
         </div>
       )}
@@ -167,6 +201,34 @@ export default function WhoIsGoing({ plan, editable, startMin, endMin }) {
               onTap={(c) => setLeaving((l) => l.filter((id) => id !== c.id))}
               disabled={busy}
             />
+          </div>
+          <div>
+            <div className="mono-caption" style={{ marginBottom: 6 }}>Anyone added to the trip later joins</div>
+            <div role="group" aria-label="Where people added later go" style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2 }}>
+              {[
+                { value: "stay", label: "This plan" },
+                { value: "leave", label: "The new group" },
+                { value: "none", label: "Neither" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={newcomers === opt.value}
+                  onClick={() => setNewcomers(opt.value)}
+                  style={{
+                    flex: 1,
+                    padding: "6px 0",
+                    borderRadius: "calc(var(--radius-md) - 2px)",
+                    background: newcomers === opt.value ? "var(--surface-card)" : "transparent",
+                    boxShadow: newcomers === opt.value ? "var(--shadow-raised)" : "none",
+                    font: "600 11.5px var(--font-sans)",
+                    color: newcomers === opt.value ? "var(--text-primary)" : "var(--text-secondary)",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
           <input
             id="split-branch-name"

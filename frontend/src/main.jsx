@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import BootScreen from "./pages/BootScreen.jsx";
 import SignedOut from "./pages/SignedOut.jsx";
 import Home from "./pages/public/Home.jsx";
 import PrivacyPolicy from "./pages/public/PrivacyPolicy.jsx";
@@ -63,6 +64,7 @@ if (path === "/privacy") {
   // them to log in first, so they come back to the page they wanted.
   // An inconclusive check (null) counts as signed in, as in
   // ensureSignedIn().
+  render(<BootScreen />);
   isSignedIn().then((signedIn) => {
     if (signedIn === false) render(<Home />);
     else renderApp();
@@ -72,5 +74,9 @@ if (path === "/privacy") {
   // lib/api.js) so a signed-out user is sent to log in before anything
   // tries to render, rather than after the first API call fails. Resolves
   // immediately in local dev and for anyone already signed in.
-  ensureSignedIn().then(renderApp);
+  //
+  // The check can sit behind a backend cold start, so BootScreen holds the
+  // page until it answers (see pages/BootScreen.jsx).
+  render(<BootScreen />);
+  ensureSignedIn({ onRedirect: () => render(<BootScreen phase="signingIn" />) }).then(renderApp);
 }

@@ -158,26 +158,32 @@ function packColumns(items) {
   return { colOf, numCols: columnEnds.length };
 }
 
-// Lanes in a stable order: everyone first, then by the lowest contributor
-// id on each party, so a branch keeps its side of the grid from one day
-// to the next rather than swapping with the other.
-function laneOrder(a, b) {
-  if (a === b) return 0;
-  if (a === "") return -1;
-  if (b === "") return 1;
-  return Number(a.split(",")[0]) - Number(b.split(",")[0]) || a.localeCompare(b);
+// Lanes in a stable order: everyone first, then by the first traveler on
+// each party, so a group keeps its side of the grid from one day to the
+// next rather than swapping with the other. `reps` maps a lane key to one
+// plan in that lane.
+function laneOrder(reps) {
+  const first = (key) => Math.min(...(reps.get(key)?.partyMembers ?? [Infinity]));
+  return (a, b) => {
+    if (a === b) return 0;
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return first(a) - first(b) || a.localeCompare(b);
+  };
 }
 
 export function layoutDayPlans(entries) {
   const result = [];
   for (const cluster of clustersOf(entries)) {
     const lanes = new Map();
+    const reps = new Map();
     for (const it of cluster) {
-      const key = partyKey(it.plan.party);
+      const key = partyKey(it.plan);
       if (!lanes.has(key)) lanes.set(key, []);
+      if (!reps.has(key)) reps.set(key, it.plan);
       lanes.get(key).push(it);
     }
-    const keys = [...lanes.keys()].sort(laneOrder);
+    const keys = [...lanes.keys()].sort(laneOrder(reps));
     const packed = keys.map((key) => packColumns(lanes.get(key)));
     const numCols = packed.reduce((sum, p) => sum + p.numCols, 0);
     let offset = 0;
@@ -194,23 +200,24 @@ export function layoutDayPlans(entries) {
 
 // The stretches of a day where the group is split: every cluster of
 // overlapping plans that holds more than one party. Each band carries its
-// hours and the parties in it (in lane order), which is what the grid's
-// bracket and "2 + 4" label are drawn from. `entries` should be the whole
+// hours and one plan per group in it (in lane order) — read their
+// partyMembers and partyMode — which is what the grid's bracket and
+// "2 + 5" label are drawn from. `entries` should be the whole
 // day's, not a "just me" subset, or a split you're on one side of would
 // look like no split at all.
 export function splitBandsFrom(entries) {
   const bands = [];
   for (const cluster of clustersOf(entries)) {
-    const parties = new Map();
+    const groups = new Map();
     for (const it of cluster) {
-      const key = partyKey(it.plan.party);
-      if (!parties.has(key)) parties.set(key, it.plan.party ?? []);
+      const key = partyKey(it.plan);
+      if (!groups.has(key)) groups.set(key, it.plan);
     }
-    if (parties.size < 2) continue;
+    if (groups.size < 2) continue;
     bands.push({
       startMin: Math.min(...cluster.map((e) => e.startMin)),
       endMin: Math.max(...cluster.map((e) => e.endMin)),
-      parties: [...parties.keys()].sort(laneOrder).map((k) => parties.get(k)),
+      groups: [...groups.keys()].sort(laneOrder(groups)).map((k) => groups.get(k)),
     });
   }
   return bands;

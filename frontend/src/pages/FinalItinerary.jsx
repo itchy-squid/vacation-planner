@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowRight } from "@fortawesome/free-solid-svg-icons";
 import AvatarStack from "../components/planner/AvatarStack";
-import { usePlannerState, useCurrentUser } from "../state/PlannerContext";
-import { namesOf, partyMembers, planIncludes } from "../lib/party";
+import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
+import { membersOf, namesOf, partyKey, planIncludes } from "../lib/party";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
@@ -23,17 +23,20 @@ import { dayIndexForDate, clockLabel } from "../lib/planTime";
 export default function FinalItinerary() {
   const navigate = useNavigate();
   const state = usePlannerState();
-  const { trip: TRIP, plans, contributors } = state;
-  const me = useCurrentUser();
+  const { trip: TRIP, plans, travelers } = state;
+  // The traveler you are; null when you're planning but not going, in
+  // which case there's no "my itinerary" to show.
+  const me = useMyTraveler();
+  const myId = me?.id ?? null;
 
   // Once the group splits up for part of a day (lib/party.js), "the
   // itinerary" stops being one list. Yours is the default: the stops
   // you're on, who with, and a line for where everyone else is — which is
   // what answers "when do we meet up?". The whole group's view keeps every
   // stop and says whose each one is.
-  const hasSplits = useMemo(() => plans.some((p) => p.party?.length), [plans]);
+  const hasSplits = useMemo(() => plans.some((p) => !p.forEveryone), [plans]);
   const [mine, setMine] = useState(true);
-  const showMine = mine && hasSplits;
+  const showMine = mine && hasSplits && myId != null;
 
   const tripDays = useMemo(() => getTripDays(TRIP.startDate, TRIP.endDate), [TRIP.startDate, TRIP.endDate]);
 
@@ -47,14 +50,14 @@ export default function FinalItinerary() {
       const settledPlans = dayPlans.filter((p) => p.status === "placed" || p.status === "pencilled" || p.status === "locked");
 
       const stops = [];
-      const shownPlans = showMine ? settledPlans.filter((p) => planIncludes(p, me.id)) : settledPlans;
+      const shownPlans = showMine ? settledPlans.filter((p) => planIncludes(p, myId)) : settledPlans;
       shownPlans.forEach((p) => {
-        const people = p.party?.length ? partyMembers(p.party, contributors) : [];
+        const people = p.forEveryone ? [] : membersOf(p, travelers);
         const withLabel = !people.length
           ? ""
           : showMine
           ? people.length > 1
-            ? `with ${namesOf(people.filter((c) => c.id !== me.id))}`
+            ? `with ${namesOf(people.filter((c) => c.id !== myId))}`
             : "just you"
           : namesOf(people);
         p.items.forEach((item) => {
@@ -81,10 +84,10 @@ export default function FinalItinerary() {
       if (showMine) {
         const byGroup = new Map();
         settledPlans
-          .filter((p) => !planIncludes(p, me.id))
+          .filter((p) => !planIncludes(p, myId))
           .forEach((p) => {
-            const key = (p.party ?? []).join(",");
-            if (!byGroup.has(key)) byGroup.set(key, { people: partyMembers(p.party, contributors), titles: [], endMin: 0 });
+            const key = partyKey(p);
+            if (!byGroup.has(key)) byGroup.set(key, { people: membersOf(p, travelers), titles: [], endMin: 0 });
             const g = byGroup.get(key);
             p.items.forEach((item) => g.titles.push(item.title));
             if (!p.items.length && p.label) g.titles.push(p.label);
@@ -108,7 +111,7 @@ export default function FinalItinerary() {
         firstContestId: dayPlans.find((p) => p.status === "contested")?.contestId ?? null,
       };
     });
-  }, [tripDays, plans, TRIP.startDate, TRIP.endDate, showMine, me.id, contributors]);
+  }, [tripDays, plans, TRIP.startDate, TRIP.endDate, showMine, myId, travelers]);
 
   const finishedCount = dayViews.filter((d) => d.settled).length;
 
@@ -124,7 +127,7 @@ export default function FinalItinerary() {
           <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: "var(--surface-sunken)", overflow: "hidden" }}>
             <div style={{ width: `${dayViews.length ? (finishedCount / dayViews.length) * 100 : 0}%`, height: "100%", background: "var(--geo)" }} />
           </div>
-          {hasSplits && (
+          {hasSplits && myId != null && (
             <div role="group" aria-label="Whose itinerary" style={{ marginTop: 14, display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2 }}>
               {[
                 { value: true, label: "My itinerary" },
@@ -155,7 +158,7 @@ export default function FinalItinerary() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "18px var(--gutter-screen) 0" }}>
           {dayViews.map((d) =>
             d.settled ? (
-              <DayCard key={d.dayIndex} label={d.label} stops={d.stops} elsewhere={d.elsewhere} contributors={contributors} />
+              <DayCard key={d.dayIndex} label={d.label} stops={d.stops} elsewhere={d.elsewhere} contributors={travelers} />
             ) : (
               <UnfinishedCard
                 key={d.dayIndex}
