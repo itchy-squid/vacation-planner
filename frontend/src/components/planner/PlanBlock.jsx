@@ -24,8 +24,57 @@ function ContinuationMark({ icon, color }) {
   return <FontAwesomeIcon icon={icon} style={{ width: 8, height: 8, flexShrink: 0, opacity: 0.75, color }} />;
 }
 
-export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false }) {
-  const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
+// Who a plan is for, when it isn't everyone (lib/party.js): the faces of
+// the people going, riding at the end of the title row so even a compact
+// block says whose it is. A plan for everyone draws nothing — that's the
+// common case, and a row of six faces on every block would say nothing.
+//
+// `tight` is for a block squeezed into a third of the grid or less (a
+// vote inside one group of a split day): there the faces would take the
+// whole title, so one face stands in with a count beside it.
+function Faces({ people, tight = false }) {
+  if (!people?.length) return null;
+  const shown = people.slice(0, tight ? 1 : 3);
+  const more = people.length - shown.length;
+  return (
+    <span
+      aria-label={`For ${people.map((p) => p.name).join(", ")}`}
+      title={people.map((p) => p.name).join(", ")}
+      style={{ display: "inline-flex", alignItems: "center", flex: "none", marginLeft: "auto", paddingLeft: 4 }}
+    >
+      {shown.map((p, i) => (
+        <span
+          key={p.id}
+          style={{
+            width: 15,
+            height: 15,
+            borderRadius: "50%",
+            background: p.tint,
+            border: "1.5px solid var(--surface-card)",
+            marginLeft: i === 0 ? 0 : -5,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            font: "600 8px var(--font-sans)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          {p.initial}
+        </span>
+      ))}
+      {more > 0 && (
+        <span className="mono-data-sm" style={{ marginLeft: 3, color: "var(--text-secondary)", fontSize: 9 }}>
+          +{more}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false }) {
+  // A branch made by splitting the group starts with no stops, only a name
+  // (or not even that): it's somebody's hours with nothing in them yet.
+  const title = plan.items.map((i) => i.title).join(" + ") || plan.label || (faces?.length ? "Nothing planned yet" : "Untitled");
   const startLabel = plan.startDt ? clockLabel(plan.startDt.minuteOfDay) : "";
   const endLabel = plan.endDt ? clockLabel(plan.endDt.minuteOfDay) : "";
   const compact = rect.height < 34;
@@ -69,6 +118,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
           {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--accent)" />}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--accent)" />}
+          <Faces people={faces} tight={tightFaces} />
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
@@ -113,6 +163,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
           <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
+          <Faces people={faces} tight={tightFaces} />
         </div>
         {!compact && (
           <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>
@@ -142,6 +193,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
         {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
+        <Faces people={faces} tight={tightFaces} />
       </div>
       {!compact && (
         <div className="mono-data-sm" style={{ color: "var(--text-secondary)", marginTop: 2 }}>

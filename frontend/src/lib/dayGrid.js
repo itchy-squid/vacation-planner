@@ -11,6 +11,7 @@
 // wins" rule, the app's gutter is what stays.
 
 import { dayIndexForDate } from "./planTime";
+import { partyKey } from "./party";
 
 export const PX_PER_MIN = 1;
 export const DAY_START_MIN = 0; // 00:00 — the grid always shows the full midnight-to-midnight day
@@ -115,9 +116,16 @@ export function overlaps(aStart, aEnd, bStart, bEnd) {
 // Takes the day entries from plansOnDay above (not raw plans), so an
 // overnight plan's morning hours pack against the day they land on rather
 // than the day they started. Returns each entry plus { col, numCols }.
-export function layoutDayPlans(entries) {
+//
+// Split-party plans (lib/party.js) add one level above the columns. On a
+// day the group has split, side by side means two different things: two
+// options in one vote, and two groups doing different things. So a
+// cluster is first divided into lanes, one per party — everyone's plans
+// in one lane, Ana-and-Lin's in another — and the columns are packed
+// inside each lane. A vote inside one branch then widens that branch's
+// lane, and never pushes an option into the other group's column.
+function clustersOf(entries) {
   const items = [...entries].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
   const clusters = [];
   let current = [];
   let currentEnd = -Infinity;
@@ -131,27 +139,81 @@ export function layoutDayPlans(entries) {
     currentEnd = Math.max(currentEnd, it.endMin);
   }
   if (current.length) clusters.push(current);
+  return clusters;
+}
 
+function packColumns(items) {
+  const columnEnds = [];
+  const colOf = new Map();
+  for (const it of items) {
+    let idx = columnEnds.findIndex((endT) => endT <= it.startMin);
+    if (idx === -1) {
+      idx = columnEnds.length;
+      columnEnds.push(it.endMin);
+    } else {
+      columnEnds[idx] = it.endMin;
+    }
+    colOf.set(it.plan.id, idx);
+  }
+  return { colOf, numCols: columnEnds.length };
+}
+
+// Lanes in a stable order: everyone first, then by the lowest contributor
+// id on each party, so a branch keeps its side of the grid from one day
+// to the next rather than swapping with the other.
+function laneOrder(a, b) {
+  if (a === b) return 0;
+  if (a === "") return -1;
+  if (b === "") return 1;
+  return Number(a.split(",")[0]) - Number(b.split(",")[0]) || a.localeCompare(b);
+}
+
+export function layoutDayPlans(entries) {
   const result = [];
-  for (const cluster of clusters) {
-    const columnEnds = [];
-    const colOf = new Map();
+  for (const cluster of clustersOf(entries)) {
+    const lanes = new Map();
     for (const it of cluster) {
-      let idx = columnEnds.findIndex((endT) => endT <= it.startMin);
-      if (idx === -1) {
-        idx = columnEnds.length;
-        columnEnds.push(it.endMin);
-      } else {
-        columnEnds[idx] = it.endMin;
+      const key = partyKey(it.plan.party);
+      if (!lanes.has(key)) lanes.set(key, []);
+      lanes.get(key).push(it);
+    }
+    const keys = [...lanes.keys()].sort(laneOrder);
+    const packed = keys.map((key) => packColumns(lanes.get(key)));
+    const numCols = packed.reduce((sum, p) => sum + p.numCols, 0);
+    let offset = 0;
+    keys.forEach((key, laneIndex) => {
+      const { colOf, numCols: laneCols } = packed[laneIndex];
+      for (const it of lanes.get(key)) {
+        result.push({ ...it, col: offset + colOf.get(it.plan.id), numCols, lane: laneIndex, laneCount: keys.length });
       }
-      colOf.set(it.plan.id, idx);
-    }
-    const numCols = columnEnds.length;
-    for (const it of cluster) {
-      result.push({ ...it, col: colOf.get(it.plan.id), numCols });
-    }
+      offset += laneCols;
+    });
   }
   return result;
+}
+
+// The stretches of a day where the group is split: every cluster of
+// overlapping plans that holds more than one party. Each band carries its
+// hours and the parties in it (in lane order), which is what the grid's
+// bracket and "2 + 4" label are drawn from. `entries` should be the whole
+// day's, not a "just me" subset, or a split you're on one side of would
+// look like no split at all.
+export function splitBandsFrom(entries) {
+  const bands = [];
+  for (const cluster of clustersOf(entries)) {
+    const parties = new Map();
+    for (const it of cluster) {
+      const key = partyKey(it.plan.party);
+      if (!parties.has(key)) parties.set(key, it.plan.party ?? []);
+    }
+    if (parties.size < 2) continue;
+    bands.push({
+      startMin: Math.min(...cluster.map((e) => e.startMin)),
+      endMin: Math.max(...cluster.map((e) => e.endMin)),
+      parties: [...parties.keys()].sort(laneOrder).map((k) => parties.get(k)),
+    });
+  }
+  return bands;
 }
 
 // The hours already out for a vote on this day, read straight off the

@@ -189,6 +189,8 @@ function normalizePlan(p) {
     // The proposer's case for this plan, shown to voters on the compare
     // screen. Empty for anything not proposed through the block flow.
     rationale: p.rationale ?? "",
+    // Contributor ids this plan is for; [] is everyone (lib/party.js).
+    party: p.party ?? [],
     items: (p.items ?? []).map(normalizePlanItem),
     totalDurationMinutes: p.total_duration_minutes,
     totalCostCents: p.total_cost_cents ?? null,
@@ -697,10 +699,12 @@ export function PlannerProvider({ children }) {
             return { ok: true };
           } catch (err) {
             if (err.status === 409 && err.body?.detail?.occupying_plan_id) {
+              const target = state.plans.find((p) => p.id === err.body.detail.occupying_plan_id);
               dispatch({
                 type: "OPEN_PROPOSE",
                 proposeSheet: {
                   targetPlanId: err.body.detail.occupying_plan_id,
+                  party: target?.party ?? [],
                   dayIndex: action.dayIndex,
                   startMinute: action.startMinute,
                   kind: placing.kind,
@@ -730,7 +734,9 @@ export function PlannerProvider({ children }) {
             return { ok: true };
           } catch (err) {
             if (err.status === 409) {
-              return { ok: false, occupied: true };
+              // The message names who is double-booked when the plan is
+              // for part of the group (backend occupied_detail).
+              return { ok: false, occupied: true, message: apiMessage(err) };
             }
             console.error("move failed", err);
             return { ok: false, error: err.message };
@@ -760,6 +766,7 @@ export function PlannerProvider({ children }) {
               label: action.label ?? "",
               rationale: action.rationale ?? "",
               items: action.items,
+              party: action.party ?? [],
             });
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, contestId: contest.id };
@@ -799,6 +806,10 @@ export function PlannerProvider({ children }) {
             startsAt: action.startsAt,
             endsAt: action.endsAt,
             items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
+            // Proposing against one branch of a split day is a decision
+            // for that branch's people only (backend/app/routers/
+            // contests.py open_block_contest).
+            party: sheet.party ?? [],
           });
           if (result.ok) dispatch({ type: "CLOSE_PROPOSE" });
           return result;
@@ -825,6 +836,7 @@ export function PlannerProvider({ children }) {
               label: action.label ?? "",
               rationale: action.rationale ?? "",
               items: action.items,
+              party: action.party ?? [],
             });
             if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
@@ -856,6 +868,40 @@ export function PlannerProvider({ children }) {
           } catch (err) {
             console.error("discard draft failed", err);
             return { ok: false, error: err.message };
+          }
+        }
+
+        // Split-party plans (lib/party.js). Each returns { ok } or
+        // { ok: false, error } with the server's sentence, which names who
+        // would be double-booked — the only part of a refusal a person can
+        // act on.
+        case "SPLIT_PLAN": {
+          try {
+            const [, branch] = await api.splitPlan(action.planId, { leaving: action.leaving, label: action.label ?? "" });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, branchPlanId: branch.id };
+          } catch (err) {
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "SET_PLAN_PARTY": {
+          try {
+            await api.setPlanParty(action.planId, action.party);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
+        case "JOIN_PLAN": {
+          try {
+            await api.joinPlan(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true };
+          } catch (err) {
+            return { ok: false, error: apiMessage(err) };
           }
         }
 

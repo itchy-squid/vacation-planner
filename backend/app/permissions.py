@@ -12,8 +12,9 @@ The roles, from least to most:
 - reader: looks, nothing more.
 - companion: going on the trip, not running the plan. Adds ideas (and
   edits or deletes only their own), proposes blocks and keeps drafts,
-  votes and comments. Can't place, move or remove anything on the calendar
-  directly, and sees no costs except the ones on ideas they added
+  votes and comments. On a day the group has split, can move themselves
+  (only themselves) from one branch to another. Can't place, move or remove
+  anything on the calendar directly, and sees no costs except the ones on ideas they added
   themselves, which they can also set.
 - planner: everything a companion can do, on anyone's ideas, plus direct
   placement and every cost on the trip. (Stored as "planner"; this role was
@@ -63,6 +64,7 @@ PLANS_READ = "plans:read"  # the calendar, proposals and votes
 PLANS_PROPOSE = "plans:propose"  # propose blocks, drafts, edit your own sets
 PLANS_WRITE = "plans:write"  # place/move/remove plans on the calendar directly
 PLANS_DECIDE = "plans:decide"  # pick a set, lock, reopen
+PLANS_JOIN = "plans:join"  # move yourself between the branches of a split day
 VOTES_WRITE = "votes:write"
 COMMENTS_WRITE = "comments:write"
 COSTS_READ = "costs:read"  # any cost figure, and who shares it
@@ -72,7 +74,7 @@ TRIP_MANAGE = "trip:manage"  # name, dates, traveller count
 MEMBERS_MANAGE = "members:manage"  # invite links, roles, removing people
 
 _READER = frozenset({TRIP_READ, IDEAS_READ, PLANS_READ})
-_COMPANION = _READER | {IDEAS_ADD, PLANS_PROPOSE, VOTES_WRITE, COMMENTS_WRITE, COSTS_OWN}
+_COMPANION = _READER | {IDEAS_ADD, PLANS_PROPOSE, PLANS_JOIN, VOTES_WRITE, COMMENTS_WRITE, COSTS_OWN}
 _PLANNER = _COMPANION | {IDEAS_WRITE, PLANS_WRITE, COSTS_READ, COSTS_WRITE}
 _OWNER = _PLANNER | {PLANS_DECIDE, TRIP_MANAGE, MEMBERS_MANAGE}
 

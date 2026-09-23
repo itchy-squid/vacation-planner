@@ -147,7 +147,10 @@ function ExpenseRow({ row }) {
     .join(" · ");
 
   return (
-    <div style={{ display: "flex", alignItems: "stretch", gap: 12 }}>
+    // A cost only other people share — the other group's half of a split
+    // day, say — still counts toward the trip total, but it isn't yours,
+    // so it steps back.
+    <div style={{ display: "flex", alignItems: "stretch", gap: 12, opacity: row.headsLabel && !row.viewerIsHead ? 0.6 : 1 }}>
       {/* Teal for the trip's money, plum for money that's the viewer's own
           share — the same two meanings those hues carry everywhere else in
           the app (design_system readme, "Colour"). */}

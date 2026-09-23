@@ -23,6 +23,7 @@ from ..events import bus
 from ..models import (
     AvailabilityOverride,
     Comment,
+    Contest,
     Contributor,
     Pin,
     Plan,
@@ -124,8 +125,54 @@ def _remove_member(db: Session, member: Contributor) -> list[tuple[int, int]]:
             if row.heads and member_id in row.heads:
                 row.heads = [h for h in row.heads if h != member_id]
 
+    orphan_candidates |= _strip_from_parties(db, trip_id, member_id)
+
     db.delete(member)
     return forget_orphaned_travel_items(db, orphan_candidates)
+
+
+def _strip_from_parties(db: Session, trip_id: int, member_id: int) -> set[int]:
+    """Take someone out of every split on the trip (app/party.py).
+
+    A branch only they were on has nobody left to go, so it goes — a vote
+    for only them with it. And once they've gone, a branch that is now
+    everyone who's left *is* everyone, so it's stored as [] like any other
+    plan for the whole group. Returns travel item ids that may now be
+    orphaned, for the caller's custom-event cleanup."""
+    remaining = set(
+        db.scalars(select(Contributor.id).where(Contributor.trip_id == trip_id, Contributor.id != member_id)).all()
+    )
+
+    def after(party: list[int]) -> list[int] | None:
+        """The party without them; None when nobody is left on it."""
+        kept = sorted(set(party) - {member_id})
+        if not kept:
+            return None
+        return [] if set(kept) >= remaining else kept
+
+    orphan_candidates: set[int] = set()
+    for contest in db.scalars(select(Contest).where(Contest.trip_id == trip_id)).all():
+        if not contest.party:
+            continue
+        new = after(contest.party)
+        if new is None:
+            orphan_candidates |= travel_item_ids_of(contest.plans)
+            db.delete(contest)  # cascades to its options and votes
+        elif new != contest.party:
+            contest.party = new
+    db.flush()
+
+    for plan in db.scalars(select(Plan).where(Plan.trip_id == trip_id)).all():
+        if not plan.party:
+            continue
+        new = after(plan.party)
+        if new is None:
+            orphan_candidates |= travel_item_ids_of([plan])
+            db.delete(plan)
+        elif new != plan.party:
+            plan.party = new
+    db.flush()
+    return orphan_candidates
 
 
 @router.delete("/trips/{trip_id}/contributors/{contributor_id}", status_code=204)

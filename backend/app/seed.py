@@ -79,6 +79,7 @@ def _placed_plan(
     pin: Pin | None = None,
     travel_item: TravelItem | None = None,
     created_by: Contributor | None = None,
+    party: list[Contributor] | None = None,
 ) -> Plan:
     """A single-item Plan — the new-model equivalent of the old model's
     "simple block" (a one-stop CandidateSet). DaySchedule.jsx reads the
@@ -90,6 +91,7 @@ def _placed_plan(
         ends_at=_taiwan_dt(day_index, end_minute),
         status=status,
         created_by_id=created_by.id if created_by else None,
+        party=sorted(c.id for c in party) if party else [],
     )
     db.add(plan)
     db.flush()
@@ -296,7 +298,19 @@ def seed_taiwan(db: Session) -> None:
     _placed_plan(db, trip, day_index=6, start_minute=570, end_minute=615, status=PlanStatus.pencilled, pin=p["p7"])
     _placed_plan(db, trip, day_index=6, start_minute=1020, end_minute=1095, status=PlanStatus.locked, travel_item=ferry_back)
 
-    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"])
+    # Day 7 in Hualien is a split day (app/party.py): Ana and Lin take the
+    # whole morning on the Taroko Gorge trail while the other four bike
+    # Liyu Lake and swim at Qixingtan, then all six meet at the night
+    # market. That's what puts the split bracket and the faces on the
+    # day grid, the "with Jae, Theo, Priya" lines on the itinerary, and a
+    # cost split four ways rather than six on Expenses, into local dev.
+    c = contributors
+    gorge_party = [c["ana"], c["lin"]]
+    lake_party = [c["mei"], c["jae"], c["theo"], c["priya"]]
+    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"], party=gorge_party)
+    _placed_plan(db, trip, day_index=7, start_minute=495, end_minute=595, status=PlanStatus.placed, pin=p["p19"], party=lake_party)
+    _placed_plan(db, trip, day_index=7, start_minute=600, end_minute=660, status=PlanStatus.pencilled, pin=p["p17"], party=lake_party)
+    _placed_plan(db, trip, day_index=7, start_minute=1110, end_minute=1200, status=PlanStatus.placed, pin=p["p18"])
 
     db.commit()
 

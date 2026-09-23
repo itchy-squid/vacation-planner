@@ -35,6 +35,7 @@ export const ROLES = {
     joinPoints: [
       [true, "Add ideas, with a cost if you know it"],
       [true, "Propose blocks for the calendar, vote and comment"],
+      [true, "When the group splits up, choose which group you go with"],
       [false, "Planners put things on the calendar"],
       [false, "Trip expenses stay hidden"],
     ],

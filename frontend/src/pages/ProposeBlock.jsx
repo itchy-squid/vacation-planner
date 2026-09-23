@@ -7,7 +7,8 @@ import ComparisonColumns, { summariseStops } from "../components/planner/Compari
 import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
 import Stepper from "../components/forms/Stepper";
-import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess, useCurrentUser } from "../state/PlannerContext";
+import { namesOf, partiesMeet, partyKey, partyMembers } from "../lib/party";
 import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
@@ -90,6 +91,7 @@ export default function ProposeBlock() {
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const { trip, plans, pins, travelItems, contributors, overrides } = state;
+  const currentUser = useCurrentUser();
 
   const reopenedDraftId = location.state?.draftPlanId ?? null;
   const contestId = location.state?.contestId ?? null;
@@ -114,7 +116,6 @@ export default function ProposeBlock() {
     () => plansOnDay(plans.filter((p) => p.status !== "draft"), trip.startDate, dayIndex),
     [plans, trip.startDate, dayIndex]
   );
-  const contestWindows = useMemo(() => contestWindowsFrom(dayEntries), [dayEntries]);
   const reopenedDraft = useMemo(
     () => (reopenedDraftId ? plans.find((p) => p.id === reopenedDraftId) : null),
     [plans, reopenedDraftId]
@@ -226,6 +227,52 @@ export default function ProposeBlock() {
     : stops.length > 0 || (Boolean(selection) && !contestId);
   useNavGuard(dirty && !busy, editing ? DISCARD_EDITS_PROMPT : DISCARD_PROMPT);
 
+  const plansInHours = useMemo(() => {
+    if (!selection) return [];
+    return dayEntries
+      .filter((e) => e.plan.status !== "locked" && overlaps(e.startMin, e.endMin, selection.startMin, selection.endMin))
+      .map((e) => e.plan);
+  }, [dayEntries, selection]);
+
+  // Who this block is for (lib/party.js; [] = everyone). A running vote,
+  // or a reopened draft, already says. Otherwise the hours do: on a day
+  // the group has split, a block claimed over one group's plans is a
+  // decision for that group — and where the hours hold more than one
+  // group's, it's yours. Only the people it's for vote on it, and only
+  // their plans are swept up into "on the board" (backend/app/routers/
+  // contests.py open_block_contest).
+  const party = useMemo(() => {
+    if (contest) return contest.party ?? [];
+    if (reopenedDraft) return reopenedDraft.party ?? [];
+    if (location.state?.party) return location.state.party;
+    const groups = new Map();
+    plansInHours.forEach((p) => groups.set(partyKey(p.party), p.party ?? []));
+    if (groups.size === 1) return [...groups.values()][0];
+    if (groups.size > 1) {
+      const mine = [...groups.values()].find((p) => p.length && p.includes(currentUser.id));
+      return mine ?? [];
+    }
+    return [];
+  }, [contest, reopenedDraft, location.state, plansInHours, currentUser.id]);
+
+  const insidePlans = useMemo(
+    () => plansInHours.filter((p) => partiesMeet(p.party, party)),
+    [plansInHours, party]
+  );
+  // The people who'd vote: the block's group, less anyone who can't vote.
+  const voters = useMemo(
+    () => partyMembers(party, contributors).filter((c) => c.role !== "reader"),
+    [party, contributors]
+  );
+
+  // Only votes that are this group's business can clash with this block
+  // or be joined by it; the other group's vote over the same hours is
+  // their own (backend/app/routers/contests.py open_block_contest).
+  const partyWindows = useMemo(
+    () => contestWindowsFrom(dayEntries.filter((e) => partiesMeet(e.plan.party, party))),
+    [dayEntries, party]
+  );
+
   // The hours in the drag that are already out for a vote. An exactly
   // matching window is fine — that's how a further set joins an existing
   // decision — but a partial overlap has to be refused, and named
@@ -233,28 +280,21 @@ export default function ProposeBlock() {
   const clashingContest = useMemo(() => {
     if (!selection) return null;
     return (
-      contestWindows.find(
+      partyWindows.find(
         (w) =>
           overlaps(selection.startMin, selection.endMin, w.startMin, w.endMin) &&
           !(w.startMin === selection.startMin && w.endMin === selection.endMin)
       ) ?? null
     );
-  }, [selection, contestWindows]);
+  }, [selection, partyWindows]);
 
   const matchingContest = useMemo(() => {
     if (!selection) return null;
-    return contestWindows.find((w) => w.startMin === selection.startMin && w.endMin === selection.endMin) ?? null;
-  }, [selection, contestWindows]);
+    return partyWindows.find((w) => w.startMin === selection.startMin && w.endMin === selection.endMin) ?? null;
+  }, [selection, partyWindows]);
 
   // Everything the claim would sweep up — the "on the board" side of the
   // comparison, and the source of the "N items sit in these hours" count.
-  const insidePlans = useMemo(() => {
-    if (!selection) return [];
-    return dayEntries
-      .filter((e) => e.plan.status !== "locked" && overlaps(e.startMin, e.endMin, selection.startMin, selection.endMin))
-      .map((e) => e.plan);
-  }, [dayEntries, selection]);
-
   const insideItems = useMemo(
     () => insidePlans.flatMap((p) => p.items.map((item) => ({ plan: p, item }))),
     [insidePlans]
@@ -609,7 +649,7 @@ export default function ProposeBlock() {
     const { startsAt, endsAt } = windowIso();
     const result = reopenedDraftId
       ? await publishExistingDraft(startsAt, endsAt)
-      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems() });
+      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems(), party });
     setBusy(false);
     if (result.ok) {
       committedRef.current = true;
@@ -632,6 +672,7 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
+      party,
     });
     if (!saved.ok) return saved;
     return dispatch({ type: "PUBLISH_DRAFT", planId: saved.planId });
@@ -650,6 +691,7 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
+      party,
     });
     setBusy(false);
     if (result.ok) {
@@ -705,7 +747,7 @@ export default function ProposeBlock() {
           tripDays={tripDays}
           dayIndex={dayIndex}
           dayEntries={dayEntries}
-          contestWindows={contestWindows}
+          contestWindows={partyWindows}
           selection={selection}
           onChange={(next) => {
             setError("");
@@ -730,7 +772,7 @@ export default function ProposeBlock() {
           windowMinutes={windowMinutes}
           plannedMinutes={plannedMinutes}
           stops={stops.map((s) => {
-            const headcount = headcountFor(s, trip, contributors);
+            const headcount = headcountFor(s, trip, contributors, party);
             return { ...s, headcount, perHeadCents: perHeadCents(s, headcount) };
           })}
           pullInGroups={pullInGroups}
@@ -784,7 +826,8 @@ export default function ProposeBlock() {
           }
           yours={yoursColumn(stops, selection, windowMinutes)}
           showTotals={seesAllCosts}
-          contributors={contributors}
+          contributors={voters}
+          groupLabel={party.length ? namesOf(voters) : ""}
           busy={busy}
           error={error}
           isDraft={Boolean(reopenedDraftId)}
@@ -1432,6 +1475,7 @@ function StepFour({
   yours,
   showTotals = true,
   contributors,
+  groupLabel = "",
   busy,
   error,
   isDraft,
@@ -1515,12 +1559,22 @@ function StepFour({
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
             <span style={{ font: "600 14px var(--font-sans)", color: "var(--text-primary)" }}>Goes to a vote</span>
             <span className="mono-caption">
-              {contributors.length} planner{contributors.length === 1 ? "" : "s"}
+              {groupLabel
+                ? `${contributors.length} in this group`
+                : `${contributors.length} planner${contributors.length === 1 ? "" : "s"}`}
             </span>
           </div>
           <div style={{ marginTop: 10 }}>
             <AvatarStack contributors={contributors.slice(0, 4)} overflowCount={Math.max(0, contributors.length - 4)} size={26} />
           </div>
+          {groupLabel && (
+            // The group has split for these hours, and this block is one
+            // group's business: only they vote on it, and the other
+            // group's plans stay as they are.
+            <div style={{ marginTop: 8, font: "500 12px var(--font-sans)", color: "var(--text-secondary)" }}>
+              For {groupLabel} only. The rest of the group&rsquo;s plans for these hours aren&rsquo;t affected.
+            </div>
+          )}
           {/* Amended from the handoff's "until a majority picks a set":
               nothing here resolves on a tally. The owner locks, and a
               majority is shown as a state rather than an outcome (feature

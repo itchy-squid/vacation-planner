@@ -371,6 +371,27 @@ class PlanCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
+    # Who the plan is for, as contributor ids. [] (the default) is everyone.
+    # See app/party.py.
+    party: list[int] = Field(default_factory=list)
+
+
+class PlanSplit(BaseModel):
+    """Split the group — POST /api/plans/{id}/split.
+
+    `leaving` are the people who go off and do something else over this
+    plan's hours. They get a new, empty plan of their own for those hours
+    (named `label`); everyone else stays on this one."""
+
+    leaving: list[int] = Field(min_length=1)
+    label: str = ""
+
+
+class PlanPartySet(BaseModel):
+    """Set who a plan is for — PUT /api/plans/{id}/party. [] is everyone,
+    which is how a branch is brought back together with the rest."""
+
+    party: list[int] = Field(default_factory=list)
 
 
 class ProposalUpdate(BaseModel):
@@ -408,6 +429,8 @@ class PlanOut(BaseModel):
     created_by_id: int | None
     # The proposer's case for this plan, shown to voters.
     rationale: str
+    # Contributor ids this plan is for; [] is everyone (app/party.py).
+    party: list[int] = Field(default_factory=list)
     items: list[PlanItemOut]
     # Derived, never stored — see app/derive.py. There is no
     # moving_minutes any more; see that module's docstring for why.
@@ -435,6 +458,10 @@ class ContestProposeCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
+    # Who the decision is for. A proposal inside one branch of a split day
+    # passes that branch's party; [] is the whole trip. Only plans for
+    # exactly these people are captured, and only they vote.
+    party: list[int] = Field(default_factory=list)
 
 
 class ContestPlanOut(PlanOut):
@@ -456,6 +483,8 @@ class ContestOut(BaseModel):
     # The hours under contest. Every option spans exactly these.
     starts_at: datetime
     ends_at: datetime
+    # Who the decision is for, and so who votes; [] is everyone.
+    party: list[int] = Field(default_factory=list)
     plans: list[ContestPlanOut]
     voted_count: int
     contributor_count: int

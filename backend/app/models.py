@@ -298,6 +298,15 @@ class Plan(Base):
     # screen ("Why (optional)" in the proposal flow's review step). Empty
     # for every plan that wasn't proposed through that flow.
     rationale: Mapped[str] = mapped_column(Text, default="")
+    # Who this plan is for, as contributor ids. [] means everyone on the
+    # trip, the same convention as Pin.heads, and it's what every plan made
+    # before split-party plans means. Two plans may share hours only when
+    # their parties don't share a person (app/party.py parties_meet), which
+    # is the whole of how the group splitting up is modelled: there is no
+    # "split" row, just plans for different people at the same time.
+    # Always stored normalized (sorted, de-duplicated, and [] rather than a
+    # list of the whole roster). See app/party.py normalize_party.
+    party: Mapped[list[int]] = mapped_column(JSON, default=list)
     status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus), default=PlanStatus.placed)
     # Circular with Contest.winning_plan_id (a Contest is created only after
     # a Plan already exists to contest against) — use_alter, same pattern as
@@ -373,6 +382,11 @@ class Contest(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[ContestStatus] = mapped_column(Enum(ContestStatus), default=ContestStatus.open)
+    # The people this decision is for, same shape and meaning as
+    # Plan.party. Every option in the contest carries it, only those
+    # people vote, and the majority is counted against them. [] is the
+    # whole trip, as before.
+    party: Mapped[list[int]] = mapped_column(JSON, default=list)
     winning_plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", use_alter=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

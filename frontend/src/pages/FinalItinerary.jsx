@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowRight } from "@fortawesome/free-solid-svg-icons";
 import AvatarStack from "../components/planner/AvatarStack";
-import { usePlannerState } from "../state/PlannerContext";
+import { usePlannerState, useCurrentUser } from "../state/PlannerContext";
+import { namesOf, partyMembers, planIncludes } from "../lib/party";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
@@ -23,6 +24,16 @@ export default function FinalItinerary() {
   const navigate = useNavigate();
   const state = usePlannerState();
   const { trip: TRIP, plans, contributors } = state;
+  const me = useCurrentUser();
+
+  // Once the group splits up for part of a day (lib/party.js), "the
+  // itinerary" stops being one list. Yours is the default: the stops
+  // you're on, who with, and a line for where everyone else is — which is
+  // what answers "when do we meet up?". The whole group's view keeps every
+  // stop and says whose each one is.
+  const hasSplits = useMemo(() => plans.some((p) => p.party?.length), [plans]);
+  const [mine, setMine] = useState(true);
+  const showMine = mine && hasSplits;
 
   const tripDays = useMemo(() => getTripDays(TRIP.startDate, TRIP.endDate), [TRIP.startDate, TRIP.endDate]);
 
@@ -36,9 +47,19 @@ export default function FinalItinerary() {
       const settledPlans = dayPlans.filter((p) => p.status === "placed" || p.status === "pencilled" || p.status === "locked");
 
       const stops = [];
-      settledPlans.forEach((p) => {
+      const shownPlans = showMine ? settledPlans.filter((p) => planIncludes(p, me.id)) : settledPlans;
+      shownPlans.forEach((p) => {
+        const people = p.party?.length ? partyMembers(p.party, contributors) : [];
+        const withLabel = !people.length
+          ? ""
+          : showMine
+          ? people.length > 1
+            ? `with ${namesOf(people.filter((c) => c.id !== me.id))}`
+            : "just you"
+          : namesOf(people);
         p.items.forEach((item) => {
           stops.push({
+            withLabel,
             time: clockLabel(item.startMinuteOfDay ?? p.startDt.minuteOfDay),
             sortKey: item.startMinuteOfDay ?? p.startDt.minuteOfDay,
             title: item.title,
@@ -54,7 +75,31 @@ export default function FinalItinerary() {
       // order a day is actually read in.
       stops.sort((a, b) => a.sortKey - b.sortKey);
 
+      // Where everyone else is while you're off with your group: one line
+      // per other group, not their stop list.
+      const elsewhere = [];
+      if (showMine) {
+        const byGroup = new Map();
+        settledPlans
+          .filter((p) => !planIncludes(p, me.id))
+          .forEach((p) => {
+            const key = (p.party ?? []).join(",");
+            if (!byGroup.has(key)) byGroup.set(key, { people: partyMembers(p.party, contributors), titles: [], endMin: 0 });
+            const g = byGroup.get(key);
+            p.items.forEach((item) => g.titles.push(item.title));
+            if (!p.items.length && p.label) g.titles.push(p.label);
+            g.endMin = Math.max(g.endMin, p.endDt?.minuteOfDay ?? 0);
+          });
+        byGroup.forEach((g, key) =>
+          elsewhere.push({
+            key,
+            text: `${namesOf(g.people)}: ${g.titles.join(", ") || "their own plans"} until ${clockLabel(g.endMin)}`,
+          })
+        );
+      }
+
       return {
+        elsewhere,
         dayIndex,
         label: tripDayLabel(dayIndex, TRIP.startDate, TRIP.endDate),
         stops,
@@ -63,7 +108,7 @@ export default function FinalItinerary() {
         firstContestId: dayPlans.find((p) => p.status === "contested")?.contestId ?? null,
       };
     });
-  }, [tripDays, plans, TRIP.startDate, TRIP.endDate]);
+  }, [tripDays, plans, TRIP.startDate, TRIP.endDate, showMine, me.id, contributors]);
 
   const finishedCount = dayViews.filter((d) => d.settled).length;
 
@@ -79,12 +124,38 @@ export default function FinalItinerary() {
           <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: "var(--surface-sunken)", overflow: "hidden" }}>
             <div style={{ width: `${dayViews.length ? (finishedCount / dayViews.length) * 100 : 0}%`, height: "100%", background: "var(--geo)" }} />
           </div>
+          {hasSplits && (
+            <div role="group" aria-label="Whose itinerary" style={{ marginTop: 14, display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2 }}>
+              {[
+                { value: true, label: "My itinerary" },
+                { value: false, label: "Whole group" },
+              ].map((opt) => (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  aria-pressed={mine === opt.value}
+                  onClick={() => setMine(opt.value)}
+                  style={{
+                    flex: 1,
+                    padding: "6px 0",
+                    borderRadius: "calc(var(--radius-md) - 2px)",
+                    background: mine === opt.value ? "var(--surface-card)" : "transparent",
+                    boxShadow: mine === opt.value ? "var(--shadow-raised)" : "none",
+                    font: "600 11.5px var(--font-sans)",
+                    color: mine === opt.value ? "var(--text-primary)" : "var(--text-secondary)",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "18px var(--gutter-screen) 0" }}>
           {dayViews.map((d) =>
             d.settled ? (
-              <DayCard key={d.dayIndex} label={d.label} stops={d.stops} contributors={contributors} />
+              <DayCard key={d.dayIndex} label={d.label} stops={d.stops} elsewhere={d.elsewhere} contributors={contributors} />
             ) : (
               <UnfinishedCard
                 key={d.dayIndex}
@@ -110,7 +181,7 @@ export default function FinalItinerary() {
   );
 }
 
-function DayCard({ label, stops, contributors }) {
+function DayCard({ label, stops, elsewhere = [], contributors }) {
   return (
     <div style={{ borderRadius: "var(--radius-2xl)", background: "var(--surface-card)", border: "1px solid var(--hairline)", boxShadow: "var(--shadow-card)", padding: "15px 16px" }}>
       <div className="serif-place" style={{ fontSize: 19, color: "var(--text-primary)" }}>{label}</div>
@@ -121,7 +192,15 @@ function DayCard({ label, stops, contributors }) {
             <div style={{ flex: 1, borderLeft: `2px solid ${s.notable ? "var(--stone-250)" : "var(--geo)"}`, paddingLeft: 10 }}>
               <div style={{ font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>{s.title}</div>
               <div style={{ font: "400 11px var(--font-sans)", color: "var(--text-secondary)", marginTop: 1 }}>{s.detail}{s.notable ? " · unconfirmed" : ""}</div>
+              {s.withLabel && (
+                <div style={{ font: "500 11px var(--font-sans)", color: "var(--text-secondary)", marginTop: 1 }}>{s.withLabel}</div>
+              )}
             </div>
+          </div>
+        ))}
+        {elsewhere.map((e) => (
+          <div key={e.key} className="mono-data-sm" style={{ color: "var(--text-muted)", paddingLeft: 54, letterSpacing: "0.03em" }}>
+            {e.text}
           </div>
         ))}
         {stops.length === 0 && <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-muted)" }}>Nothing placed yet.</div>}

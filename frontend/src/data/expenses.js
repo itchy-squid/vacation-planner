@@ -22,10 +22,23 @@ export const SCHEDULED_STATUSES = ["placed", "pencilled", "locked"];
 // contributor count, because the people planning a trip and the people
 // going on it are different questions (feature spec decision 9). Floors at
 // 1 so the division below can never blow up on a trip with neither.
-export function headcountFor(item, trip, contributors) {
+//
+// Between the two sits the plan's own party (lib/party.js): on a day the
+// group has split, a cost with no heads of its own is shared by the people
+// on the plan it's in — Ana and Lin's guide is split two ways, not six.
+export function headcountFor(item, trip, contributors, party = []) {
   const heads = item.heads ?? [];
   if (heads.length) return heads.length;
+  if (party?.length) return party.length;
   return trip?.travellerCount || contributors.length || 1;
+}
+
+// Who actually shares an item's cost: its own heads, else the plan's
+// party, else everyone ([]).
+export function sharersOf(item, party = []) {
+  const heads = item.heads ?? [];
+  if (heads.length) return heads;
+  return party ?? [];
 }
 
 export function perHeadCents(item, headcount) {
@@ -62,8 +75,8 @@ export function buildExpenses(plans, { trip, contributors, viewerId }) {
     .forEach((plan) => {
       const dayIndex = plan.startDt ? dayIndexForDate(plan.startDt, trip.startDate) : null;
       plan.items.forEach((item, index) => {
-        const heads = item.heads ?? [];
-        const headcount = headcountFor(item, trip, contributors);
+        const heads = sharersOf(item, plan.party);
+        const headcount = headcountFor(item, trip, contributors, plan.party);
         const isSubset = heads.length > 0;
         rows.push({
           key: `${plan.id}-${item.pinId ?? "t"}-${item.travelItemId ?? "p"}-${index}`,

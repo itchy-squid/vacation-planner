@@ -18,6 +18,7 @@ import {
   contestWindowsFrom,
   layoutDayPlans,
   plansOnDay,
+  splitBandsFrom,
   minuteFromOffsetY,
   planDurationMinutes,
   planStartMinute,
@@ -25,6 +26,7 @@ import {
   topForMinute,
 } from "../lib/dayGrid";
 import TripHeader from "../components/core/TripHeader";
+import { namesOf, partiesMeet, partyMembers, planIncludes } from "../lib/party";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
 // against the spec's Plan/PlanItem/Contest model (see docs/features/
@@ -46,7 +48,7 @@ export default function DaySchedule() {
   const dayIndex = Number(day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, pins, travelItems, plans, placing, proposeSheet } = state;
+  const { trip, pins, travelItems, plans, placing, proposeSheet, contributors } = state;
 
   const currentUser = useCurrentUser();
   // Readers see the day but can't place, drag or propose. Companions can
@@ -84,7 +86,19 @@ export default function DaySchedule() {
     [plans, currentUser.id, trip.startDate, dayIndex]
   );
 
-  const laidOut = useMemo(() => layoutDayPlans(dayEntries), [dayEntries]);
+  // Split-party plans (lib/party.js). Where the group has split, the grid
+  // brackets those hours and says how; "Just me" then drops the branches
+  // you're not on, so the day reads as your day. The brackets always come
+  // from the whole day — a split you're on one side of is still a split.
+  const splitBands = useMemo(() => splitBandsFrom(dayEntries), [dayEntries]);
+  const dayHasSplit = splitBands.length > 0 || dayEntries.some((e) => e.plan.party?.length);
+  const [justMe, setJustMe] = useState(false);
+  const showJustMe = justMe && dayHasSplit;
+  const visibleEntries = useMemo(
+    () => (showJustMe ? dayEntries.filter((e) => planIncludes(e.plan, currentUser.id)) : dayEntries),
+    [showJustMe, dayEntries, currentUser.id]
+  );
+  const laidOut = useMemo(() => layoutDayPlans(visibleEntries), [visibleEntries]);
 
   // Region(s) this day already has scheduled — derived from the pins
   // behind this day's plan items (travel items have no region).
@@ -174,10 +188,18 @@ export default function DaySchedule() {
   // Returns the day *entry* in the way, not the plan — the caller needs
   // both the plan (to target a proposal at it) and the hours it occupies
   // on this particular day.
-  function findOverlap(startMinute, endMinute, excludePlanId) {
+  //
+  // `party` is who the plan being placed or moved is for ([] = everyone);
+  // only a plan someone would be on twice is in the way, the same rule the
+  // server applies (backend/app/party.py).
+  function findOverlap(startMinute, endMinute, excludePlanId, party = []) {
     return (
       dayEntries.find(
-        (e) => e.plan.id !== excludePlanId && startMinute < e.endMin && endMinute > e.startMin
+        (e) =>
+          e.plan.id !== excludePlanId &&
+          startMinute < e.endMin &&
+          endMinute > e.startMin &&
+          partiesMeet(e.plan.party, party)
       ) ?? null
     );
   }
@@ -204,6 +226,8 @@ export default function DaySchedule() {
         type: "OPEN_PROPOSE_FOR",
         proposeSheet: {
           targetPlanId: occupying.plan.id,
+          // Proposing against a branch is a decision for that branch.
+          party: occupying.plan.party ?? [],
           dayIndex,
           startMinute,
           kind: placing.kind,
@@ -327,8 +351,16 @@ export default function DaySchedule() {
     if (previewStart === info.originStart) return; // dropped back where it started
 
     const endMinute = previewStart + info.durationMinutes;
-    if (findOverlap(previewStart, endMinute, plan.id)) {
-      setMoveError("That time is already taken — try another slot.");
+    const inTheWay = findOverlap(previewStart, endMinute, plan.id, plan.party);
+    if (inTheWay) {
+      const clash = plan.party?.length || inTheWay.plan.party?.length
+        ? partyMembers(inTheWay.plan.party, contributors).filter((c) => planIncludes(plan, c.id))
+        : [];
+      setMoveError(
+        clash.length
+          ? `${namesOf(clash)} ${clash.length === 1 ? "is" : "are"} already busy then — try another slot.`
+          : "That time is already taken — try another slot."
+      );
       return;
     }
 
@@ -336,7 +368,7 @@ export default function DaySchedule() {
     const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
     const result = await dispatch({ type: "MOVE_PLAN", planId: plan.id, startsAt, endsAt });
     if (!result.ok) {
-      setMoveError("That time is already taken — try another slot.");
+      setMoveError(result.message && result.message !== "That time is already occupied." ? result.message : "That time is already taken — try another slot.");
     }
   }
 
@@ -510,7 +542,78 @@ export default function DaySchedule() {
         )}
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
+          {dayHasSplit && (
+            <div
+              role="group"
+              aria-label="Whose day to show"
+              style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2, marginBottom: 14 }}
+            >
+              {[
+                { value: false, label: "Everyone" },
+                { value: true, label: `Just me · ${currentUser.name}` },
+              ].map((opt) => (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  aria-pressed={justMe === opt.value}
+                  onClick={() => setJustMe(opt.value)}
+                  style={{
+                    flex: 1,
+                    padding: "6px 0",
+                    borderRadius: "calc(var(--radius-md) - 2px)",
+                    background: justMe === opt.value ? "var(--surface-card)" : "transparent",
+                    boxShadow: justMe === opt.value ? "var(--shadow-raised)" : "none",
+                    font: "600 11.5px var(--font-sans)",
+                    color: justMe === opt.value ? "var(--text-primary)" : "var(--text-secondary)",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           <DayGrid cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
+            {splitBands.map((band) => {
+              const top = topForMinute(Math.max(band.startMin, DAY_START_MIN));
+              const height = (Math.min(band.endMin, DAY_END_MIN) - Math.max(band.startMin, DAY_START_MIN)) * PX_PER_MIN;
+              const elsewhere = band.parties
+                .filter((p) => p.length && !p.includes(currentUser.id))
+                .flatMap((p) => partyMembers(p, contributors));
+              const counts = band.parties.map((p) => (p.length ? p.length : contributors.length)).join(" + ");
+              return (
+                <div
+                  key={`split-${band.startMin}`}
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    top: top - 3,
+                    height: height + 6,
+                    left: -3,
+                    right: -3,
+                    border: "1.5px dashed var(--border-strong)",
+                    borderRadius: "var(--radius-md)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <span
+                    className="mono-data-sm"
+                    style={{
+                      position: "absolute",
+                      right: 8,
+                      top: -8,
+                      padding: "0 5px",
+                      background: "var(--surface-card)",
+                      color: "var(--text-secondary)",
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {showJustMe && elsewhere.length ? `${namesOf(elsewhere)} elsewhere` : `Group split · ${counts}`}
+                  </span>
+                </div>
+              );
+            })}
             {laidOut.map((entry) => {
                 const { plan, numCols, col } = entry;
                 const isDragging = dragPreview?.planId === plan.id;
@@ -563,6 +666,8 @@ export default function DaySchedule() {
                       continuesBefore={startMin < DAY_START_MIN}
                       continuesAfter={endMin > DAY_END_MIN}
                       onTap={() => {}}
+                      faces={plan.party?.length ? partyMembers(plan.party, contributors) : null}
+                      tightFaces={numCols >= 3}
                     />
                   </div>
                 );

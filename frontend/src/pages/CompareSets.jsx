@@ -11,6 +11,8 @@ import TripHeader from "../components/core/TripHeader";
 import { fmtMin, slackColor } from "../data/derive";
 import { clockLabel } from "../lib/planTime";
 import { coordsForPin } from "../lib/mapLayout";
+import { namesOf, partyMembers } from "../lib/party";
+import AvatarStack from "../components/planner/AvatarStack";
 
 // Screen 5, rebuilt against the spec's Contest/Plan model. Handoff README
 // screen 5's "select a set → highlight its pins + route, nothing else
@@ -177,6 +179,8 @@ export default function CompareSets() {
     try {
       await api.toggleContestVote(contestId, planId);
       await refetch();
+    } catch (err) {
+      setNotice(err.body?.detail?.message || err.message || "Couldn't record that vote.");
     } finally {
       setBusy(false);
     }
@@ -236,6 +240,12 @@ export default function CompareSets() {
 
   const votedCount = contest.voted_count;
   const isResolved = contest.status === "resolved";
+  // A decision for one group of a split day (lib/party.js): only they
+  // vote, and the tally and majority are counted against them.
+  const contestParty = contest.party ?? [];
+  const partyPeople = partyMembers(contestParty, state.contributors);
+  const inParty = !contestParty.length || contestParty.includes(currentUser.id);
+  const outsiders = contestParty.length ? state.contributors.filter((c) => !contestParty.includes(c.id)) : [];
 
   return (
     <div className="screen">
@@ -302,6 +312,16 @@ export default function CompareSets() {
             </div>
           </div>
 
+          {contestParty.length > 0 && (
+            <div style={{ marginTop: 10, padding: "9px 12px", borderRadius: "var(--radius-lg)", background: "var(--teal-50)", display: "flex", alignItems: "center", gap: 10 }}>
+              <AvatarStack contributors={partyPeople} size={20} />
+              <div style={{ font: "400 12px/1.4 var(--font-sans)", color: "var(--text-primary)" }}>
+                A decision for <strong>{namesOf(partyPeople)}</strong>.
+                {outsiders.length > 0 && ` ${namesOf(outsiders)} ${outsiders.length === 1 ? "is" : "are"} doing something else then, so ${outsiders.length === 1 ? "doesn’t" : "don’t"} vote.`}
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 13, display: "flex", flexDirection: "column", gap: 9 }}>
             {displaySets.map((s) => (
               <SetCard
@@ -324,7 +344,7 @@ export default function CompareSets() {
                 canEdit={canEdit(s)}
                 onEdit={() => openProposeScreen({ editPlanId: s.id })}
                 voted={s.voted}
-                onVote={canVote ? () => handleVote(s.id) : null}
+                onVote={canVote && inParty ? () => handleVote(s.id) : null}
                 onPick={() => handlePick(s.id)}
                 isOwner={canDecide && !isResolved}
                 ownerName={owner?.name}

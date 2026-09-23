@@ -330,6 +330,14 @@ export const api = {
   movePlan: (planId, fields) => request(`/api/plans/${planId}`, { method: "PATCH", body: fields }),
   deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
   lockPlan: (planId) => request(`/api/plans/${planId}/lock`, { method: "POST" }),
+  // Split-party plans (backend/app/party.py). Splitting moves `leaving`
+  // onto a new, empty plan over the same hours and returns [this, new];
+  // setting a party replaces who a plan is for ([] = everyone); joining
+  // moves the caller alone onto this plan's group and returns [this,
+  // ...plans they left].
+  splitPlan: (planId, payload) => request(`/api/plans/${planId}/split`, { method: "POST", body: payload }),
+  setPlanParty: (planId, party) => request(`/api/plans/${planId}/party`, { method: "PUT", body: { party } }),
+  joinPlan: (planId) => request(`/api/plans/${planId}/join`, { method: "POST" }),
 
   // Propose a block: { starts_at, ends_at, label?, rationale?, items:
   // [{ pin_id | travel_item_id, duration_minutes? }] }. There's no
