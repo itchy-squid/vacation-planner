@@ -30,6 +30,13 @@ than the auto-generated fqdn nothing but this template still uses. Leave
 empty until the domain is actually bound.''')
 param customDomainName string = ''
 
+@description('''Custom domain bindings to restate on ingress, built by
+main.bicep from an `existing` CLI-created managed certificate. This module
+never creates a hostname or certificate itself; this only stops redeploys
+from dropping a binding made with `az containerapp hostname bind`, since
+ARM PUT replaces configuration.ingress wholesale.''')
+param customDomains array = []
+
 @description('Resource ID of the user-assigned managed identity (infra/modules/managed-identity.bicep) to attach to this Container App.')
 param managedIdentityId string
 @description('Client ID of that same managed identity — read back by the app as AZURE_CLIENT_ID so DefaultAzureCredential targets this identity specifically.')
@@ -93,13 +100,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           allowedHeaders: ['*']
           allowCredentials: true
         }
-        // No customDomains entry: this template no longer manages the
-        // backend's custom domain or its managed certificate -- Azure
-        // auto-renews managed certs in place, and a fixed hostname/cert
-        // binding managed out-of-band survives redeploys of everything
-        // else here. See infra/README.md "Custom domains" for the
-        // one-time `az containerapp hostname add` / `hostname bind` step
-        // per environment.
+        // Restates the CLI-made binding (see the customDomains param) so
+        // redeploys don't drop it. Empty until the domain is bound.
+        customDomains: customDomains
       }
       registries: [
         {

@@ -6,6 +6,8 @@ param postgresSkuName = 'Standard_B1ms'
 param corsOrigins = 'https://vacations.dev.amandasanti.com'
 param frontendCustomDomainName = 'vacations.dev.amandasanti.com'
 param backendCustomDomainName = 'vacations-api.dev.amandasanti.com'
+// Created by `az containerapp hostname bind`, not by this template.
+param backendCertificateName = 'vacations-api.dev.amandasant-vacation-260911042853'
 
 // Optional -- only needed for the one-time manual Easy Auth rollout
 // (infra/README.md step 5's second pass). The GitHub Actions workflow

@@ -207,6 +207,14 @@ function checkSession() {
   return sessionCheck;
 }
 
+// For main.jsx's public homepage: at "/" a signed-out visitor is shown the
+// homepage instead of being sent to log in, so it needs the answer rather
+// than ensureSignedIn()'s redirect. Same cached check, same true / false /
+// null meaning (null = inconclusive, treated as signed in).
+export function isSignedIn() {
+  return checkSession();
+}
+
 // Call once, as early as possible (see main.jsx), so a signed-out user is
 // sent to log in (or to the provider chooser) before the app tries to
 // render anything, rather than after its first API call fails. Resolves for everyone except a

@@ -378,8 +378,8 @@ storage role assignments above:
    binds a managed certificate in one step, under Azure's own
    auto-generated certificate name.
 5. **Set `backendCustomDomainName` to that same hostname and redeploy.**
-   This is informational only -- it doesn't touch ingress or any
-   certificate, it just moves `backendUrl` (and therefore what the
+   Also set `backendCertificateName` (see "Redeploys keep the binding"
+   below). `backendCustomDomainName` moves `backendUrl` (and therefore what the
    frontend build targets, and what Easy Auth's sign-in redirect will be
    built against) onto the now-bound custom domain instead of the
    auto-generated one. Also update the Entra app registration's
@@ -392,6 +392,16 @@ Azure auto-renews managed certificates in place (same resource, refreshed
 automatically ahead of expiry), so steps 1-4 are a genuine one-time step
 per environment, not a recurring one. Step 5 only needs repeating if the
 hostname itself ever changes.
+
+**Redeploys keep the binding.** ARM's PUT replaces the Container App's
+whole `configuration.ingress`, so a template that simply omits
+`customDomains` unbinds the domain on every deploy. So in step 5, also set
+`backendCertificateName` to the managed certificate `hostname bind`
+created (`az containerapp env certificate list -g <resource-group> -n
+<env-name> --managed-certificates-only`). With both set, `main.bicep`
+references that certificate as an `existing` resource and restates the
+binding on every deploy. With either empty, no binding is declared, so a
+brand-new environment's first deploy can't fail on it.
 
 **Why this isn't in Bicep:** it used to be, until prod's first deploy hit
 a chicken-and-egg failure (`CertificateNotFound` +

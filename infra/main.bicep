@@ -35,6 +35,16 @@ frontend build targets and what Easy Auth\'s sign-in redirect must match
 -- reflects it. Leave empty until then.''')
 param backendCustomDomainName string = ''
 
+@description('''Name of the managed certificate that `az containerapp
+hostname bind` created for backendCustomDomainName, in this environment's
+Container Apps environment (Azure picks the name, e.g.
+"vacations-api.dev.amandasant-vacation-260911042853"; find it with `az
+containerapp env certificate list -g <rg> -n <env> --managed-certificates-only`).
+When both this and backendCustomDomainName are set, the template restates
+that binding on every deploy so it isn't dropped. Leave empty until the
+domain is bound.''')
+param backendCertificateName string = ''
+
 @description('''Optional custom domain for the frontend Static Web App, e.g.
 vacations.dev.amandasanti.com. Leave empty on the first deploy of a new
 environment -- see modules/static-web-app.bicep and infra/README.md
@@ -125,6 +135,33 @@ module photoStorage 'modules/storage-account.bicep' = {
   }
 }
 
+// The backend's custom domain and its managed certificate are created by
+// the CLI (`az containerapp hostname add` / `hostname bind`), never by this
+// template. But the module below PUTs the whole Container App, and ARM
+// replaces ingress wholesale, so the binding has to be restated here or
+// every deploy drops it. Optionally reference the CLI-created certificate as
+// an `existing` resource: only its resource ID is used (no runtime read), and
+// when either name is empty -- e.g. a brand-new environment -- no binding is
+// declared at all, so the first deploy can't fail on it.
+var bindBackendCustomDomain = !empty(backendCustomDomainName) && !empty(backendCertificateName)
+
+resource existingContainerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
+  name: suffix
+}
+
+resource existingBackendCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' existing = if (bindBackendCustomDomain) {
+  parent: existingContainerAppsEnv
+  name: backendCertificateName
+}
+
+var backendCustomDomains = bindBackendCustomDomain ? [
+  {
+    name: backendCustomDomainName
+    certificateId: existingBackendCertificate.id
+    bindingType: 'SniEnabled'
+  }
+] : []
+
 module backend 'modules/container-app-backend.bicep' = {
   name: 'backend'
   params: {
@@ -144,6 +181,7 @@ module backend 'modules/container-app-backend.bicep' = {
     storageContainerName: photoStorage.outputs.containerName
     corsOrigins: corsOrigins
     customDomainName: backendCustomDomainName
+    customDomains: backendCustomDomains
     entraClientId: entraClientId
     entraClientSecret: entraClientSecret
     googleClientId: googleClientId
