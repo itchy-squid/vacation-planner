@@ -22,7 +22,7 @@ router = APIRouter(tags=["pins"])
 logger = logging.getLogger(__name__)
 
 
-_COST_FIELDS = ("cost_cents", "heads")
+_COST_FIELDS = ("cost_cents", "cost_basis", "heads")
 
 
 def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:

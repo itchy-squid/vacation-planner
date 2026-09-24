@@ -17,6 +17,12 @@ import { usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 //
 // Someone already on the trip skips the question and goes straight in;
 // the server leaves their role as it was either way.
+//
+// Then: which traveler are you? The owner may have listed people before
+// they joined (backend Traveler), so a new member picks their own row —
+// "Grandma Hua" — rather than becoming a second copy of her, says they're
+// new, or says they're only helping plan. A link made for one traveler
+// already knows, and just shows who.
 
 export default function JoinTrip() {
   const { token } = useParams();
@@ -28,6 +34,8 @@ export default function JoinTrip() {
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [joining, setJoining] = useState(false);
+  // "new" | "not_going" | a traveler id
+  const [claim, setClaim] = useState("new");
   // Set once "Add to my trips" is tapped, so a re-run of the preview
   // effect (the app's trip state changes under this screen as the join
   // lands) can't mistake the new membership for "already a member" and
@@ -48,6 +56,7 @@ export default function JoinTrip() {
         }
         setPreview(data);
         setStatus("ready");
+        if (data.invite_traveler) setClaim(data.invite_traveler.id);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -73,7 +82,9 @@ export default function JoinTrip() {
     if (joining) return;
     joinStartedRef.current = true;
     setJoining(true);
-    const result = await dispatch({ type: "JOIN_TRIP", token });
+    const body =
+      claim === "not_going" ? { not_going: true } : typeof claim === "number" ? { traveler_id: claim } : {};
+    const result = await dispatch({ type: "JOIN_TRIP", token, claim: body });
     if (result.ok) {
       navigate("/", { replace: true, state: { joinedTripName: result.tripName } });
       return;
@@ -210,6 +221,10 @@ export default function JoinTrip() {
           </div>
         </div>
 
+        <div style={{ padding: "12px var(--gutter-screen) 0" }}>
+          <WhoAreYou preview={preview} claim={claim} onClaim={setClaim} ownerName={ownerName} />
+        </div>
+
         <div style={{ padding: "20px var(--gutter-screen) 0", display: "flex", flexDirection: "column", gap: 4 }}>
           {error ? (
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a", paddingBottom: 8 }}>{error}</div>
@@ -235,6 +250,84 @@ export default function JoinTrip() {
     </div>
   );
 }
+
+function WhoAreYou({ preview, claim, onClaim, ownerName }) {
+  const invited = preview.invite_traveler;
+  if (invited) {
+    return (
+      <div style={cardStyle}>
+        <span className="mono-caption">You&rsquo;re joining as</span>
+        <div style={{ font: "600 15px var(--font-sans)", color: "var(--text-primary)", marginTop: 6 }}>{invited.name}</div>
+        {invited.paid_by_name && (
+          <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>
+            Paid for by {invited.paid_by_name}
+          </div>
+        )}
+      </div>
+    );
+  }
+  const listed = preview.unclaimed_travelers ?? [];
+  const options = [
+    ...listed.map((t) => ({
+      value: t.id,
+      title: t.name,
+      sub: t.paid_by_name ? `Paid for by ${t.paid_by_name}` : `Listed by ${ownerName}`,
+    })),
+    { value: "new", title: listed.length ? "I\u2019m a new traveler" : "I\u2019m going on this trip", sub: "Add me to the list" },
+    { value: "not_going", title: "I\u2019m not going", sub: "Just helping plan" },
+  ];
+  return (
+    <div style={cardStyle}>
+      <span className="mono-caption">{listed.length ? "Are you one of these travelers?" : "Are you going?"}</span>
+      {listed.length > 0 && (
+        <div style={{ font: "400 12px/1.45 var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>
+          {ownerName} listed some people before they joined. If one of them is you, pick it so your groups and costs
+          follow you.
+        </div>
+      )}
+      <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+        {options.map((o) => {
+          const on = claim === o.value;
+          return (
+            <button
+              key={String(o.value)}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onClaim(o.value)}
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                textAlign: "left",
+                padding: "9px 11px",
+                borderRadius: "var(--radius-lg)",
+                border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+                background: on ? "var(--plum-tint)" : "var(--surface-card)",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{ width: 14, height: 14, marginTop: 2, borderRadius: "50%", flex: "none", border: on ? "4.5px solid var(--accent)" : "1.5px solid var(--border-strong)" }}
+              />
+              <span>
+                <span style={{ display: "block", font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>{o.title}</span>
+                <span style={{ font: "400 11.5px var(--font-sans)", color: "var(--text-secondary)" }}>{o.sub}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const cardStyle = {
+  background: "var(--surface-card)",
+  borderRadius: "var(--radius-xl)",
+  border: "1px solid var(--hairline)",
+  padding: "14px 16px 16px",
+};
 
 function CheckGlyph() {
   return (

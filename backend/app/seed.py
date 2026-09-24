@@ -28,7 +28,10 @@ from .models import (
     Plan,
     PlanItem,
     PlanStatus,
+    Split,
+    SplitBranch,
     TravelItem,
+    Traveler,
     Trip,
     TripPhase,
     Vote,
@@ -79,6 +82,7 @@ def _placed_plan(
     pin: Pin | None = None,
     travel_item: TravelItem | None = None,
     created_by: Contributor | None = None,
+    branch: SplitBranch | None = None,
 ) -> Plan:
     """A single-item Plan — the new-model equivalent of the old model's
     "simple block" (a one-stop CandidateSet). DaySchedule.jsx reads the
@@ -90,6 +94,7 @@ def _placed_plan(
         ends_at=_taiwan_dt(day_index, end_minute),
         status=status,
         created_by_id=created_by.id if created_by else None,
+        branch_id=branch.id if branch else None,
     )
     db.add(plan)
     db.flush()
@@ -104,12 +109,6 @@ def seed_taiwan(db: Session) -> None:
         start_date=TAIWAN_TRIP_START,
         end_date=date(2026, 10, 10),
         phase=TripPhase.scheduling,
-        # Deliberately not 6: six people are *planning* this trip, four are
-        # going. Keeping the two numbers different in the seed is the only
-        # way the Expenses screen's "× 4 travellers" and the vote card's
-        # "6 planners" can be seen not to be the same field by accident —
-        # see the feature spec's decision 9.
-        traveller_count=4,
     )
     db.add(trip)
     db.flush()
@@ -132,6 +131,31 @@ def seed_taiwan(db: Session) -> None:
         db.add(c)
         db.flush()
         contributors[key] = c
+
+    # ---- Travelers (app/models.py Traveler): who is going, which is not
+    # the same list as who is planning. Five of the six members are going;
+    # Priya is helping plan and isn't. Mei's son Kai and her mother Hua are
+    # going and will never sign in, and Mei pays for both — which is what
+    # puts "What I'm paying · 3 people" on the Expenses screen and a
+    # household on the roster in local dev. ----
+    travelers: dict[str, Traveler] = {}
+    for position, key in enumerate(["mei", "kai", "hua", "jae", "ana", "lin", "theo"]):
+        member = contributors.get(key)
+        name = {"kai": "Kai", "hua": "Grandma Hua"}.get(key, member.display_name if member else key)
+        t = Traveler(
+            trip_id=trip.id,
+            name=name,
+            initial=name[:1] if member is None else member.initial,
+            tint=member.tint if member else ("var(--who-2)" if key == "kai" else "var(--who-3)"),
+            contributor_id=member.id if member else None,
+            position=position,
+        )
+        db.add(t)
+        db.flush()
+        travelers[key] = t
+    travelers["kai"].paid_by_id = travelers["mei"].id
+    travelers["hua"].paid_by_id = travelers["mei"].id
+    db.flush()
 
     # ---- Pins — verbatim content from frontend/src/data/pins.js, minus
     # the two logistics legs (arrival, ferry) that are now TravelItems
@@ -217,8 +241,8 @@ def seed_taiwan(db: Session) -> None:
     # Din Tai Fung is the one that matters for that: it's scheduled below,
     # so it shows up on Expenses immediately. Shaved ice is still in the
     # tray, and demonstrates the same thing the moment it's placed.
-    pins_by_local_id["p13"].heads = [contributors["jae"].id, contributors["mei"].id]
-    pins_by_local_id["p3"].heads = [contributors["ana"].id, contributors["mei"].id]
+    pins_by_local_id["p13"].heads = [travelers["jae"].id, travelers["mei"].id]
+    pins_by_local_id["p3"].heads = [travelers["ana"].id, travelers["mei"].id]
     db.flush()
 
     # ---- Day 5's contest: "the core screen" (handoff README screen 5) —
@@ -296,7 +320,31 @@ def seed_taiwan(db: Session) -> None:
     _placed_plan(db, trip, day_index=6, start_minute=570, end_minute=615, status=PlanStatus.pencilled, pin=p["p7"])
     _placed_plan(db, trip, day_index=6, start_minute=1020, end_minute=1095, status=PlanStatus.locked, travel_item=ferry_back)
 
-    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"])
+    # Day 7 in Hualien is a split day (app/splits.py): Ana and Lin take the
+    # whole morning on the Taroko Gorge trail while everyone else bikes
+    # Liyu Lake and swims at Qixingtan, then all seven meet at the night
+    # market. That's what puts the lanes and the faces on the day grid,
+    # the "with Jae, Theo, Priya" lines on the itinerary, and a cost split
+    # five ways rather than seven on Expenses, into local dev.
+    #
+    # The lake group takes newcomers, so anyone added to the trip later
+    # lands with them rather than on the gorge trail.
+    t = travelers
+    hualien = Split(trip_id=trip.id, starts_at=_taiwan_dt(7, 480), ends_at=_taiwan_dt(7, 660))
+    gorge = SplitBranch(label="Taroko Gorge", position=0, traveler_ids=sorted([t["ana"].id, t["lin"].id]))
+    lake = SplitBranch(
+        label="Liyu Lake",
+        position=1,
+        traveler_ids=sorted(x.id for k, x in t.items() if k not in ("ana", "lin")),
+        takes_newcomers=True,
+    )
+    hualien.branches.extend([gorge, lake])
+    db.add(hualien)
+    db.flush()
+    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"], branch=gorge)
+    _placed_plan(db, trip, day_index=7, start_minute=495, end_minute=595, status=PlanStatus.placed, pin=p["p19"], branch=lake)
+    _placed_plan(db, trip, day_index=7, start_minute=600, end_minute=660, status=PlanStatus.pencilled, pin=p["p17"], branch=lake)
+    _placed_plan(db, trip, day_index=7, start_minute=1110, end_minute=1200, status=PlanStatus.placed, pin=p["p18"])
 
     db.commit()
 
@@ -329,6 +377,8 @@ def seed_light_trip(
     mei = Contributor(trip_id=trip.id, email="mei@example.com", display_name="Mei", initial="M", tint="var(--who-3)", role=mei_role)
     db.add_all([owner, guest, mei])
     db.flush()
+    for position, member in enumerate([owner, guest, mei]):
+        db.add(Traveler(trip_id=trip.id, name=member.display_name, initial=member.initial, tint=member.tint, contributor_id=member.id, position=position))
 
     for i, (title, region) in enumerate(pin_titles):
         db.add(Pin(trip_id=trip.id, title=title, short=title, place=f"{region}", region=region, duration_minutes=60, cost_cents=0, added_by_id=(owner.id if i % 2 == 0 else guest.id)))

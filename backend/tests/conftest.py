@@ -39,7 +39,10 @@ from app.models import (  # noqa: E402
     Plan,
     PlanItem,
     PlanStatus,
+    Split,
+    SplitBranch,
     TravelItem,
+    Traveler,
     Trip,
     Vote,
 )
@@ -94,11 +97,14 @@ class TripFixture:
     """A trip with a known cast, so tests can say `trip.jae` rather than
     threading ids through every call."""
 
-    def __init__(self, db, trip, contributors, pins, travel_items):
+    def __init__(self, db, trip, contributors, pins, travel_items, travelers=None):
         self.db = db
         self.trip = trip
         self.id = trip.id
         self.contributors = contributors
+        # One traveler per member, same keys: trip.travelers["ana"] is the
+        # traveler Ana is (app/models.py Traveler).
+        self.travelers = travelers or {}
         self.pins = pins
         self.travel_items = travel_items
         for key, contributor in contributors.items():
@@ -115,15 +121,18 @@ class TripFixture:
         status: PlanStatus = PlanStatus.placed,
         created_by: str | None = None,
         items: list[tuple[str, int | None]] | None = None,
+        branch: SplitBranch | None = None,
     ) -> Plan:
         """One plan on the calendar. `items` takes (pin key, duration
         override) pairs for the multi-stop cases; `pin`/`travel_item` are
-        the one-stop shorthand everything else uses."""
+        the one-stop shorthand everything else uses. `branch` puts it in one
+        group of a split (see `split` below)."""
         plan = Plan(
             trip_id=self.id,
             starts_at=at(day, start),
             ends_at=at(day, end),
             status=status,
+            branch_id=branch.id if branch else None,
             created_by_id=self.contributors[created_by].id if created_by else None,
         )
         self.db.add(plan)
@@ -149,6 +158,32 @@ class TripFixture:
         self.db.refresh(plan)
         return plan
 
+    def split(
+        self,
+        *groups: tuple[str, ...],
+        day: int = 1,
+        start: int,
+        end: int,
+        newcomers: int | None = None,
+        labels: tuple[str, ...] = (),
+    ) -> list[SplitBranch]:
+        """The group split up over these hours, straight into the database:
+        one branch per tuple of traveler keys, in order. Returns the
+        branches, so a test can say `gorge, lake = trip.split(...)`."""
+        split = Split(trip_id=self.id, starts_at=at(day, start), ends_at=at(day, end))
+        for position, keys in enumerate(groups):
+            split.branches.append(
+                SplitBranch(
+                    label=labels[position] if position < len(labels) else "",
+                    position=position,
+                    traveler_ids=sorted(self.travelers[k].id for k in keys),
+                    takes_newcomers=newcomers == position,
+                )
+            )
+        self.db.add(split)
+        self.db.commit()
+        return list(split.branches)
+
     def vote(self, contest_id: int, plan_id: int, *contributor_keys: str) -> None:
         for key in contributor_keys:
             self.db.add(
@@ -159,7 +194,7 @@ class TripFixture:
 
 @pytest.fixture
 def trip(db) -> TripFixture:
-    row = Trip(name="Taiwan", region_line="Xiaoliuqiu", start_date=TRIP_DAY_ONE.date(), traveller_count=4)
+    row = Trip(name="Taiwan", region_line="Xiaoliuqiu", start_date=TRIP_DAY_ONE.date())
     db.add(row)
     db.flush()
 
@@ -198,18 +233,30 @@ def trip(db) -> TripFixture:
             region="Xiaoliuqiu",
             duration_minutes=duration,
             cost_cents=cost,
+            # The fixture's prices are whole bills, as every price was
+            # before per-person pricing (see the travelers migration).
+            cost_basis="group",
         )
         db.add(p)
         pins[key] = p
 
     travel_items = {}
     for key, title, duration, cost in [("ferry", "Ferry to Xiaoliuqiu", 75, 0)]:
-        t = TravelItem(trip_id=row.id, title=title, kind="other", duration_minutes=duration, cost_cents=cost)
+        t = TravelItem(trip_id=row.id, title=title, kind="other", duration_minutes=duration, cost_cents=cost, cost_basis="group")
         db.add(t)
         travel_items[key] = t
 
+    travelers = {}
+    for position, (key, member) in enumerate(contributors.items()):
+        traveler = Traveler(
+            trip_id=row.id, name=member.display_name, initial=member.initial,
+            tint=member.tint or "var(--who-1)", contributor_id=member.id, position=position,
+        )
+        db.add(traveler)
+        travelers[key] = traveler
+
     db.commit()
-    return TripFixture(db, row, contributors, pins, travel_items)
+    return TripFixture(db, row, contributors, pins, travel_items, travelers)
 
 
 __all__ = [

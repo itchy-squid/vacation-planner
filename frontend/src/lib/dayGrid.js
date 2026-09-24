@@ -23,6 +23,10 @@ export const GUTTER_W = 44;
 // nowhere to put even one stop.
 export const MIN_SELECTION_MIN = 30;
 
+// Pointer travel (px) before a pointer-down on something draggable counts
+// as a drag rather than a tap.
+export const DRAG_THRESHOLD_PX = 5;
+
 export function snapToGrid(rawMinute) {
   return Math.round(rawMinute / SNAP_MIN) * SNAP_MIN;
 }
@@ -108,16 +112,15 @@ export function overlaps(aStart, aEnd, bStart, bEnd) {
 }
 
 // Column-packing sweep: groups overlapping plans into clusters, then
-// greedily assigns each plan to the first column whose previous
-// occupant has already ended — same idea as Google-Calendar-style
-// side-by-side event layout.
+// greedily assigns each plan to the first column whose previous occupant
+// has already ended — same idea as Google-Calendar-style side-by-side
+// event layout.
 //
 // Takes the day entries from plansOnDay above (not raw plans), so an
 // overnight plan's morning hours pack against the day they land on rather
-// than the day they started. Returns each entry plus { col, numCols }.
-export function layoutDayPlans(entries) {
+// than the day they started.
+function clustersOf(entries) {
   const items = [...entries].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
   const clusters = [];
   let current = [];
   let currentEnd = -Infinity;
@@ -131,26 +134,92 @@ export function layoutDayPlans(entries) {
     currentEnd = Math.max(currentEnd, it.endMin);
   }
   if (current.length) clusters.push(current);
+  return clusters;
+}
 
-  const result = [];
-  for (const cluster of clusters) {
-    const columnEnds = [];
-    const colOf = new Map();
-    for (const it of cluster) {
-      let idx = columnEnds.findIndex((endT) => endT <= it.startMin);
-      if (idx === -1) {
-        idx = columnEnds.length;
-        columnEnds.push(it.endMin);
-      } else {
-        columnEnds[idx] = it.endMin;
-      }
-      colOf.set(it.plan.id, idx);
+function packColumns(items) {
+  const columnEnds = [];
+  const colOf = new Map();
+  for (const it of items) {
+    let idx = columnEnds.findIndex((endT) => endT <= it.startMin);
+    if (idx === -1) {
+      idx = columnEnds.length;
+      columnEnds.push(it.endMin);
+    } else {
+      columnEnds[idx] = it.endMin;
     }
-    const numCols = columnEnds.length;
+    colOf.set(it.plan.id, idx);
+  }
+  return { colOf, numCols: columnEnds.length };
+}
+
+// Packs `entries` side by side inside a horizontal band of the grid
+// (`left` and `width` as fractions of it). Returns each entry plus its
+// own { left, width } fractions.
+function packInto(entries, left, width) {
+  const result = [];
+  for (const cluster of clustersOf(entries)) {
+    const { colOf, numCols } = packColumns(cluster);
     for (const it of cluster) {
-      result.push({ ...it, col: colOf.get(it.plan.id), numCols });
+      result.push({ ...it, left: left + (width * colOf.get(it.plan.id)) / numCols, width: width / numCols });
     }
   }
+  return result;
+}
+
+// Where the group has split (lib/splits.js), each group gets a lane of its
+// own over the split's hours — including a group with nothing planned yet,
+// so there is somewhere to tap to plan for them. `daySplits` comes from
+// lib/splits.js splitsOnDay; `keepBranch` drops lanes (Just me shows only
+// yours). Lanes divide the width evenly, in the split's own group order,
+// so a group keeps its side of the grid from one day to the next.
+export function splitLanes(daySplits, keepBranch = () => true) {
+  const lanes = [];
+  for (const { split, startMin, endMin } of daySplits) {
+    const shown = split.branches.filter(keepBranch);
+    shown.forEach((branch, i) => {
+      lanes.push({ split, branch, startMin, endMin, left: i / shown.length, width: 1 / shown.length });
+    });
+  }
+  return lanes;
+}
+
+// A { startMin, endMin } span with one edge dragged `deltaMinutes` —
+// snapped, kept on the grid, and never shorter than one snap. The other
+// edge stays put. Used for a split's edges (pages/DaySchedule.jsx).
+export function spanWithEdgeMoved({ startMin, endMin }, edge, deltaMinutes) {
+  if (edge === "start") {
+    const moved = snapToGrid(startMin + deltaMinutes);
+    return { startMin: Math.min(Math.max(moved, DAY_START_MIN), endMin - SNAP_MIN), endMin };
+  }
+  const moved = snapToGrid(endMin + deltaMinutes);
+  return { startMin, endMin: Math.max(Math.min(moved, DAY_END_MIN), startMin + SNAP_MIN) };
+}
+
+// Every entry with its { left, width } fractions of the grid. A plan in a
+// group packs into that group's lane, so two options in one group's vote
+// sit side by side inside the lane and never push into another group's.
+// A plan for everyone never overlaps a split, so it packs across the full
+// width as it always did. A group's plan whose lane isn't shown is left
+// out (the caller already chose to hide that group).
+export function layoutDayPlans(entries, lanes = []) {
+  const laneOf = new Map(lanes.map((lane) => [lane.branch.id, lane]));
+  const byLane = new Map();
+  const everyone = [];
+  for (const entry of entries) {
+    const branchId = entry.plan.branchId ?? null;
+    if (branchId == null) {
+      everyone.push(entry);
+    } else if (laneOf.has(branchId)) {
+      if (!byLane.has(branchId)) byLane.set(branchId, []);
+      byLane.get(branchId).push(entry);
+    }
+  }
+  const result = packInto(everyone, 0, 1);
+  byLane.forEach((laneEntries, branchId) => {
+    const lane = laneOf.get(branchId);
+    result.push(...packInto(laneEntries, lane.left, lane.width));
+  });
   return result;
 }
 

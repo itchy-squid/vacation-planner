@@ -5,21 +5,22 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from ..custom_events import forget_orphaned_travel_items, publish_forgotten, travel_item_ids_of
 from ..db import get_db
-from ..derive import item_start_minutes, plan_range_minutes, plan_totals
+from ..derive import item_money, item_source, item_start_minutes, plan_range_minutes, plan_totals, trip_roster
 from ..events import bus
-from ..models import Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem
-from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, PLANS_WRITE, Access, require
-from ..schemas import PinOut, PlanCreate, PlanItemCreate, PlanItemOut, PlanMove, PlanOut, TravelItemOut
+from ..models import OCCUPYING_STATUSES, Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem
+from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, PLANS_WRITE, Access, can_see_costs, require
+from ..schemas import (
+    PinOut,
+    PlanCreate,
+    PlanItemCreate,
+    PlanItemOut,
+    PlanMove,
+    PlanOut,
+    TravelItemOut,
+)
+from ..splits import audience, join_names, resolve_branch, traveler_rows
 
 router = APIRouter(prefix="/api", tags=["plans"])
-
-# Any plan in one of these statuses occupies real time on the trip's
-# calendar and can conflict with a new placement — see docs/features/
-# scheduling-feature-spec.md "Direct placement". `draft` is deliberately
-# absent: a private draft nobody else can see must not be able to block
-# anybody else's placement (proposals-and-expenses spec §6.1).
-_OCCUPYING_STATUSES = (PlanStatus.placed, PlanStatus.pencilled, PlanStatus.contested, PlanStatus.locked)
-
 
 def visible_plans_condition(viewer: Contributor | None) -> ColumnElement[bool]:
     """The app's one per-contributor read filter: a draft plan belongs to
@@ -32,11 +33,18 @@ def visible_plans_condition(viewer: Contributor | None) -> ColumnElement[bool]:
     return or_(Plan.status != PlanStatus.draft, Plan.created_by_id == viewer.id)
 
 
-def _plan_item_to_schema(plan: Plan, item: PlanItem) -> PlanItemOut:
+def _plan_item_to_schema(plan: Plan, item: PlanItem, roster: set[int]) -> PlanItemOut:
     start_minute_of_day = (
         plan.starts_at.hour * 60 + plan.starts_at.minute + item_start_minutes(plan, item)
     ) % 1440
+    sharers, each, total = item_money(plan, item, roster)
+    # Same visibility rule as the pin or travel item itself (a companion
+    # sees the price only on what they added).
+    visible = can_see_costs(item_source(item).added_by_id)
     return PlanItemOut(
+        sharer_ids=sharers,
+        each_cents=each if visible else None,
+        total_cents=total if visible else None,
         pin=PinOut.model_validate(item.pin) if item.pin_id is not None else None,
         travel_item=TravelItemOut.model_validate(item.travel_item) if item.travel_item_id is not None else None,
         position=item.position,
@@ -55,6 +63,7 @@ def plan_schema_kwargs(plan: Plan) -> dict:
     sign an already-signed URL a second time."""
     range_minutes = plan_range_minutes(plan)
     totals = plan_totals(plan, range_minutes)
+    roster = trip_roster(plan)
     return dict(
         id=plan.id,
         trip_id=plan.trip_id,
@@ -66,7 +75,10 @@ def plan_schema_kwargs(plan: Plan) -> dict:
         contest_id=plan.contest_id,
         created_by_id=plan.created_by_id,
         rationale=plan.rationale,
-        items=[_plan_item_to_schema(plan, i) for i in plan.items],
+        branch_id=plan.branch_id,
+        party_members=sorted(audience(plan.branch, roster)),
+        for_everyone=plan.branch_id is None,
+        items=[_plan_item_to_schema(plan, i, roster) for i in plan.items],
         **totals,
     )
 
@@ -75,43 +87,63 @@ def plan_to_schema(plan: Plan) -> PlanOut:
     return PlanOut(**plan_schema_kwargs(plan))
 
 
-def find_overlapping_plan(db: Session, trip_id: int, starts_at, ends_at, exclude_plan_id: int | None = None) -> Plan | None:
-    """Any shared minute counts as overlap — a plan ending exactly when
-    another starts does not conflict (see spec "Direct placement")."""
-    stmt = select(Plan).where(
+def _overlapping(trip_id: int, starts_at, ends_at, branch_id: int | None, statuses):
+    """Plans sharing a minute with these hours, for the same group. Any
+    shared minute counts; a plan ending exactly when another starts does
+    not conflict (see spec "Direct placement"). Same group is the whole of
+    the "who" test — app/splits.py explains why that's enough."""
+    return select(Plan).where(
         Plan.trip_id == trip_id,
-        Plan.status.in_(_OCCUPYING_STATUSES),
+        Plan.status.in_(statuses),
         Plan.starts_at < ends_at,
         Plan.ends_at > starts_at,
+        Plan.branch_id.is_(None) if branch_id is None else Plan.branch_id == branch_id,
     )
+
+
+def find_overlapping_plan(
+    db: Session,
+    trip_id: int,
+    starts_at,
+    ends_at,
+    *,
+    branch_id: int | None,
+    exclude_plan_id: int | None = None,
+) -> Plan | None:
+    """The first plan already holding any of these hours for this group
+    (None: everyone)."""
+    stmt = _overlapping(trip_id, starts_at, ends_at, branch_id, OCCUPYING_STATUSES)
     if exclude_plan_id is not None:
         stmt = stmt.where(Plan.id != exclude_plan_id)
-    return db.scalar(stmt)
+    return db.scalars(stmt.order_by(Plan.starts_at, Plan.id)).first()
 
 
-def find_overlapping_plans(db: Session, trip_id: int, starts_at, ends_at, statuses) -> list[Plan]:
-    return list(
-        db.scalars(
-            select(Plan)
-            .where(
-                Plan.trip_id == trip_id,
-                Plan.status.in_(statuses),
-                Plan.starts_at < ends_at,
-                Plan.ends_at > starts_at,
-            )
-            .order_by(Plan.starts_at, Plan.id)
-        ).all()
-    )
+def find_overlapping_plans(db: Session, trip_id: int, starts_at, ends_at, statuses, *, branch_id: int | None) -> list[Plan]:
+    """Every plan in those hours for this group with one of `statuses`."""
+    return list(db.scalars(_overlapping(trip_id, starts_at, ends_at, branch_id, statuses).order_by(Plan.starts_at, Plan.id)).all())
 
 
-def occupied_detail(occupying: Plan) -> dict:
+def occupied_detail(occupying: Plan, db: Session) -> dict:
     """The 409 body every placement path shares. `occupying_contest_id` is
     what lets a client offer "add a set to the open vote" instead of always
-    opening a fresh propose sheet (feature spec §6.1)."""
+    opening a fresh propose sheet (feature spec §6.1).
+
+    On a split day the message names who is busy — "Ana and Lin are
+    already on Taroko Gorge then" is something a person can act on; "that
+    time is occupied" on a day where half the group is visibly free is
+    not."""
+    message = "That time is already occupied."
+    double_booked: list[str] = []
+    if occupying.branch is not None:
+        double_booked = [t.name for t in traveler_rows(db, occupying.branch.traveler_ids or ())]
+        if double_booked:
+            verb = "is" if len(double_booked) == 1 else "are"
+            message = f"{join_names(double_booked)} {verb} already on {occupying.title} then."
     return {
-        "message": "That time is already occupied.",
+        "message": message,
         "occupying_plan_id": occupying.id,
         "occupying_contest_id": occupying.contest_id,
+        "double_booked": double_booked,
     }
 
 
@@ -240,15 +272,19 @@ def create_plan(
     this endpoint, or, when the 409 carries an occupying_contest_id, offer
     to add a set to the vote that's already open there."""
     is_draft = payload.status == "draft"
+    # Checked for drafts too: a draft for the wrong hours of a group would
+    # only fail later, when it's published.
+    branch = resolve_branch(db, trip_id, payload.branch_id, payload.starts_at, payload.ends_at)
+    branch_id = branch.id if branch else None
     if not is_draft:
         # A draft is the start of a proposal (plans:propose); putting
         # something straight onto the calendar is plans:write.
         access.ensure(PLANS_WRITE, "Propose a block instead — you can't place things on the calendar directly")
         # A draft skips this entirely: it claims no time, so there is
         # nothing for it to conflict with (feature spec §6.4).
-        occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at)
+        occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at, branch_id=branch_id)
         if occupying is not None:
-            raise HTTPException(status_code=409, detail=occupied_detail(occupying))
+            raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
     plan = Plan(
         trip_id=trip_id,
@@ -256,6 +292,7 @@ def create_plan(
         ends_at=payload.ends_at,
         label=payload.label,
         rationale=payload.rationale,
+        branch_id=branch_id,
         status=PlanStatus(payload.status),
         created_by_id=access.member.id,
     )
@@ -286,9 +323,12 @@ def move_plan(
 
     new_starts = payload.starts_at if payload.starts_at is not None else plan.starts_at
     new_ends = payload.ends_at if payload.ends_at is not None else plan.ends_at
-    occupying = find_overlapping_plan(db, plan.trip_id, new_starts, new_ends, exclude_plan_id=plan.id)
+    # A group's plan stays inside its split; a plan for everyone stays out
+    # of every split (app/splits.py).
+    resolve_branch(db, plan.trip_id, plan.branch_id, new_starts, new_ends)
+    occupying = find_overlapping_plan(db, plan.trip_id, new_starts, new_ends, branch_id=plan.branch_id, exclude_plan_id=plan.id)
     if occupying is not None:
-        raise HTTPException(status_code=409, detail=occupied_detail(occupying))
+        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
     plan.starts_at = new_starts
     plan.ends_at = new_ends

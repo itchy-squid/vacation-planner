@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronRight, faPlus } from "@fortawesome/free-solid-svg-icons";
@@ -6,25 +6,31 @@ import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
-import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan } from "../state/PlannerContext";
+import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
+import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
+  DRAG_THRESHOLD_PX,
   PX_PER_MIN,
   SNAP_MIN,
   contestWindowsFrom,
   layoutDayPlans,
+  overlaps,
   plansOnDay,
+  splitLanes,
   minuteFromOffsetY,
   planDurationMinutes,
   planStartMinute,
   planEndMinute,
+  spanWithEdgeMoved,
   topForMinute,
 } from "../lib/dayGrid";
 import TripHeader from "../components/core/TripHeader";
+import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
 // against the spec's Plan/PlanItem/Contest model (see docs/features/
@@ -38,7 +44,6 @@ import TripHeader from "../components/core/TripHeader";
 // lib/dayGrid.js and components/planner/DayGrid.jsx, because the proposal
 // flow's hour picker renders the same grid with a selection layer over it
 // rather than a lookalike of it (see pages/ProposeBlock.jsx).
-const DRAG_THRESHOLD_PX = 5; // pointer travel (px) before a pointer-down on a block counts as a drag rather than a tap
 
 export default function DaySchedule() {
   const navigate = useNavigate();
@@ -46,7 +51,10 @@ export default function DaySchedule() {
   const dayIndex = Number(day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, pins, travelItems, plans, placing, proposeSheet } = state;
+  const { trip, pins, travelItems, plans, splits, placing, proposeSheet, travelers } = state;
+  // Groups are made of travelers; "just me" is the traveler you are.
+  const myTraveler = useMyTraveler();
+  const myTravelerId = myTraveler?.id ?? null;
 
   const currentUser = useCurrentUser();
   // Readers see the day but can't place, drag or propose. Companions can
@@ -84,7 +92,30 @@ export default function DaySchedule() {
     [plans, currentUser.id, trip.startDate, dayIndex]
   );
 
-  const laidOut = useMemo(() => layoutDayPlans(dayEntries), [dayEntries]);
+  // Where the group has split up (lib/splits.js). Each split's hours are
+  // divided into one lane per group — a group with nothing planned still
+  // gets its lane, so there is somewhere to tap to plan for it. "Just me"
+  // keeps only your own group's lane, so the day reads as your day.
+  const daySplits = useMemo(() => splitsOnDay(splits, trip.startDate, dayIndex), [splits, trip.startDate, dayIndex]);
+  const branches = useMemo(() => branchesById(splits), [splits]);
+  const dayHasSplit = daySplits.length > 0;
+  const [justMe, setJustMe] = useState(false);
+  const showJustMe = justMe && dayHasSplit && myTravelerId != null;
+  // A split whose edge is being dragged (see "Drag a split's edge" below)
+  // is drawn — outline and lanes — at the hours it's being dragged to.
+  const [splitPreview, setSplitPreview] = useState(null); // { splitId, startMin, endMin }
+  const shownSplits = useMemo(
+    () =>
+      splitPreview
+        ? daySplits.map((s) => (s.split.id === splitPreview.splitId ? { ...s, ...splitPreview } : s))
+        : daySplits,
+    [daySplits, splitPreview]
+  );
+  const lanes = useMemo(
+    () => splitLanes(shownSplits, showJustMe ? (b) => b.travelerIds.includes(myTravelerId) : undefined),
+    [shownSplits, showJustMe, myTravelerId]
+  );
+  const laidOut = useMemo(() => layoutDayPlans(dayEntries, lanes), [dayEntries, lanes]);
 
   // Region(s) this day already has scheduled — derived from the pins
   // behind this day's plan items (travel items have no region).
@@ -174,20 +205,54 @@ export default function DaySchedule() {
   // Returns the day *entry* in the way, not the plan — the caller needs
   // both the plan (to target a proposal at it) and the hours it occupies
   // on this particular day.
-  function findOverlap(startMinute, endMinute, excludePlanId) {
+  //
+  // Only the same group's plans can be in the way: that's the whole of the
+  // overlap rule once the group has split (backend/app/splits.py).
+  function findOverlap(startMinute, endMinute, excludePlanId, branchId) {
     return (
       dayEntries.find(
-        (e) => e.plan.id !== excludePlanId && startMinute < e.endMin && endMinute > e.startMin
+        (e) =>
+          e.plan.id !== excludePlanId &&
+          (e.plan.branchId ?? null) === (branchId ?? null) &&
+          overlaps(startMinute, endMinute, e.startMin, e.endMin)
       ) ?? null
     );
   }
 
-  async function handleTapAt(rawMinute) {
+  // Why these hours can't hold a plan for this group, if they can't: a
+  // group's plans stay inside its split, and a plan for everyone stays out
+  // of every split. The server says the same; saying it here saves the
+  // round trip and keeps a drag from snapping back with no explanation.
+  function scopeProblem(startMinute, endMinute, branchId) {
+    if (branchId == null) {
+      const crossed = daySplits.find((s) => overlaps(startMinute, endMinute, s.startMin, s.endMin));
+      return crossed
+        ? `The group is split up from ${clockLabel(crossed.startMin)} to ${clockLabel(crossed.endMin)}. Tap inside one group's lane to plan for them.`
+        : null;
+    }
+    const lane = daySplits.find((s) => s.split.branches.some((b) => b.id === branchId));
+    if (!lane) return null;
+    if (startMinute < lane.startMin || endMinute > lane.endMin) {
+      return `Plans for ${branchName(branches.get(branchId), travelers)} have to fit inside the split, ${clockLabel(lane.startMin)}–${clockLabel(lane.endMin)}.`;
+    }
+    return null;
+  }
+
+  // A tap while placing, at `rawMinute`, for `branchId`'s group (null for
+  // everyone). Taps on empty grid, on a group's lane and on an existing
+  // block all land here, so a split day whose lanes are full of blocks is
+  // still somewhere you can place things.
+  async function handleTapAt(rawMinute, branchId = null) {
     if (!placing) return;
     const snapped = Math.round(rawMinute / SNAP_MIN) * SNAP_MIN;
     const startMinute = Math.min(Math.max(snapped, DAY_START_MIN), DAY_END_MIN - 15);
     const endMinute = startMinute + placing.durationMinutes;
-    const occupying = findOverlap(startMinute, endMinute, null);
+    const problem = scopeProblem(startMinute, endMinute, branchId);
+    if (problem) {
+      setMoveError(problem);
+      return;
+    }
+    const occupying = findOverlap(startMinute, endMinute, null, branchId);
 
     if (occupying) {
       // A locked plan can't be proposed against — reopening it first is
@@ -204,6 +269,8 @@ export default function DaySchedule() {
         type: "OPEN_PROPOSE_FOR",
         proposeSheet: {
           targetPlanId: occupying.plan.id,
+          // Proposing against a group's plan is a decision for that group.
+          branchId,
           dayIndex,
           startMinute,
           kind: placing.kind,
@@ -218,19 +285,30 @@ export default function DaySchedule() {
     setMoveError("");
     const startsAt = isoForDayMinute(trip.startDate, dayIndex, startMinute);
     const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
-    await dispatch({ type: "PLACE_AT", startsAt, endsAt, dayIndex, startMinute });
+    const result = await dispatch({ type: "PLACE_AT", startsAt, endsAt, dayIndex, startMinute, branchId });
+    if (result && !result.ok && result.error) setMoveError(result.error);
+  }
+
+  const gridRef = useRef(null);
+  function minuteAtPointer(e) {
+    const rect = gridRef.current?.getBoundingClientRect();
+    return rect ? minuteFromOffsetY(e.clientY - rect.top) : DAY_START_MIN;
   }
 
   function handleGridClick(e) {
-    if (e.target !== e.currentTarget) return; // block taps handle their own onClick
+    if (e.target !== e.currentTarget) return; // blocks and lanes handle their own taps
     if (!placing) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    handleTapAt(minuteFromOffsetY(e.clientY - rect.top));
+    handleTapAt(minuteAtPointer(e), null);
   }
 
   const suppressClickRef = useRef(false);
-  function handlePlanTap(plan) {
-    if (placing) return; // ignore taps on existing plans while armed — cancel first
+  function handlePlanTap(plan, e) {
+    if (placing) {
+      // While placing, a block is just part of the grid: the tap means
+      // "here", in this block's group.
+      handleTapAt(minuteAtPointer(e), plan.branchId ?? null);
+      return;
+    }
     if (suppressClickRef.current) {
       // A drag just ended on this block — browsers still fire the trailing
       // click, but it shouldn't also navigate to the item's details page.
@@ -327,8 +405,19 @@ export default function DaySchedule() {
     if (previewStart === info.originStart) return; // dropped back where it started
 
     const endMinute = previewStart + info.durationMinutes;
-    if (findOverlap(previewStart, endMinute, plan.id)) {
-      setMoveError("That time is already taken — try another slot.");
+    const problem = scopeProblem(previewStart, endMinute, plan.branchId ?? null);
+    if (problem) {
+      setMoveError(problem);
+      return;
+    }
+    const inTheWay = findOverlap(previewStart, endMinute, plan.id, plan.branchId ?? null);
+    if (inTheWay) {
+      const clash = plan.forEveryone ? [] : membersOf(plan, travelers);
+      setMoveError(
+        clash.length
+          ? `${namesOf(clash)} ${clash.length === 1 ? "is" : "are"} already busy then — try another slot.`
+          : "That time is already taken — try another slot."
+      );
       return;
     }
 
@@ -336,7 +425,7 @@ export default function DaySchedule() {
     const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
     const result = await dispatch({ type: "MOVE_PLAN", planId: plan.id, startsAt, endsAt });
     if (!result.ok) {
-      setMoveError("That time is already taken — try another slot.");
+      setMoveError(result.message && result.message !== "That time is already occupied." ? result.message : "That time is already taken — try another slot.");
     }
   }
 
@@ -345,6 +434,49 @@ export default function DaySchedule() {
     if (!info || info.pointerId !== e.pointerId || info.planId !== plan.id) return;
     dragInfoRef.current = null;
     setDragPreview(null);
+  }
+
+  // ---- Drag a split's edge ------------------------------------------------
+  // A split's outline has a grip on each edge that's on this day; dragging
+  // one changes when the split starts or ends, the same way dragging a
+  // block moves a plan (components/planner/SplitEdgeHandle.jsx owns the
+  // gesture). Nothing changes hands, so the new hours still have to hold
+  // every group's plans and stay clear of plans for everyone and other
+  // splits — splitHoursProblem says so before the server has to. The
+  // preview stays up until the refetch lands, so a good drop doesn't
+  // flicker back to the old hours first.
+  const splitEdgesDraggable = canPlan && !placing;
+
+  function splitDragged(daySplit, edge, deltaMinutes) {
+    return { splitId: daySplit.split.id, ...spanWithEdgeMoved(daySplit, edge, deltaMinutes) };
+  }
+
+  function handleSplitEdgeDrag(daySplit, edge, deltaMinutes) {
+    if (!splitPreview) setMoveError("");
+    setSplitPreview(splitDragged(daySplit, edge, deltaMinutes));
+  }
+
+  async function handleSplitEdgeDrop(daySplit, edge, deltaMinutes) {
+    const next = splitDragged(daySplit, edge, deltaMinutes);
+    if (next.startMin === daySplit.startMin && next.endMin === daySplit.endMin) {
+      setSplitPreview(null);
+      return;
+    }
+    const problem = splitHoursProblem(daySplit, next.startMin, next.endMin, { daySplits, entries: dayEntries, travelers });
+    if (problem) {
+      setSplitPreview(null);
+      setMoveError(problem);
+      return;
+    }
+    setSplitPreview(next);
+    const result = await dispatch({
+      type: "RETIME_SPLIT",
+      splitId: daySplit.split.id,
+      startsAt: isoForDayMinute(trip.startDate, dayIndex, next.startMin),
+      endsAt: isoForDayMinute(trip.startDate, dayIndex, next.endMin),
+    });
+    setSplitPreview(null);
+    if (!result.ok) setMoveError(result.error || "Couldn't change the split's hours — try again.");
   }
 
   // ---- Propose sheet -----------------------------------------------------
@@ -372,7 +504,7 @@ export default function DaySchedule() {
     setMoveError(
       result.conflict === "locked"
         ? "That time is pinned — ask the owner to reopen it first."
-        : "Couldn't propose that — try again."
+        : result.message || result.error || "Couldn't propose that — try again."
     );
   }
 
@@ -485,6 +617,39 @@ export default function DaySchedule() {
           )}
         </div>
 
+        {/* Whose day to show. Pinned to the header with the day strip so it
+            stays in reach wherever the grid is scrolled — inside the scroll
+            body it sat above 00:00 and meant scrolling to midnight to use. */}
+        {dayHasSplit && myTraveler && (
+          <div
+            role="group"
+            aria-label="Whose day to show"
+            style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2, margin: "0 var(--gutter-screen) 12px" }}
+          >
+            {[
+              { value: false, label: "Everyone" },
+              { value: true, label: `Just me · ${myTraveler.name}` },
+            ].map((opt) => (
+              <button
+                key={String(opt.value)}
+                type="button"
+                aria-pressed={justMe === opt.value}
+                onClick={() => setJustMe(opt.value)}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  borderRadius: "calc(var(--radius-md) - 2px)",
+                  background: justMe === opt.value ? "var(--surface-card)" : "transparent",
+                  boxShadow: justMe === opt.value ? "var(--shadow-raised)" : "none",
+                  font: "600 11.5px var(--font-sans)",
+                  color: justMe === opt.value ? "var(--text-primary)" : "var(--text-secondary)",
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Pinned to the header (not the .screen-scroll body below) so it
             stays visible the whole time placing mode is armed, even once
             the user has scrolled the grid down to find a slot — it used to
@@ -510,9 +675,77 @@ export default function DaySchedule() {
         )}
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-          <DayGrid cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
+          <DayGrid ref={gridRef} cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
+            {shownSplits.map(({ split, startMin, endMin }) => {
+              const top = topForMinute(Math.max(startMin, DAY_START_MIN));
+              const height = (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) * PX_PER_MIN;
+              const mine = split.branches.find((b) => b.travelerIds.includes(myTravelerId));
+              const elsewhere = travelers.filter((t) => !mine?.travelerIds.includes(t.id) && t.id !== myTravelerId);
+              const free = unassigned(split, travelers);
+              const counts = split.branches.map((b) => b.travelerIds.length).join(" + ");
+              return (
+                <div
+                  key={`split-${split.id}`}
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    top: top - 3,
+                    height: height + 6,
+                    left: -3,
+                    right: -3,
+                    border: "1.5px dashed var(--border-strong)",
+                    borderRadius: "var(--radius-md)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <span className="mono-data-sm" style={splitCaptionStyle}>
+                    {splitPreview?.splitId === split.id
+                      ? `Group split · ${clockLabel(startMin)}–${clockLabel(endMin)}`
+                      : showJustMe
+                        ? elsewhere.length
+                          ? `${namesOf(elsewhere)} elsewhere`
+                          : "Group split"
+                        : `Group split · ${counts}${free.length ? ` · ${namesOf(free)} free` : ""}`}
+                  </span>
+                </div>
+              );
+            })}
+            {/* One lane per group: a tap target for placing into that
+                group, and the group's name at the top so an empty lane
+                still says whose hours these are. Under the blocks, so a
+                block still gets its own taps. */}
+            {lanes.map((lane) => {
+              const top = topForMinute(Math.max(lane.startMin, DAY_START_MIN));
+              const height = (Math.min(lane.endMin, DAY_END_MIN) - Math.max(lane.startMin, DAY_START_MIN)) * PX_PER_MIN;
+              return (
+                <div
+                  key={`lane-${lane.branch.id}`}
+                  role={placing ? "button" : undefined}
+                  aria-label={placing ? `Place for ${branchName(lane.branch, travelers)}` : undefined}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTapAt(minuteAtPointer(e), lane.branch.id);
+                  }}
+                  style={{
+                    position: "absolute",
+                    top,
+                    height,
+                    left: `calc(${lane.left * 100}% + 1px)`,
+                    width: `calc(${lane.width * 100}% - 2px)`,
+                    borderLeft: lane.left > 0 ? "1px dashed var(--hairline)" : undefined,
+                    background: placing ? "var(--plum-tint)" : "transparent",
+                    opacity: placing ? 0.6 : 1,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <span className="mono-data-sm" style={laneCaptionStyle}>
+                    {branchName(lane.branch, travelers)}
+                  </span>
+                </div>
+              );
+            })}
             {laidOut.map((entry) => {
-                const { plan, numCols, col } = entry;
+                const { plan } = entry;
                 const isDragging = dragPreview?.planId === plan.id;
                 const draggable =
                   canPlan && (plan.status === "placed" || plan.status === "pencilled") && !entry.continuesBefore;
@@ -525,8 +758,9 @@ export default function DaySchedule() {
                 const clippedEnd = Math.min(endMin, DAY_END_MIN);
                 const top = topForMinute(clippedStart);
                 const height = (clippedEnd - clippedStart) * PX_PER_MIN;
-                const width = `calc(${100 / numCols}% - 4px)`;
-                const left = `calc(${(col / numCols) * 100}% + 2px)`;
+                const width = `calc(${entry.width * 100}% - 4px)`;
+                const left = `calc(${entry.left * 100}% + 2px)`;
+                const branch = plan.branchId != null ? branches.get(plan.branchId) : null;
                 // While dragging, show the block's live candidate time (not
                 // just its position) — duration is fixed, only the start
                 // (and so the end) moves. `% 1440` here is the clock face,
@@ -545,7 +779,7 @@ export default function DaySchedule() {
                     key={plan.id}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handlePlanTap(plan);
+                      handlePlanTap(plan, e);
                     }}
                     onPointerDown={(e) => handlePlanPointerDown(e, plan, entry)}
                     onPointerMove={(e) => handlePlanPointerMove(e, plan)}
@@ -563,10 +797,35 @@ export default function DaySchedule() {
                       continuesBefore={startMin < DAY_START_MIN}
                       continuesAfter={endMin > DAY_END_MIN}
                       onTap={() => {}}
+                      faces={branch ? membersOf(branch, travelers) : null}
+                      newcomers={Boolean(branch?.takesNewcomers)}
+                      tightFaces={entry.width <= 1 / 3}
                     />
                   </div>
                 );
             })}
+            {/* A grip on each of a split's edges that falls on this day
+                (a split running on from yesterday has no start edge here).
+                After the blocks, so a block touching the edge doesn't
+                cover its grip. */}
+            {splitEdgesDraggable &&
+              daySplits.map((daySplit) => {
+                const shown = shownSplits.find((s) => s.split.id === daySplit.split.id);
+                const active = splitPreview?.splitId === daySplit.split.id;
+                const edgeProps = (edge) => ({
+                  edge,
+                  active,
+                  onDrag: (delta) => handleSplitEdgeDrag(daySplit, edge, delta),
+                  onDrop: (delta) => handleSplitEdgeDrop(daySplit, edge, delta),
+                  onCancel: () => setSplitPreview(null),
+                });
+                return (
+                  <Fragment key={`split-edges-${daySplit.split.id}`}>
+                    {daySplit.startMin >= DAY_START_MIN && <SplitEdgeHandle minute={shown.startMin} {...edgeProps("start")} />}
+                    {daySplit.endMin <= DAY_END_MIN && <SplitEdgeHandle minute={shown.endMin} {...edgeProps("end")} />}
+                  </Fragment>
+                );
+              })}
           </DayGrid>
         </div>
       </div>
@@ -715,6 +974,31 @@ export default function DaySchedule() {
     </div>
   );
 }
+
+const splitCaptionStyle = {
+  position: "absolute",
+  right: 8,
+  top: -8,
+  padding: "0 5px",
+  background: "var(--surface-card)",
+  color: "var(--text-secondary)",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+
+const laneCaptionStyle = {
+  position: "absolute",
+  left: 6,
+  bottom: 4,
+  color: "var(--text-faint)",
+  letterSpacing: "0.04em",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  maxWidth: "calc(100% - 12px)",
+  pointerEvents: "none",
+};
 
 function navButtonStyle(edge) {
   return {

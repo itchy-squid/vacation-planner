@@ -213,17 +213,47 @@ export function signIn(provider) {
 // from /api/me itself), null if the check was inconclusive (the API
 // unreachable, a CORS failure, a 5xx). Callers treat null the same as
 // "don't block" — see ensureSignedIn.
+//
+// The backend scales to zero when idle, and Easy Auth runs inside the same
+// replica, so after a quiet spell this one request waits out a full cold
+// start before it gets any answer at all -- including the 401 for a
+// session that simply expired. Normally the platform just holds the
+// request until the replica is up; if instead it gives up with a network
+// error or a 502/503/504 while the replica is still starting, try again
+// (backing off) for up to SESSION_CHECK_BUDGET_MS rather than falling
+// straight through to "inconclusive" and rendering an app whose every
+// API call is about to fail the same way. main.jsx shows BootScreen for
+// the duration.
+const SESSION_CHECK_BUDGET_MS = 120000;
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchSessionStatus() {
+  const deadline = Date.now() + SESSION_CHECK_BUDGET_MS;
+  for (let attempt = 0; ; attempt++) {
+    let retryable;
+    try {
+      const res = await fetch(`${API_BASE}/api/me`, { credentials: "include" });
+      if (res.ok) return true;
+      if (res.status === 401) return false;
+      retryable = RETRYABLE_STATUSES.has(res.status);
+    } catch {
+      // Network error, or a CORS failure (e.g. a platform error page
+      // without the ingress's CORS headers) -- indistinguishable here.
+      retryable = true;
+    }
+    const wait = Math.min(1000 * 2 ** attempt, 8000);
+    if (!retryable || Date.now() + wait > deadline) return null;
+    await sleep(wait);
+  }
+}
+
 let sessionCheck = null;
 function checkSession() {
-  if (!sessionCheck) {
-    sessionCheck = fetch(`${API_BASE}/api/me`, { credentials: "include" })
-      .then((res) => {
-        if (res.ok) return true;
-        if (res.status === 401) return false;
-        return null;
-      })
-      .catch(() => null);
-  }
+  if (!sessionCheck) sessionCheck = fetchSessionStatus();
   return sessionCheck;
 }
 
@@ -240,9 +270,14 @@ export function isSignedIn() {
 // render anything, rather than after its first API call fails. Resolves for everyone except a
 // definitely-signed-out user, who never sees it resolve — the browser is
 // already navigating to Easy Auth's login page instead.
-export function ensureSignedIn() {
+//
+// `onRedirect` runs just before the browser is sent to log in, so the
+// caller can say so on screen (the identity provider's page can take a
+// moment to appear).
+export function ensureSignedIn({ onRedirect } = {}) {
   return checkSession().then((signedIn) => {
     if (signedIn === false) {
+      onRedirect?.();
       redirectToLogin();
       return new Promise(() => {}); // navigating away — never resolves
     }
@@ -270,20 +305,26 @@ async function request(path, { method = "GET", body } = {}) {
     return new Promise(() => {}); // navigating away — never resolves
   }
   if (!res.ok) {
-    let detail = "";
+    // Read the body once. It used to be read here and then re-read through
+    // res.clone() for err.body — but a body that has already been consumed
+    // can't be cloned, so err.body was always null and every caller that
+    // branches on a 409's detail (occupying_plan_id, contest_id, split_id…)
+    // silently fell through to its generic error.
+    const text = await res.text().catch(() => "");
+    let data = null;
     try {
-      const data = await res.json();
-      detail = typeof data.detail === "string" ? data.detail : data.detail?.message || JSON.stringify(data.detail ?? data);
+      data = text ? JSON.parse(text) : null;
     } catch {
-      detail = await res.text().catch(() => "");
+      data = null;
     }
+    const detail = data
+      ? typeof data.detail === "string"
+        ? data.detail
+        : data.detail?.message || JSON.stringify(data.detail ?? data)
+      : text;
     const err = new Error(`${method} ${path} → ${res.status}${detail ? `: ${detail}` : ""}`);
     err.status = res.status;
-    try {
-      err.body = await res.clone().json();
-    } catch {
-      err.body = null;
-    }
+    err.body = data;
     throw err;
   }
   if (res.status === 204) return null;
@@ -314,7 +355,22 @@ export const api = {
   getInvite: (tripId, role) => request(`/api/trips/${tripId}/invites`, { method: "POST", body: { role } }),
   revokeInvite: (tripId, inviteId) => request(`/api/trips/${tripId}/invites/${inviteId}`, { method: "DELETE" }),
   previewInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}`),
-  acceptInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+  // `claim` says which listed traveler you are: { traveler_id } for one
+  // already on the roster, { not_going: true } for a planner who isn't
+  // travelling, or nothing to be added as yourself. A link made for one
+  // traveler ignores it.
+  acceptInvite: (token, claim) =>
+    request(`/api/invites/${encodeURIComponent(token)}/accept`, { method: "POST", body: claim ?? {} }),
+
+  // The traveler roster — who is going, separate from who's on the app
+  // (backend/app/routers/travelers.py).
+  listTravelers: (tripId) => request(`/api/trips/${tripId}/travelers`),
+  createTraveler: (tripId, payload) => request(`/api/trips/${tripId}/travelers`, { method: "POST", body: payload }),
+  patchTraveler: (travelerId, fields) => request(`/api/travelers/${travelerId}`, { method: "PATCH", body: fields }),
+  deleteTraveler: (travelerId) => request(`/api/travelers/${travelerId}`, { method: "DELETE" }),
+  // A link whoever accepts it signs in as this traveler.
+  inviteTraveler: (travelerId, role) =>
+    request(`/api/travelers/${travelerId}/invite`, { method: "POST", body: { role } }),
 
   listPins: (tripId) => request(`/api/trips/${tripId}/pins`),
   createPin: (tripId, payload) => request(`/api/trips/${tripId}/pins`, { method: "POST", body: payload }),
@@ -330,6 +386,19 @@ export const api = {
   movePlan: (planId, fields) => request(`/api/plans/${planId}`, { method: "PATCH", body: fields }),
   deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
   lockPlan: (planId) => request(`/api/plans/${planId}/lock`, { method: "POST" }),
+  // The group splitting up (backend/app/routers/splits.py). A split is
+  // hours plus its groups; plans and proposals name a group by branch_id.
+  // Reshaping sends the whole assignment of travelers to groups at once;
+  // retiming changes only its hours (nothing changes hands); merging keeps one group's plans for everyone; joining moves only the
+  // caller and returns the split, or null if that ended it.
+  listSplits: (tripId) => request(`/api/trips/${tripId}/splits`),
+  createSplit: (tripId, payload) => request(`/api/trips/${tripId}/splits`, { method: "POST", body: payload }),
+  reshapeSplit: (splitId, branches) => request(`/api/splits/${splitId}`, { method: "PUT", body: { branches } }),
+  retimeSplit: (splitId, startsAt, endsAt) =>
+    request(`/api/splits/${splitId}/hours`, { method: "PUT", body: { starts_at: startsAt, ends_at: endsAt } }),
+  mergeSplit: (splitId, keepBranchId) =>
+    request(`/api/splits/${splitId}/merge`, { method: "POST", body: { keep_branch_id: keepBranchId } }),
+  joinBranch: (branchId) => request(`/api/branches/${branchId}/join`, { method: "POST" }),
 
   // Propose a block: { starts_at, ends_at, label?, rationale?, items:
   // [{ pin_id | travel_item_id, duration_minutes? }] }. There's no

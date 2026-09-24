@@ -8,6 +8,7 @@ import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
 import { planDurationMinutes } from "../../lib/dayGrid";
 import Stepper from "../forms/Stepper";
+import WhoIsGoing from "./WhoIsGoing";
 
 // Calendar item details — a bottom sheet overlaid on pages/DaySchedule.jsx,
 // not a routed page. Rendered there next to the existing "Propose an
@@ -33,6 +34,15 @@ const CONFIRM_WINDOW_MS = 3000;
 function externalHref(link) {
   if (!link) return null;
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(link) ? link : `https://${link}`;
+}
+
+// The server names who is double-booked when part of the group is
+// involved ("Jae is already on Liyu Lake bike loop then."); its plain
+// "occupied" sentence reads better in this sheet's own words.
+function occupiedMessage(result) {
+  return result.message && result.message !== "That time is already occupied."
+    ? result.message
+    : "That time is already taken — try another slot.";
 }
 
 export default function PlanDetailsSheet({ planId, onClose }) {
@@ -155,7 +165,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
       setDayIndex(prev.dayIndex);
       setStartMinute(prev.startMinute);
       setDurationMinutes(prev.durationMinutes);
-      setError(result.occupied ? "That time is already taken — try another slot." : "Couldn't save that change — try again.");
+      setError(result.occupied ? occupiedMessage(result) : "Couldn't save that change — try again.");
     }
   }
 
@@ -208,7 +218,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     const result = await dispatch({ type: "MOVE_PLAN", planId: plan.id, startsAt, endsAt });
     if (!result.ok) {
       setDurationMinutes(prevDuration);
-      setError(result.occupied ? "That time is already taken — try another slot." : "Couldn't save that change — try again.");
+      setError(result.occupied ? occupiedMessage(result) : "Couldn't save that change — try again.");
       return;
     }
 
@@ -530,6 +540,10 @@ export default function PlanDetailsSheet({ planId, onClose }) {
               disabled={!editable}
             />
           </div>
+        </div>
+
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--hairline)" }}>
+          <WhoIsGoing plan={plan} editable={editable} />
         </div>
 
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 14 }}>

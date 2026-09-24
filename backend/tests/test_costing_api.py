@@ -34,18 +34,14 @@ def test_a_travel_item_carries_heads_too(client, trip):
     assert res.json()["heads"] == [trip.jae.id]
 
 
-def test_traveller_count_is_separate_from_the_contributor_roster(client, trip):
-    """Four travellers, four planners here — but they are different
-    questions, and the API has to be able to say so (decision 9)."""
+def test_traveler_count_is_the_roster(client, trip):
+    """Who's going is the traveler roster (app/models.py Traveler), not
+    a number typed into trip settings."""
     body = client.get(f"/api/trips/{trip.id}").json()
-    assert body["traveller_count"] == 4
-
-    res = client.patch(f"/api/trips/{trip.id}", json={"traveller_count": 6})
-    assert res.status_code == 200
-    assert res.json()["traveller_count"] == 6
-
-    # Clearing it falls back to "as many as there are contributors".
-    assert client.patch(f"/api/trips/{trip.id}", json={"traveller_count": None}).json()["traveller_count"] is None
+    assert body["traveler_count"] == 4
+    assert body["my_traveler_id"] == trip.travelers["mei"].id
+    client.post(f"/api/trips/{trip.id}/travelers", json={"name": "Kai"})
+    assert client.get(f"/api/trips/{trip.id}").json()["traveler_count"] == 5
 
 
 def test_scheduled_items_carry_their_cost_and_heads_through_the_plan(client, trip):

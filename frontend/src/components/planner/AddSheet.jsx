@@ -12,6 +12,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
 import HeadsPicker from "./HeadsPicker";
+import CostField from "../forms/CostField";
 import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
 import { textFieldStyle } from "../forms/TextField";
 
@@ -50,7 +51,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
   const navigate = useNavigate();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, contributors } = state;
+  const { trip, travelers } = state;
 
   const [mode, setMode] = useState("menu");
   const [error, setError] = useState("");
@@ -111,11 +112,12 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
         {mode === "custom" && (
           <CustomEventForm
             dayIndex={dayIndex}
-            contributors={contributors}
-            travellerCount={trip.travellerCount || contributors.length || 1}
+            travelers={travelers}
             onBack={() => setMode("menu")}
-            onCreated={(id) => {
-              dispatch({ type: "ARM_PLACE_TRAVEL", travelItemId: id });
+            onCreated={(item) => {
+              // Hand over the item itself: the store hasn't re-rendered
+              // with it yet, so looking it up by id alone finds nothing.
+              dispatch({ type: "ARM_PLACE_TRAVEL", travelItemId: item.id, item });
               onClose();
             }}
             onError={setError}
@@ -453,8 +455,8 @@ function PickerRow({ title, meta, photoUrl, icon, armed, onArm, onDelete }) {
 
 // ---- custom event ---------------------------------------------------------
 
-function CustomEventForm({ dayIndex, contributors, travellerCount, onBack, onCreated, onError, dispatch }) {
-  const [draft, setDraft] = useState({ title: "", kind: "other", dur: 60, cost: 0, heads: [] });
+function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, dispatch }) {
+  const [draft, setDraft] = useState({ title: "", kind: "other", dur: 60, cost: 0, costBasis: "per_head", heads: [] });
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
@@ -463,22 +465,23 @@ function CustomEventForm({ dayIndex, contributors, travellerCount, onBack, onCre
     setBusy(true);
     onError("");
     try {
-      const created = await dispatch({
+      let created = await dispatch({
         type: "CREATE_TRAVEL_ITEM",
         payload: {
           title: draft.title.trim(),
           kind: draft.kind,
           duration_minutes: Math.max(5, Number(draft.dur) || 60),
           cost_cents: Math.round((Number(draft.cost) || 0) * 100),
+          cost_basis: draft.costBasis,
         },
       });
       if (draft.heads.length) {
         // TravelItemCreate doesn't take heads (backend/app/schemas.py), so
         // a non-default split is a follow-up patch rather than part of
         // the create.
-        await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: draft.heads } });
+        created = await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: draft.heads } });
       }
-      onCreated(created.id);
+      onCreated(created);
     } catch {
       onError("Couldn't add that — try again.");
       setBusy(false);
@@ -522,23 +525,20 @@ function CustomEventForm({ dayIndex, contributors, travellerCount, onBack, onCre
               style={{ marginTop: 6, ...textFieldStyle({ mono: true }) }}
             />
           </label>
-          <label style={{ width: 86, flex: "none" }}>
-            <div className="mono-caption">Cost $</div>
-            <input
-              type="number"
-              min={0}
-              value={draft.cost}
-              onChange={(e) => setDraft((d) => ({ ...d, cost: e.target.value }))}
-              style={{ marginTop: 6, ...textFieldStyle({ mono: true }) }}
-            />
-          </label>
         </div>
 
+        <CostField
+          id="custom-event-cost"
+          value={draft.cost}
+          onChange={(cost) => setDraft((d) => ({ ...d, cost }))}
+          basis={draft.costBasis}
+          onBasis={(costBasis) => setDraft((d) => ({ ...d, costBasis }))}
+        />
+
         <HeadsPicker
-          contributors={contributors}
+          travelers={travelers}
           value={draft.heads}
           onChange={(heads) => setDraft((d) => ({ ...d, heads }))}
-          travellerCount={travellerCount}
         />
 
         {/* "Add and place", not the tray's old "Add to tray": this sheet

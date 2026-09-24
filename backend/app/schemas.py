@@ -84,9 +84,9 @@ class TripOut(BaseModel):
     start_date: date | None
     end_date: date | None
     phase: str
-    # How many people the trip is costed for. None means "as many as there
-    # are contributors" — see models.py Trip.
-    traveller_count: int | None
+    # How many travelers are listed (models.Traveler) — the people the
+    # trip is for and the costs are split between.
+    traveler_count: int = 0
     created_at: datetime
     # The caller's own standing on this trip, so the client can shape its
     # screens without a second request. The server checks every call
@@ -94,8 +94,65 @@ class TripOut(BaseModel):
     my_role: Literal["owner", "planner", "companion", "reader"]
     my_scopes: list[str]
     my_contributor_id: int
+    # The caller's own traveler, or None when they're planning but not
+    # going. What "just me" and "what I'm paying" are measured from.
+    my_traveler_id: int | None = None
     owner: TripOwnerOut | None
     member_count: int
+
+
+class TravelerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    trip_id: int
+    name: str
+    initial: str
+    tint: str
+    contributor_id: int | None
+    paid_by_id: int | None
+    position: int
+    # A live invite link made for this traveler and not yet used.
+    invited: bool = False
+
+
+class TravelerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    paid_by_id: int | None = None
+    # Link to an existing member (someone on the People list who's going).
+    contributor_id: int | None = None
+
+
+class TravelerUpdate(BaseModel):
+    """PATCH /api/travelers/{id}; unset fields are left alone, and an
+    explicit null paid_by_id means "pays for themselves"."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    paid_by_id: int | None = None
+    contributor_id: int | None = None
+
+
+class TravelerInviteCreate(BaseModel):
+    role: Literal["planner", "companion", "reader"] = "companion"
+
+
+class TravelerBrief(BaseModel):
+    """A listed traveler as the join screen shows them."""
+
+    id: int
+    name: str
+    initial: str
+    tint: str
+    paid_by_name: str | None = None
+
+
+class InviteAccept(BaseModel):
+    """POST /api/invites/{token}/accept. Which traveler you are: one
+    already listed (`traveler_id`), nobody (`not_going`), or — with
+    neither — a new one with your name. A link made for one traveler
+    decides this itself."""
+
+    traveler_id: int | None = None
+    not_going: bool = False
 
 
 class TripUpdate(BaseModel):
@@ -107,7 +164,6 @@ class TripUpdate(BaseModel):
     region_line: str | None = None
     start_date: date | None = None
     end_date: date | None = None
-    traveller_count: int | None = None
 
 
 def _redact_costs(model: BaseModel, *fields: str, added_by_id: int | None = None) -> None:
@@ -131,6 +187,8 @@ class InviteOut(BaseModel):
     created_at: datetime
     created_by_id: int | None
     joined_count: int
+    # Set on a link made for one listed traveler.
+    traveler_id: int | None = None
 
 
 class InvitePreviewOut(BaseModel):
@@ -152,6 +210,17 @@ class InvitePreviewOut(BaseModel):
     # Their role is left as it is.
     already_member: bool
     my_role: Literal["owner", "planner", "companion", "reader"] | None = None
+    # The traveler this link was made for, if it was made for one; the
+    # join screen then just confirms rather than asking.
+    invite_traveler: TravelerBrief | None = None
+    # Everyone listed who hasn't got an account yet — "are you one of
+    # these?"
+    unclaimed_travelers: list[TravelerBrief] = Field(default_factory=list)
+
+
+# What a cost_cents figure means: what one person pays, or one price for
+# everyone sharing it. See app/derive.py item_money.
+CostBasis = Literal["per_head", "group"]
 
 
 class AvailabilityRuleIn(BaseModel):
@@ -179,6 +248,7 @@ class PinCreate(BaseModel):
     lng: float | None = None
     duration_minutes: int = 60
     cost_cents: int = 0
+    cost_basis: CostBasis = "per_head"
     notes: str = ""
     link: str = ""
     tags: list[str] = Field(default_factory=list)
@@ -197,8 +267,10 @@ class PinUpdate(BaseModel):
     region: str | None = None
     duration_minutes: int | None = None
     cost_cents: int | None = None
-    # Contributor ids sharing this pin's cost; [] means everyone on the
-    # trip. Edited as a row of initial chips on pages/EditVisit.jsx.
+    cost_basis: CostBasis | None = None
+    # Traveler ids sharing this pin's cost; [] means whoever is on the plan
+    # it's scheduled in. Edited as a row of initial chips on
+    # pages/EditVisit.jsx.
     heads: list[int] | None = None
     notes: str | None = None
     link: str | None = None
@@ -220,6 +292,7 @@ class PinOut(BaseModel):
     duration_minutes: int
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None
+    cost_basis: str = "per_head"
     heads: list[int] | None
     notes: str
     link: str
@@ -281,6 +354,7 @@ class TravelItemCreate(BaseModel):
     kind: TravelItemKind = "other"
     duration_minutes: int = 60
     cost_cents: int = 0
+    cost_basis: CostBasis = "per_head"
     notes: str = ""
     link: str = ""
 
@@ -290,6 +364,7 @@ class TravelItemUpdate(BaseModel):
     kind: TravelItemKind | None = None
     duration_minutes: int | None = None
     cost_cents: int | None = None
+    cost_basis: CostBasis | None = None
     heads: list[int] | None = None
     notes: str | None = None
     link: str | None = None
@@ -303,6 +378,7 @@ class TravelItemOut(BaseModel):
     kind: str
     duration_minutes: int
     cost_cents: int | None
+    cost_basis: str = "per_head"
     heads: list[int] | None
     notes: str
     link: str
@@ -349,6 +425,13 @@ class PlanItemOut(BaseModel):
     # itinerary stop lists don't each re-derive the packing rule (feature
     # spec §7). Minutes from midnight on the plan's own day.
     start_minute_of_day: int
+    # Money for this stop, worked out on the server because it depends on
+    # who is on the plan (app/derive.py item_money): the travelers sharing
+    # it, what each of them pays, and the whole bill. Costs are None for a
+    # caller who can't see this one.
+    sharer_ids: list[int] = Field(default_factory=list)
+    each_cents: int | None = None
+    total_cents: int | None = None
 
 
 PlanStatusLiteral = Literal["draft", "placed", "pencilled", "contested", "locked"]
@@ -371,6 +454,9 @@ class PlanCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
+    # The group this plan is for when the group has split up; None is
+    # everyone. See app/splits.py for where each may go.
+    branch_id: int | None = None
 
 
 class ProposalUpdate(BaseModel):
@@ -408,6 +494,12 @@ class PlanOut(BaseModel):
     created_by_id: int | None
     # The proposer's case for this plan, shown to voters.
     rationale: str
+    # Who this plan is for: its group on a split day (app/splits.py), or
+    # None for everyone — plus, so no screen has to look the group up, the
+    # travelers that comes to right now.
+    branch_id: int | None = None
+    party_members: list[int] = Field(default_factory=list)
+    for_everyone: bool = True
     items: list[PlanItemOut]
     # Derived, never stored — see app/derive.py. There is no
     # moving_minutes any more; see that module's docstring for why.
@@ -435,6 +527,9 @@ class ContestProposeCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
+    # The group the decision is for on a split day; None is the whole trip.
+    # Only that group's plans are captured, and only its travelers vote.
+    branch_id: int | None = None
 
 
 class ContestPlanOut(PlanOut):
@@ -456,6 +551,10 @@ class ContestOut(BaseModel):
     # The hours under contest. Every option spans exactly these.
     starts_at: datetime
     ends_at: datetime
+    # Who the decision is for, and so who votes (app/splits.py).
+    branch_id: int | None = None
+    party_members: list[int] = Field(default_factory=list)
+    for_everyone: bool = True
     plans: list[ContestPlanOut]
     voted_count: int
     contributor_count: int
@@ -482,6 +581,69 @@ class ContestPicked(BaseModel):
     contest itself is gone — see routers/contests.py pick_set."""
 
     placed_plans: list[PlanOut]
+
+
+# ---- The group splitting up (app/splits.py) ----
+
+
+class SplitBranchIn(BaseModel):
+    """One group, as a client describes it. `id` names an existing group
+    when reshaping a split and is left out for a new one."""
+
+    id: int | None = None
+    label: str = Field(default="", max_length=200)
+    traveler_ids: list[int] = Field(min_length=1)
+    # The one group (at most) that people added to the trip later join.
+    takes_newcomers: bool = False
+
+
+class SplitCreate(BaseModel):
+    """Split the group — POST /api/trips/{trip_id}/splits. Whatever is
+    already planned in those hours goes to the group at index
+    `keep_plans_with`; the others start with an empty calendar."""
+
+    starts_at: datetime
+    ends_at: datetime
+    branches: list[SplitBranchIn] = Field(min_length=2)
+    keep_plans_with: int = 0
+
+
+class SplitUpdate(BaseModel):
+    """Say who is in which group — PUT /api/splits/{split_id}. The whole
+    assignment at once; see app/splits.py reshape_split."""
+
+    branches: list[SplitBranchIn] = Field(min_length=2)
+
+
+class SplitHours(BaseModel):
+    """Change a split's hours — PUT /api/splits/{split_id}/hours. Nothing
+    changes hands; see app/splits.py retime_split for what's refused."""
+
+    starts_at: datetime
+    ends_at: datetime
+
+
+class SplitMerge(BaseModel):
+    """Bring everyone back — POST /api/splits/{split_id}/merge. The kept
+    group's plans become everyone's; the others' come off the calendar."""
+
+    keep_branch_id: int
+
+
+class SplitBranchOut(BaseModel):
+    id: int
+    label: str
+    position: int
+    traveler_ids: list[int]
+    takes_newcomers: bool
+
+
+class SplitOut(BaseModel):
+    id: int
+    trip_id: int
+    starts_at: datetime
+    ends_at: datetime
+    branches: list[SplitBranchOut]
 
 
 class CommentCreate(BaseModel):

@@ -7,12 +7,15 @@ import ComparisonColumns, { summariseStops } from "../components/planner/Compari
 import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
 import Stepper from "../components/forms/Stepper";
-import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess, useMyTraveler } from "../state/PlannerContext";
+import { branchName, branchesById, splitsOnDay } from "../lib/splits";
+import { claimBounds, refitSelection } from "../lib/windowClaim";
 import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
 import { fmtMin } from "../data/derive";
-import { headcountFor, perHeadCents } from "../data/expenses";
+import { stopMoney } from "../data/expenses";
+import CostField from "../components/forms/CostField";
 import { bandsForMinuteRange, clockLabel, isoForDayMinute } from "../lib/planTime";
 import { reasonsFor, worksInAnyBand } from "../lib/availability";
 import {
@@ -89,7 +92,8 @@ export default function ProposeBlock() {
   const dayIndex = Number(useParams().day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, plans, pins, travelItems, contributors, overrides } = state;
+  const { trip, plans, splits, pins, travelItems, contributors, travelers, overrides } = state;
+  const myTraveler = useMyTraveler();
 
   const reopenedDraftId = location.state?.draftPlanId ?? null;
   const contestId = location.state?.contestId ?? null;
@@ -114,11 +118,21 @@ export default function ProposeBlock() {
     () => plansOnDay(plans.filter((p) => p.status !== "draft"), trip.startDate, dayIndex),
     [plans, trip.startDate, dayIndex]
   );
-  const contestWindows = useMemo(() => contestWindowsFrom(dayEntries), [dayEntries]);
   const reopenedDraft = useMemo(
     () => (reopenedDraftId ? plans.find((p) => p.id === reopenedDraftId) : null),
     [plans, reopenedDraftId]
   );
+  const daySplits = useMemo(() => splitsOnDay(splits, trip.startDate, dayIndex), [splits, trip.startDate, dayIndex]);
+  const branches = useMemo(() => branchesById(splits), [splits]);
+
+  // Who this block is for: one group of a split (lib/splits.js), or null
+  // for everyone. A running vote or a reopened draft already says; a fresh
+  // claim takes it from where the drag starts in step 2
+  // (lib/windowClaim.js), and the group chips there can switch it. Only
+  // that audience's plans are swept up into "on the board", and only its
+  // travelers vote (backend/app/routers/contests.py open_block_contest).
+  const [branchId, setBranchId] = useState(reopenedDraft?.branchId ?? null);
+  const branch = branchId != null ? branches.get(branchId) ?? null : null;
 
   // Reopening a draft, or joining a running decision, drops you straight
   // into step 3 — in both cases the hours are already settled and there is
@@ -141,6 +155,7 @@ export default function ProposeBlock() {
             durationMinutes: item.durationMinutes,
             offsetMinutes: item.offsetMinutes,
             costCents: item.costCents,
+            costBasis: item.costBasis,
             heads: item.heads,
           }))
         )
@@ -195,6 +210,7 @@ export default function ProposeBlock() {
       .then((c) => {
         if (!live) return;
         setContest(c);
+        setBranchId(c.branch_id ?? null);
         setSelection({ startMin: minuteOfIso(c.starts_at), endMin: minuteOfIso(c.starts_at) + contestWindowMinutes(c) });
         const target = editPlanId ? c.plans.find((p) => p.id === editPlanId) : null;
         if (!target) return;
@@ -226,6 +242,52 @@ export default function ProposeBlock() {
     : stops.length > 0 || (Boolean(selection) && !contestId);
   useNavGuard(dirty && !busy, editing ? DISCARD_EDITS_PROMPT : DISCARD_PROMPT);
 
+  const plansInHours = useMemo(() => {
+    if (!selection) return [];
+    return dayEntries
+      .filter((e) => e.plan.status !== "locked" && overlaps(e.startMin, e.endMin, selection.startMin, selection.endMin))
+      .map((e) => e.plan);
+  }, [dayEntries, selection]);
+
+  const insidePlans = useMemo(
+    () => plansInHours.filter((p) => (p.branchId ?? null) === branchId),
+    [plansInHours, branchId]
+  );
+
+  // Whose money this block is: the group's travelers, or everyone.
+  const audienceIds = useMemo(
+    () => (branch ? branch.travelerIds : travelers.map((t) => t.id)),
+    [branch, travelers]
+  );
+
+  // The people who'd vote: members linked to a traveler in the block's
+  // group (everyone who can vote, for a block for everyone). Travelers
+  // without an account don't vote.
+  const voters = useMemo(() => {
+    const canVote = contributors.filter((c) => c.role !== "reader");
+    if (!branch) return canVote;
+    const linked = new Set(
+      travelers.filter((t) => branch.travelerIds.includes(t.id)).map((t) => t.contributorId).filter((id) => id != null)
+    );
+    return canVote.filter((c) => linked.has(c.id));
+  }, [branch, contributors, travelers]);
+
+  // Only votes that are this audience's business can clash with this
+  // block or be joined by it; another group's vote over the same hours is
+  // its own (backend/app/routers/contests.py open_block_contest).
+  const audienceWindows = useMemo(
+    () => contestWindowsFrom(dayEntries.filter((e) => (e.plan.branchId ?? null) === branchId)),
+    [dayEntries, branchId]
+  );
+
+  // Switching which group the block is for keeps the claimed hours where
+  // that group can have them.
+  function chooseBranch(nextBranchId) {
+    setError("");
+    setBranchId(nextBranchId);
+    setSelection((current) => refitSelection(current, claimBounds(dayEntries, daySplits, nextBranchId)));
+  }
+
   // The hours in the drag that are already out for a vote. An exactly
   // matching window is fine — that's how a further set joins an existing
   // decision — but a partial overlap has to be refused, and named
@@ -233,35 +295,27 @@ export default function ProposeBlock() {
   const clashingContest = useMemo(() => {
     if (!selection) return null;
     return (
-      contestWindows.find(
+      audienceWindows.find(
         (w) =>
           overlaps(selection.startMin, selection.endMin, w.startMin, w.endMin) &&
           !(w.startMin === selection.startMin && w.endMin === selection.endMin)
       ) ?? null
     );
-  }, [selection, contestWindows]);
+  }, [selection, audienceWindows]);
 
   const matchingContest = useMemo(() => {
     if (!selection) return null;
-    return contestWindows.find((w) => w.startMin === selection.startMin && w.endMin === selection.endMin) ?? null;
-  }, [selection, contestWindows]);
+    return audienceWindows.find((w) => w.startMin === selection.startMin && w.endMin === selection.endMin) ?? null;
+  }, [selection, audienceWindows]);
 
   // Everything the claim would sweep up — the "on the board" side of the
   // comparison, and the source of the "N items sit in these hours" count.
-  const insidePlans = useMemo(() => {
-    if (!selection) return [];
-    return dayEntries
-      .filter((e) => e.plan.status !== "locked" && overlaps(e.startMin, e.endMin, selection.startMin, selection.endMin))
-      .map((e) => e.plan);
-  }, [dayEntries, selection]);
-
   const insideItems = useMemo(
     () => insidePlans.flatMap((p) => p.items.map((item) => ({ plan: p, item }))),
     [insidePlans]
   );
 
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
-  const travellerCount = trip.travellerCount || contributors.length || 1;
 
   // The availability question the claimed hours ask, in the currency
   // AvailabilityRule speaks: a calendar day-of-month and the AM/PM/EVE
@@ -316,6 +370,7 @@ export default function ProposeBlock() {
         baseDurationMinutes: item.baseDurationMinutes,
         durationMinutes: item.durationMinutes,
         costCents: item.costCents,
+        costBasis: item.costBasis,
         heads: item.heads,
         ...availability(item.pinId),
       });
@@ -339,6 +394,7 @@ export default function ProposeBlock() {
           baseDurationMinutes: pin.dur,
           durationMinutes: pin.dur,
           costCents: pin.costCents,
+          costBasis: pin.costBasis,
           heads: pin.heads,
           who: pin.who,
           ...availability(pin.id),
@@ -354,6 +410,7 @@ export default function ProposeBlock() {
           baseDurationMinutes: t.dur,
           durationMinutes: t.dur,
           costCents: t.costCents,
+          costBasis: t.costBasis,
           heads: t.heads,
           who: t.who,
           works: true,
@@ -393,7 +450,7 @@ export default function ProposeBlock() {
 
   function openNewStop() {
     setError("");
-    setStopForm({ option: null, title: "", dur: 60, cost: 0, heads: [], gap: 0, costEditable: ideaAccess.canSetCost(null) });
+    setStopForm({ option: null, title: "", dur: 60, cost: 0, costBasis: "per_head", heads: [], gap: 0, costEditable: ideaAccess.canSetCost(null) });
   }
 
   function openPullIn(option) {
@@ -403,6 +460,7 @@ export default function ProposeBlock() {
       title: option.title,
       dur: option.durationMinutes,
       cost: (option.costCents ?? 0) / 100,
+      costBasis: option.costBasis ?? "per_head",
       heads: option.heads ?? [],
       gap: 0,
       costEditable: ideaAccess.canSetCost(option),
@@ -455,15 +513,32 @@ export default function ProposeBlock() {
       const option = stopForm.option;
       setBusy(true);
       try {
-        if (stopForm.costEditable && costCents !== (option.costCents ?? 0)) {
+        const basisChanged = stopForm.costBasis !== (option.costBasis ?? "per_head");
+        if (stopForm.costEditable && (costCents !== (option.costCents ?? 0) || basisChanged)) {
           if (option.kind === "pin") {
-            const result = await dispatch({ type: "PATCH_PIN", id: option.refId, fields: { cost: costCents / 100 } });
+            const result = await dispatch({
+              type: "PATCH_PIN",
+              id: option.refId,
+              fields: { cost: costCents / 100, costBasis: stopForm.costBasis },
+            });
             if (!result.ok) throw new Error(result.error || "Couldn't update that cost.");
           } else {
-            await dispatch({ type: "PATCH_TRAVEL_ITEM", id: option.refId, fields: { cost_cents: costCents } });
+            await dispatch({
+              type: "PATCH_TRAVEL_ITEM",
+              id: option.refId,
+              fields: { cost_cents: costCents, cost_basis: stopForm.costBasis },
+            });
           }
         }
-        addStop({ ...option, durationMinutes, costCents: stopForm.costEditable ? costCents : option.costCents }, gap);
+        addStop(
+          {
+            ...option,
+            durationMinutes,
+            costCents: stopForm.costEditable ? costCents : option.costCents,
+            costBasis: stopForm.costEditable ? stopForm.costBasis : option.costBasis,
+          },
+          gap
+        );
         setStopForm(null);
       } catch (err) {
         setError(err.message || "Couldn't add that stop.");
@@ -486,6 +561,7 @@ export default function ProposeBlock() {
           kind: "other",
           duration_minutes: durationMinutes,
           cost_cents: stopForm.costEditable ? costCents : 0,
+          cost_basis: stopForm.costBasis,
         },
       });
       createdHereRef.current.add(created.id);
@@ -500,6 +576,7 @@ export default function ProposeBlock() {
           baseDurationMinutes: created.dur,
           durationMinutes: created.dur,
           costCents: created.costCents ?? costCents,
+          costBasis: created.costBasis ?? stopForm.costBasis,
           heads: stopForm.heads,
         },
         gap
@@ -547,7 +624,7 @@ export default function ProposeBlock() {
     // Backing out to step 2 only makes sense when there is a step 2 to go
     // back to. On the contest paths the hours were never up for
     // negotiation, so the message belongs where the reader already is.
-    if (contestId && (result.conflict === "contest" || result.conflict === "locked")) {
+    if (contestId && (result.conflict === "contest" || result.conflict === "locked" || result.conflict === "split")) {
       setError(result.message || "Those hours are no longer available.");
       return true;
     }
@@ -565,6 +642,13 @@ export default function ProposeBlock() {
     if (result.conflict === "locked") {
       setStep(2);
       setError("Those hours contain a pinned item. Drag up to its edge instead.");
+      return true;
+    }
+    if (result.conflict === "split") {
+      // The group split up (or came back together) since these hours were
+      // picked: pick them again against the day as it is now.
+      setStep(2);
+      setError(result.message || "The group has split up over some of those hours.");
       return true;
     }
     return false;
@@ -609,7 +693,7 @@ export default function ProposeBlock() {
     const { startsAt, endsAt } = windowIso();
     const result = reopenedDraftId
       ? await publishExistingDraft(startsAt, endsAt)
-      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems() });
+      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems(), branchId });
     setBusy(false);
     if (result.ok) {
       committedRef.current = true;
@@ -632,6 +716,7 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
+      branchId,
     });
     if (!saved.ok) return saved;
     return dispatch({ type: "PUBLISH_DRAFT", planId: saved.planId });
@@ -650,6 +735,7 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
+      branchId,
     });
     setBusy(false);
     if (result.ok) {
@@ -705,10 +791,16 @@ export default function ProposeBlock() {
           tripDays={tripDays}
           dayIndex={dayIndex}
           dayEntries={dayEntries}
-          contestWindows={contestWindows}
+          daySplits={daySplits}
+          branchId={branchId}
+          onChooseBranch={chooseBranch}
+          myTravelerId={myTraveler?.id ?? null}
+          travelers={travelers}
+          contestWindows={audienceWindows}
           selection={selection}
-          onChange={(next) => {
+          onChange={(next, nextBranchId) => {
             setError("");
+            setBranchId(nextBranchId);
             setSelection(next);
           }}
           insideCount={insideItems.length}
@@ -730,8 +822,7 @@ export default function ProposeBlock() {
           windowMinutes={windowMinutes}
           plannedMinutes={plannedMinutes}
           stops={stops.map((s) => {
-            const headcount = headcountFor(s, trip, contributors);
-            return { ...s, headcount, perHeadCents: perHeadCents(s, headcount) };
+            return { ...s, ...stopMoney(s, audienceIds) };
           })}
           pullInGroups={pullInGroups}
           title={editing ? "Edit this set" : "Your block"}
@@ -748,8 +839,7 @@ export default function ProposeBlock() {
           onSubmitStop={submitStopForm}
           onCancelStop={() => setStopForm(null)}
           nextStartMin={selection.startMin + spanMinutes}
-          contributors={contributors}
-          travellerCount={travellerCount}
+          travelers={travelers}
           busy={busy}
           error={error}
           canReview={canReview}
@@ -782,9 +872,10 @@ export default function ProposeBlock() {
                 )
               : boardColumn(insideItems, selection, windowMinutes)
           }
-          yours={yoursColumn(stops, selection, windowMinutes)}
+          yours={yoursColumn(stops, selection, windowMinutes, audienceIds)}
           showTotals={seesAllCosts}
-          contributors={contributors}
+          contributors={voters}
+          groupLabel={branch ? branchName(branch, travelers) : ""}
           busy={busy}
           error={error}
           isDraft={Boolean(reopenedDraftId)}
@@ -881,6 +972,7 @@ function stopsFromOption(option) {
           durationMinutes: it.duration_minutes ?? source?.duration_minutes ?? 0,
           offsetMinutes: it.offset_minutes,
           costCents: source?.cost_cents ?? 0,
+          costBasis: source?.cost_basis ?? "per_head",
           heads: source?.heads ?? [],
         };
       })
@@ -932,11 +1024,11 @@ function boardColumn(insideItems, selection, windowMinutes) {
   return {
     lines,
     summary: summariseStops(insideItems.length, windowMinutes - planned),
-    totalCents: insideItems.reduce((sum, { item }) => sum + (item.costCents ?? 0), 0),
+    totalCents: insideItems.reduce((sum, { item }) => sum + (item.totalCents ?? 0), 0),
   };
 }
 
-function yoursColumn(stops, selection, windowMinutes) {
+function yoursColumn(stops, selection, windowMinutes, memberIds) {
   // Clock times, not offsets: the column beside this one shows "09:30 ·
   // National Palace Museum", and two columns meant to be compared at a
   // glance can't be measuring from different zeroes.
@@ -951,7 +1043,7 @@ function yoursColumn(stops, selection, windowMinutes) {
   return {
     lines,
     summary: summariseStops(stops.length, windowMinutes - planned),
-    totalCents: stops.reduce((sum, s) => sum + (s.costCents ?? 0), 0),
+    totalCents: stops.reduce((sum, s) => sum + stopMoney(s, memberIds).totalCents, 0),
   };
 }
 
@@ -984,6 +1076,11 @@ function StepTwo({
   tripDays,
   dayIndex,
   dayEntries,
+  daySplits,
+  branchId,
+  onChooseBranch,
+  myTravelerId,
+  travelers,
   contestWindows,
   selection,
   onChange,
@@ -1042,10 +1139,20 @@ function StepTwo({
       </div>
 
       <div className="screen-scroll" style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-        <WindowSelection dayEntries={dayEntries} selection={selection} onChange={onChange} contestWindows={contestWindows} />
+        <WindowSelection
+          dayEntries={dayEntries}
+          daySplits={daySplits}
+          branchId={branchId}
+          myTravelerId={myTravelerId}
+          travelers={travelers}
+          selection={selection}
+          onChange={onChange}
+          contestWindows={contestWindows}
+        />
       </div>
 
       <div style={{ flex: "none", background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "14px 16px 22px" }}>
+        <GroupChooser daySplits={daySplits} branchId={branchId} travelers={travelers} onChoose={onChooseBranch} />
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
           <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}>
             {selection
@@ -1100,6 +1207,44 @@ function StepTwo({
   );
 }
 
+// Which group a block inside split hours is for. Shown only once the
+// selection is in a split: the drag picked a group from where it started
+// (the viewer's own, by default), and this is how to pick another.
+function GroupChooser({ daySplits, branchId, travelers, onChoose }) {
+  const home = branchId != null ? daySplits.find((s) => s.split.branches.some((b) => b.id === branchId)) : null;
+  if (!home) return null;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className="mono-caption" style={{ marginBottom: 6 }}>
+        The group is split up then. This block is for
+      </div>
+      <div role="group" aria-label="Which group this block is for" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {home.split.branches.map((b) => {
+          const on = b.id === branchId;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChoose(b.id)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "var(--radius-xl)",
+                border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+                background: on ? "var(--plum-tint)" : "var(--surface-card)",
+                font: "600 12px var(--font-sans)",
+                color: on ? "var(--accent)" : "var(--text-secondary)",
+              }}
+            >
+              {branchName(b, travelers)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // A ruled-out chip stays tappable, just quieter. Availability is the
 // group's own note about a place, not a constraint the server enforces —
 // someone who knows the shop opens late should be able to pull the pin in
@@ -1145,8 +1290,7 @@ function StepThree({
   onSubmitStop,
   onCancelStop,
   nextStartMin,
-  contributors,
-  travellerCount,
+  travelers,
   busy,
   error,
   canReview,
@@ -1189,8 +1333,7 @@ function StepThree({
             onCancel={onCancelStop}
             startMin={nextStartMin}
             windowEndMin={selection.endMin}
-            contributors={contributors}
-            travellerCount={travellerCount}
+            travelers={travelers}
             busy={busy}
           />
         )}
@@ -1300,7 +1443,7 @@ const fieldStyle = {
 // does on a stop already in the list (components/planner/StopList.jsx): it
 // edits the free time in front of the stop, so it can never be set earlier
 // than where the last stop ends and two stops still can't overlap.
-function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, contributors, travellerCount, busy }) {
+function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, travelers, busy }) {
   const ref = useRef(null);
   const pulling = Boolean(form.option);
   const formKey = pulling ? `${form.option.kind}:${form.option.refId}` : "new";
@@ -1369,20 +1512,13 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, c
         </label>
       </div>
       {form.costEditable && (
-        <div style={{ display: "flex", gap: 8 }}>
-          <label style={{ flex: 1, minWidth: 0 }}>
-            <div className="mono-caption">Cost, in total ($)</div>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.cost}
-              onChange={(e) => set("cost")(e.target.value)}
-              style={fieldStyle}
-            />
-          </label>
-          <div style={{ flex: 1, minWidth: 0 }} />
-        </div>
+        <CostField
+          id="stop-cost"
+          value={form.cost}
+          onChange={set("cost")}
+          basis={form.costBasis}
+          onBasis={set("costBasis")}
+        />
       )}
 
       <div className="mono-data-sm" style={{ color: pastEnd ? "var(--warn)" : "var(--text-faint)" }}>
@@ -1398,7 +1534,7 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, c
       )}
 
       {!pulling && form.costEditable && (
-        <HeadsPicker contributors={contributors} value={form.heads} onChange={set("heads")} travellerCount={travellerCount} />
+        <HeadsPicker travelers={travelers} value={form.heads} onChange={set("heads")} />
       )}
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -1432,6 +1568,7 @@ function StepFour({
   yours,
   showTotals = true,
   contributors,
+  groupLabel = "",
   busy,
   error,
   isDraft,
@@ -1515,12 +1652,22 @@ function StepFour({
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
             <span style={{ font: "600 14px var(--font-sans)", color: "var(--text-primary)" }}>Goes to a vote</span>
             <span className="mono-caption">
-              {contributors.length} planner{contributors.length === 1 ? "" : "s"}
+              {groupLabel
+                ? `${contributors.length} in this group`
+                : `${contributors.length} planner${contributors.length === 1 ? "" : "s"}`}
             </span>
           </div>
           <div style={{ marginTop: 10 }}>
             <AvatarStack contributors={contributors.slice(0, 4)} overflowCount={Math.max(0, contributors.length - 4)} size={26} />
           </div>
+          {groupLabel && (
+            // The group has split for these hours, and this block is one
+            // group's business: only they vote on it, and the other
+            // group's plans stay as they are.
+            <div style={{ marginTop: 8, font: "500 12px var(--font-sans)", color: "var(--text-secondary)" }}>
+              For {groupLabel} only. The rest of the group&rsquo;s plans for these hours aren&rsquo;t affected.
+            </div>
+          )}
           {/* Amended from the handoff's "until a majority picks a set":
               nothing here resolves on a tally. The owner locks, and a
               majority is shown as a state rather than an outcome (feature

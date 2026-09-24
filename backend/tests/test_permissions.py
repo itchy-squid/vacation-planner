@@ -481,14 +481,15 @@ def test_a_member_of_another_trip_cannot_be_edited_through_this_one(client, trip
 
 def test_removing_someone_keeps_what_they_added(client, trip, db):
     trip.pins["vase"].added_by_id = trip.jae.id
-    trip.pins["ice"].heads = [trip.jae.id, trip.ana.id]
+    trip.pins["ice"].heads = [trip.travelers["jae"].id, trip.travelers["ana"].id]
     db.commit()
     placed = trip.place(start=840, end=900, pin="tide", created_by="jae")
     draft = trip.place(day=2, start=600, end=660, pin="cave", created_by="jae", status=PlanStatus.draft)
     db.add(Comment(pin_id=trip.pins["vase"].id, contributor_id=trip.jae.id, body="yes"))
     db.commit()
     draft_id = draft.id
-    jae_id, ana_id = trip.jae.id, trip.ana.id
+    jae_id = trip.jae.id
+    jae_traveler, ana_traveler = trip.travelers["jae"].id, trip.travelers["ana"].id
 
     assert client.delete(f"/api/trips/{trip.id}/contributors/{jae_id}", headers=MEI).status_code == 204
 
@@ -497,7 +498,8 @@ def test_removing_someone_keeps_what_they_added(client, trip, db):
     assert db.get(Plan, placed.id).created_by_id is None
     assert db.get(Plan, draft_id) is None
     assert trip.pins["vase"].added_by_id is None
-    assert trip.pins["ice"].heads == [ana_id]
+    # Jae is off the app but still going: the traveler stays on the split.
+    assert trip.pins["ice"].heads == [jae_traveler, ana_traveler]
     assert db.query(Comment).count() == 0
     assert client.get(f"/api/trips/{trip.id}", headers=JAE).status_code == 403
 

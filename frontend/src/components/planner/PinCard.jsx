@@ -40,7 +40,7 @@ export default function PinCard({ pin, column, contributorInitial, onOpen }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
           <span className="mono-data-sm" style={{ letterSpacing: 0 }}>
-            {pin.cost ? `$${pin.cost} · ` : ""}{fmtDur(pin.dur)}
+            {pin.cost ? `$${pin.cost}${pin.costBasis === "group" ? "" : " each"} · ` : ""}{fmtDur(pin.dur)}
           </span>
           <span
             style={{

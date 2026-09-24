@@ -43,6 +43,9 @@ const DayGrid = forwardRef(function DayGrid(
       </div>
       <div
         ref={ref}
+        // The one element a drag or tap on the grid is measured against;
+        // the end-to-end tests find it by this (e2e/support/calendar.js).
+        data-testid="day-grid-surface"
         style={{
           flex: 1,
           minWidth: 0,
