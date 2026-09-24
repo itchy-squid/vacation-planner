@@ -11,7 +11,6 @@
 // wins" rule, the app's gutter is what stays.
 
 import { dayIndexForDate } from "./planTime";
-import { partyKey } from "./party";
 
 export const PX_PER_MIN = 1;
 export const DAY_START_MIN = 0; // 00:00 — the grid always shows the full midnight-to-midnight day
@@ -109,21 +108,13 @@ export function overlaps(aStart, aEnd, bStart, bEnd) {
 }
 
 // Column-packing sweep: groups overlapping plans into clusters, then
-// greedily assigns each plan to the first column whose previous
-// occupant has already ended — same idea as Google-Calendar-style
-// side-by-side event layout.
+// greedily assigns each plan to the first column whose previous occupant
+// has already ended — same idea as Google-Calendar-style side-by-side
+// event layout.
 //
 // Takes the day entries from plansOnDay above (not raw plans), so an
 // overnight plan's morning hours pack against the day they land on rather
-// than the day they started. Returns each entry plus { col, numCols }.
-//
-// Split-party plans (lib/party.js) add one level above the columns. On a
-// day the group has split, side by side means two different things: two
-// options in one vote, and two groups doing different things. So a
-// cluster is first divided into lanes, one per party — everyone's plans
-// in one lane, Ana-and-Lin's in another — and the columns are packed
-// inside each lane. A vote inside one branch then widens that branch's
-// lane, and never pushes an option into the other group's column.
+// than the day they started.
 function clustersOf(entries) {
   const items = [...entries].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
   const clusters = [];
@@ -158,69 +149,62 @@ function packColumns(items) {
   return { colOf, numCols: columnEnds.length };
 }
 
-// Lanes in a stable order: everyone first, then by the first traveler on
-// each party, so a group keeps its side of the grid from one day to the
-// next rather than swapping with the other. `reps` maps a lane key to one
-// plan in that lane.
-function laneOrder(reps) {
-  const first = (key) => Math.min(...(reps.get(key)?.partyMembers ?? [Infinity]));
-  return (a, b) => {
-    if (a === b) return 0;
-    if (a === "") return -1;
-    if (b === "") return 1;
-    return first(a) - first(b) || a.localeCompare(b);
-  };
-}
-
-export function layoutDayPlans(entries) {
+// Packs `entries` side by side inside a horizontal band of the grid
+// (`left` and `width` as fractions of it). Returns each entry plus its
+// own { left, width } fractions.
+function packInto(entries, left, width) {
   const result = [];
   for (const cluster of clustersOf(entries)) {
-    const lanes = new Map();
-    const reps = new Map();
+    const { colOf, numCols } = packColumns(cluster);
     for (const it of cluster) {
-      const key = partyKey(it.plan);
-      if (!lanes.has(key)) lanes.set(key, []);
-      if (!reps.has(key)) reps.set(key, it.plan);
-      lanes.get(key).push(it);
+      result.push({ ...it, left: left + (width * colOf.get(it.plan.id)) / numCols, width: width / numCols });
     }
-    const keys = [...lanes.keys()].sort(laneOrder(reps));
-    const packed = keys.map((key) => packColumns(lanes.get(key)));
-    const numCols = packed.reduce((sum, p) => sum + p.numCols, 0);
-    let offset = 0;
-    keys.forEach((key, laneIndex) => {
-      const { colOf, numCols: laneCols } = packed[laneIndex];
-      for (const it of lanes.get(key)) {
-        result.push({ ...it, col: offset + colOf.get(it.plan.id), numCols, lane: laneIndex, laneCount: keys.length });
-      }
-      offset += laneCols;
-    });
   }
   return result;
 }
 
-// The stretches of a day where the group is split: every cluster of
-// overlapping plans that holds more than one party. Each band carries its
-// hours and one plan per group in it (in lane order) — read their
-// partyMembers and partyMode — which is what the grid's bracket and
-// "2 + 5" label are drawn from. `entries` should be the whole
-// day's, not a "just me" subset, or a split you're on one side of would
-// look like no split at all.
-export function splitBandsFrom(entries) {
-  const bands = [];
-  for (const cluster of clustersOf(entries)) {
-    const groups = new Map();
-    for (const it of cluster) {
-      const key = partyKey(it.plan);
-      if (!groups.has(key)) groups.set(key, it.plan);
-    }
-    if (groups.size < 2) continue;
-    bands.push({
-      startMin: Math.min(...cluster.map((e) => e.startMin)),
-      endMin: Math.max(...cluster.map((e) => e.endMin)),
-      groups: [...groups.keys()].sort(laneOrder(groups)).map((k) => groups.get(k)),
+// Where the group has split (lib/splits.js), each group gets a lane of its
+// own over the split's hours — including a group with nothing planned yet,
+// so there is somewhere to tap to plan for them. `daySplits` comes from
+// lib/splits.js splitsOnDay; `keepBranch` drops lanes (Just me shows only
+// yours). Lanes divide the width evenly, in the split's own group order,
+// so a group keeps its side of the grid from one day to the next.
+export function splitLanes(daySplits, keepBranch = () => true) {
+  const lanes = [];
+  for (const { split, startMin, endMin } of daySplits) {
+    const shown = split.branches.filter(keepBranch);
+    shown.forEach((branch, i) => {
+      lanes.push({ split, branch, startMin, endMin, left: i / shown.length, width: 1 / shown.length });
     });
   }
-  return bands;
+  return lanes;
+}
+
+// Every entry with its { left, width } fractions of the grid. A plan in a
+// group packs into that group's lane, so two options in one group's vote
+// sit side by side inside the lane and never push into another group's.
+// A plan for everyone never overlaps a split, so it packs across the full
+// width as it always did. A group's plan whose lane isn't shown is left
+// out (the caller already chose to hide that group).
+export function layoutDayPlans(entries, lanes = []) {
+  const laneOf = new Map(lanes.map((lane) => [lane.branch.id, lane]));
+  const byLane = new Map();
+  const everyone = [];
+  for (const entry of entries) {
+    const branchId = entry.plan.branchId ?? null;
+    if (branchId == null) {
+      everyone.push(entry);
+    } else if (laneOf.has(branchId)) {
+      if (!byLane.has(branchId)) byLane.set(branchId, []);
+      byLane.get(branchId).push(entry);
+    }
+  }
+  const result = packInto(everyone, 0, 1);
+  byLane.forEach((laneEntries, branchId) => {
+    const lane = laneOf.get(branchId);
+    result.push(...packInto(laneEntries, lane.left, lane.width));
+  });
+  return result;
 }
 
 // The hours already out for a vote on this day, read straight off the

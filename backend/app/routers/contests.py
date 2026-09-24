@@ -8,9 +8,9 @@ from ..custom_events import forget_orphaned_travel_items, publish_forgotten, tra
 from ..db import get_db
 from ..derive import item_duration_minutes, item_start_minutes
 from ..events import bus
-from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Traveler, Vote
-from ..party import apply_party, names, normalize_party, party_of, roster_ids
+from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Vote
 from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, VOTES_WRITE, VOTING_ROLES, Access, require
+from ..splits import audience, names, resolve_branch, roster_ids, voter_ids
 from ..tripclock import minutes_between, same_moment
 from ..schemas import (
     ContestOut,
@@ -94,9 +94,8 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
     # The people who can vote. Readers can't, so they aren't counted toward
     # the tally or the majority. Companions can, and are.
     #
-    # On a split day a decision belongs to one branch: only the people it's
-    # for can vote, so the count and the majority are theirs too.
-    party = party_of(contest)
+    # On a split day a decision belongs to one group: only its travelers
+    # vote, so the count and the majority are theirs too.
     roster = roster_ids(db, contest.trip_id)
     allowed = contest_voter_ids(db, contest)
     voters = select(Contributor).where(
@@ -120,10 +119,9 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
         winning_plan_id=contest.winning_plan_id,
         starts_at=contest.starts_at,
         ends_at=contest.ends_at,
-        party=list(party.ids),
-        party_mode=party.mode,
-        party_members=sorted(party.members(roster)),
-        for_everyone=party.is_everyone,
+        branch_id=contest.branch_id,
+        party_members=sorted(audience(contest.branch, roster)),
+        for_everyone=contest.branch_id is None,
         plans=plans,
         voted_count=len(contest.votes),
         contributor_count=contributor_count,
@@ -133,20 +131,10 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
 
 
 def contest_voter_ids(db: Session, contest: Contest) -> set[int] | None:
-    """The members who may vote on a decision for part of the group: those
-    linked to a traveler on its party. None when it's for everyone — then
-    every voting member votes, going or not, as before. Travelers without
-    an account never vote; Kai's say goes through whoever asks him."""
-    party = party_of(contest)
-    if party.is_everyone:
-        return None
-    members = party.members(roster_ids(db, contest.trip_id))
-    return {
-        cid
-        for cid in db.scalars(
-            select(Traveler.contributor_id).where(Traveler.id.in_(members), Traveler.contributor_id.is_not(None))
-        ).all()
-    }
+    """The members who may vote on a decision for one group (app/splits.py
+    voter_ids). None when it's for everyone — then every voting member
+    votes, going or not, as before."""
+    return None if contest.branch is None else voter_ids(db, contest.branch)
 
 
 def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan]) -> Plan | None:
@@ -191,8 +179,7 @@ def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan])
         # board" column doesn't change colour the moment it's contested.
         label=captured[0].label,
         color=captured[0].color,
-        party=list(contest.party or []),
-        party_mode=contest.party_mode,
+        branch_id=contest.branch_id,
         status=PlanStatus.contested,
         contest_id=contest.id,
     )
@@ -231,8 +218,7 @@ def open_block_contest(
     rationale: str,
     items: list[PlanItemCreate],
     contributor: Contributor | None,
-    party: list[int] | None = None,
-    party_mode: str | None = None,
+    branch_id: int | None = None,
 ) -> Contest:
     """The one server path behind both proposal entry points — the tray's
     four-step "Propose a block" flow and DaySchedule's quick tap-an-
@@ -244,13 +230,13 @@ def open_block_contest(
     open a contest, capture the incumbents into one option, and add the
     proposal as another.
 
-    `party` is who the decision is for ([] for everyone). On a day the
-    group has split, a proposal belongs to one branch: only plans for
-    exactly those people are captured, the other branch's plans in the
-    same hours are left alone, and only those people vote. A window that
-    would sweep in a plan for anyone else — a different branch, or a plan
-    for part of this one — is refused, because a single "on the board"
-    option can't hold two groups' days at once."""
+    `branch_id` is the group the decision is for (None for everyone). On a
+    split day a proposal belongs to one group: its hours have to lie inside
+    that group's split, only that group's plans are captured, the other
+    groups' plans over the same hours are left alone, and only its
+    travelers vote (app/splits.py). A proposal for everyone can't reach
+    into split hours at all, so one "on the board" option never has to hold
+    two groups' days at once."""
     if ends_at <= starts_at:
         raise HTTPException(status_code=400, detail="A block has to end after it starts")
     if not items:
@@ -262,13 +248,15 @@ def open_block_contest(
     # way here, on a published draft, and on an edited set.
     validate_stop_layout(db, items, minutes_between(ends_at, starts_at))
 
+    branch = resolve_branch(db, trip_id, branch_id, starts_at, ends_at)
+    branch_id = branch.id if branch else None
+
     # A locked plan is a fixed hour, not a proposal: the ferry leaves when
     # it leaves. Step 2's drag clips the selection at one rather than
     # crossing it (feature spec §6.5), so reaching here means a race or a
     # client that skipped the clip — either way, refusing is what keeps
     # "everything in the window is in the contest" true.
-    party = normalize_party(db, trip_id, party, party_mode)
-    locked = find_overlapping_plans(db, trip_id, starts_at, ends_at, (PlanStatus.locked,), party=party)
+    locked = find_overlapping_plans(db, trip_id, starts_at, ends_at, (PlanStatus.locked,), branch_id=branch_id)
     if locked:
         raise HTTPException(
             status_code=409,
@@ -278,21 +266,7 @@ def open_block_contest(
             },
         )
 
-    overlapping = find_overlapping_plans(db, trip_id, starts_at, ends_at, _CAPTURABLE_STATUSES, party=party)
-    for plan in overlapping:
-        theirs = party_of(plan)
-        if theirs != party:
-            who = "everyone" if theirs.is_everyone else names(db, theirs.members(roster_ids(db, trip_id)))
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": (
-                        f"Those hours hold a plan for {who}. Propose within one group, "
-                        "or bring the group back together first."
-                    ),
-                    "occupying_plan_id": plan.id,
-                },
-            )
+    overlapping = find_overlapping_plans(db, trip_id, starts_at, ends_at, _CAPTURABLE_STATUSES, branch_id=branch_id)
 
     open_contests: list[Contest] = []
     for plan in overlapping:
@@ -329,8 +303,8 @@ def open_block_contest(
             status=ContestStatus.open,
             starts_at=starts_at,
             ends_at=ends_at,
+            branch_id=branch_id,
         )
-        apply_party(contest, party)
         db.add(contest)
         db.flush()
         _capture_into_incumbent(db, contest, overlapping)
@@ -350,8 +324,7 @@ def open_block_contest(
         ends_at=ends_at,
         label=label,
         rationale=rationale,
-        party=list(contest.party or []),
-        party_mode=contest.party_mode,
+        branch_id=contest.branch_id,
         status=PlanStatus.contested,
         contest_id=contest.id,
         created_by_id=contributor.id if contributor else None,
@@ -386,8 +359,7 @@ def propose_block(
         rationale=payload.rationale,
         items=payload.items,
         contributor=access.member,
-        party=payload.party,
-        party_mode=payload.party_mode,
+        branch_id=payload.branch_id,
     )
     db.commit()
     db.refresh(contest)
@@ -433,8 +405,7 @@ def publish_plan(
         rationale=plan.rationale,
         items=items,
         contributor=viewer,
-        party=plan.party,
-        party_mode=plan.party_mode,
+        branch_id=plan.branch_id,
     )
     db.delete(plan)
     db.commit()
@@ -553,7 +524,7 @@ def toggle_vote(
     contributor = access.member
     allowed = contest_voter_ids(db, contest)
     if allowed is not None and contributor.id not in allowed:
-        members = party_of(contest).members(roster_ids(db, contest.trip_id))
+        members = audience(contest.branch, roster_ids(db, contest.trip_id))
         raise HTTPException(
             status_code=403,
             detail={"message": f"This vote is for {names(db, members)}.", "missing_scope": "party"},
@@ -617,8 +588,7 @@ def pick_set(
             starts_at=chosen.starts_at + timedelta(minutes=start),
             ends_at=chosen.starts_at + timedelta(minutes=start + duration),
             color=chosen.color,
-            party=list(contest.party or []),
-            party_mode=contest.party_mode,
+            branch_id=contest.branch_id,
             status=PlanStatus.placed,
             created_by_id=chosen.created_by_id,
         )
@@ -672,9 +642,9 @@ def reopen_plan(
     # since been filled would create a silent overlap the calendar has no
     # way to draw, so refuse and name what's in the way instead (feature
     # spec §11).
-    occupying = find_overlapping_plan(db, plan.trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=party_of(plan))
+    occupying = find_overlapping_plan(db, plan.trip_id, plan.starts_at, plan.ends_at, branch_id=plan.branch_id, exclude_plan_id=plan.id)
     if occupying is not None:
-        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, party_of(plan)))
+        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
     plan.status = PlanStatus.placed
     if plan.contest_id:

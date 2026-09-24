@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from .auth import Principal, get_current_principal
 from .db import get_db
-from .models import Contest, Contributor, Pin, Plan, TravelItem, Traveler, Trip, TripInvite
+from .models import Contest, Contributor, Pin, Plan, Split, SplitBranch, TravelItem, Traveler, Trip, TripInvite
 
 
 class Role(str, enum.Enum):
@@ -64,7 +64,7 @@ PLANS_READ = "plans:read"  # the calendar, proposals and votes
 PLANS_PROPOSE = "plans:propose"  # propose blocks, drafts, edit your own sets
 PLANS_WRITE = "plans:write"  # place/move/remove plans on the calendar directly
 PLANS_DECIDE = "plans:decide"  # pick a set, lock, reopen
-PLANS_JOIN = "plans:join"  # move yourself between the branches of a split day
+PLANS_JOIN = "plans:join"  # move yourself between the groups of a split (app/splits.py)
 VOTES_WRITE = "votes:write"
 COMMENTS_WRITE = "comments:write"
 COSTS_READ = "costs:read"  # any cost figure, and who shares it
@@ -189,6 +189,8 @@ _OWNING_MODELS = {
     "contest_id": (Contest, "Contest not found"),
     "travel_item_id": (TravelItem, "Travel item not found"),
     "traveler_id": (Traveler, "Traveler not found"),
+    "split_id": (Split, "Split not found"),
+    "branch_id": (SplitBranch, "Group not found"),
 }
 
 

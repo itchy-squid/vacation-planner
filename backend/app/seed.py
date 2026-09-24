@@ -28,6 +28,8 @@ from .models import (
     Plan,
     PlanItem,
     PlanStatus,
+    Split,
+    SplitBranch,
     TravelItem,
     Traveler,
     Trip,
@@ -80,8 +82,7 @@ def _placed_plan(
     pin: Pin | None = None,
     travel_item: TravelItem | None = None,
     created_by: Contributor | None = None,
-    party: list[Traveler] | None = None,
-    party_mode: str = "only",
+    branch: SplitBranch | None = None,
 ) -> Plan:
     """A single-item Plan — the new-model equivalent of the old model's
     "simple block" (a one-stop CandidateSet). DaySchedule.jsx reads the
@@ -93,8 +94,7 @@ def _placed_plan(
         ends_at=_taiwan_dt(day_index, end_minute),
         status=status,
         created_by_id=created_by.id if created_by else None,
-        party=sorted(t.id for t in party) if party else [],
-        party_mode=party_mode if party else "except",
+        branch_id=branch.id if branch else None,
     )
     db.add(plan)
     db.flush()
@@ -320,21 +320,30 @@ def seed_taiwan(db: Session) -> None:
     _placed_plan(db, trip, day_index=6, start_minute=570, end_minute=615, status=PlanStatus.pencilled, pin=p["p7"])
     _placed_plan(db, trip, day_index=6, start_minute=1020, end_minute=1095, status=PlanStatus.locked, travel_item=ferry_back)
 
-    # Day 7 in Hualien is a split day (app/party.py): Ana and Lin take the
-    # whole morning on the Taroko Gorge trail while the other four bike
-    # Liyu Lake and swim at Qixingtan, then all six meet at the night
-    # market. That's what puts the split bracket and the faces on the
-    # day grid, the "with Jae, Theo, Priya" lines on the itinerary, and a
-    # cost split four ways rather than six on Expenses, into local dev.
+    # Day 7 in Hualien is a split day (app/splits.py): Ana and Lin take the
+    # whole morning on the Taroko Gorge trail while everyone else bikes
+    # Liyu Lake and swims at Qixingtan, then all seven meet at the night
+    # market. That's what puts the lanes and the faces on the day grid,
+    # the "with Jae, Theo, Priya" lines on the itinerary, and a cost split
+    # five ways rather than seven on Expenses, into local dev.
     #
-    # The lake group is stored as "everyone except Ana and Lin"
-    # (party_mode "except"), so anyone added to the trip later lands with
-    # them rather than on the gorge trail.
+    # The lake group takes newcomers, so anyone added to the trip later
+    # lands with them rather than on the gorge trail.
     t = travelers
-    gorge_party = [t["ana"], t["lin"]]
-    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"], party=gorge_party)
-    _placed_plan(db, trip, day_index=7, start_minute=495, end_minute=595, status=PlanStatus.placed, pin=p["p19"], party=gorge_party, party_mode="except")
-    _placed_plan(db, trip, day_index=7, start_minute=600, end_minute=660, status=PlanStatus.pencilled, pin=p["p17"], party=gorge_party, party_mode="except")
+    hualien = Split(trip_id=trip.id, starts_at=_taiwan_dt(7, 480), ends_at=_taiwan_dt(7, 660))
+    gorge = SplitBranch(label="Taroko Gorge", position=0, traveler_ids=sorted([t["ana"].id, t["lin"].id]))
+    lake = SplitBranch(
+        label="Liyu Lake",
+        position=1,
+        traveler_ids=sorted(x.id for k, x in t.items() if k not in ("ana", "lin")),
+        takes_newcomers=True,
+    )
+    hualien.branches.extend([gorge, lake])
+    db.add(hualien)
+    db.flush()
+    _placed_plan(db, trip, day_index=7, start_minute=480, end_minute=660, status=PlanStatus.placed, pin=p["p16"], branch=gorge)
+    _placed_plan(db, trip, day_index=7, start_minute=495, end_minute=595, status=PlanStatus.placed, pin=p["p19"], branch=lake)
+    _placed_plan(db, trip, day_index=7, start_minute=600, end_minute=660, status=PlanStatus.pencilled, pin=p["p17"], branch=lake)
     _placed_plan(db, trip, day_index=7, start_minute=1110, end_minute=1200, status=PlanStatus.placed, pin=p["p18"])
 
     db.commit()

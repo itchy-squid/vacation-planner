@@ -17,8 +17,9 @@ import {
   SNAP_MIN,
   contestWindowsFrom,
   layoutDayPlans,
+  overlaps,
   plansOnDay,
-  splitBandsFrom,
+  splitLanes,
   minuteFromOffsetY,
   planDurationMinutes,
   planStartMinute,
@@ -26,7 +27,7 @@ import {
   topForMinute,
 } from "../lib/dayGrid";
 import TripHeader from "../components/core/TripHeader";
-import { membersOf, namesOf, partiesMeet, planIncludes, takesNewcomers } from "../lib/party";
+import { branchName, branchesById, membersOf, namesOf, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
 // against the spec's Plan/PlanItem/Contest model (see docs/features/
@@ -48,7 +49,7 @@ export default function DaySchedule() {
   const dayIndex = Number(day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, pins, travelItems, plans, placing, proposeSheet, travelers } = state;
+  const { trip, pins, travelItems, plans, splits, placing, proposeSheet, travelers } = state;
   // Groups are made of travelers; "just me" is the traveler you are.
   const myTraveler = useMyTraveler();
   const myTravelerId = myTraveler?.id ?? null;
@@ -89,19 +90,20 @@ export default function DaySchedule() {
     [plans, currentUser.id, trip.startDate, dayIndex]
   );
 
-  // Split-party plans (lib/party.js). Where the group has split, the grid
-  // brackets those hours and says how; "Just me" then drops the branches
-  // you're not on, so the day reads as your day. The brackets always come
-  // from the whole day — a split you're on one side of is still a split.
-  const splitBands = useMemo(() => splitBandsFrom(dayEntries), [dayEntries]);
-  const dayHasSplit = splitBands.length > 0 || dayEntries.some((e) => !e.plan.forEveryone);
+  // Where the group has split up (lib/splits.js). Each split's hours are
+  // divided into one lane per group — a group with nothing planned still
+  // gets its lane, so there is somewhere to tap to plan for it. "Just me"
+  // keeps only your own group's lane, so the day reads as your day.
+  const daySplits = useMemo(() => splitsOnDay(splits, trip.startDate, dayIndex), [splits, trip.startDate, dayIndex]);
+  const branches = useMemo(() => branchesById(splits), [splits]);
+  const dayHasSplit = daySplits.length > 0;
   const [justMe, setJustMe] = useState(false);
   const showJustMe = justMe && dayHasSplit && myTravelerId != null;
-  const visibleEntries = useMemo(
-    () => (showJustMe ? dayEntries.filter((e) => planIncludes(e.plan, myTravelerId)) : dayEntries),
-    [showJustMe, dayEntries, myTravelerId]
+  const lanes = useMemo(
+    () => splitLanes(daySplits, showJustMe ? (b) => b.travelerIds.includes(myTravelerId) : undefined),
+    [daySplits, showJustMe, myTravelerId]
   );
-  const laidOut = useMemo(() => layoutDayPlans(visibleEntries), [visibleEntries]);
+  const laidOut = useMemo(() => layoutDayPlans(dayEntries, lanes), [dayEntries, lanes]);
 
   // Region(s) this day already has scheduled — derived from the pins
   // behind this day's plan items (travel items have no region).
@@ -192,27 +194,53 @@ export default function DaySchedule() {
   // both the plan (to target a proposal at it) and the hours it occupies
   // on this particular day.
   //
-  // `forPlan` is the plan being moved (null for something new, which is
-  // for everyone); only a plan someone would be on twice is in the way,
-  // the same rule the server applies (backend/app/party.py).
-  function findOverlap(startMinute, endMinute, excludePlanId, forPlan = null) {
+  // Only the same group's plans can be in the way: that's the whole of the
+  // overlap rule once the group has split (backend/app/splits.py).
+  function findOverlap(startMinute, endMinute, excludePlanId, branchId) {
     return (
       dayEntries.find(
         (e) =>
           e.plan.id !== excludePlanId &&
-          startMinute < e.endMin &&
-          endMinute > e.startMin &&
-          partiesMeet(e.plan, forPlan)
+          (e.plan.branchId ?? null) === (branchId ?? null) &&
+          overlaps(startMinute, endMinute, e.startMin, e.endMin)
       ) ?? null
     );
   }
 
-  async function handleTapAt(rawMinute) {
+  // Why these hours can't hold a plan for this group, if they can't: a
+  // group's plans stay inside its split, and a plan for everyone stays out
+  // of every split. The server says the same; saying it here saves the
+  // round trip and keeps a drag from snapping back with no explanation.
+  function scopeProblem(startMinute, endMinute, branchId) {
+    if (branchId == null) {
+      const crossed = daySplits.find((s) => overlaps(startMinute, endMinute, s.startMin, s.endMin));
+      return crossed
+        ? `The group is split up from ${clockLabel(crossed.startMin)} to ${clockLabel(crossed.endMin)}. Tap inside one group's lane to plan for them.`
+        : null;
+    }
+    const lane = daySplits.find((s) => s.split.branches.some((b) => b.id === branchId));
+    if (!lane) return null;
+    if (startMinute < lane.startMin || endMinute > lane.endMin) {
+      return `Plans for ${branchName(branches.get(branchId), travelers)} have to fit inside the split, ${clockLabel(lane.startMin)}–${clockLabel(lane.endMin)}.`;
+    }
+    return null;
+  }
+
+  // A tap while placing, at `rawMinute`, for `branchId`'s group (null for
+  // everyone). Taps on empty grid, on a group's lane and on an existing
+  // block all land here, so a split day whose lanes are full of blocks is
+  // still somewhere you can place things.
+  async function handleTapAt(rawMinute, branchId = null) {
     if (!placing) return;
     const snapped = Math.round(rawMinute / SNAP_MIN) * SNAP_MIN;
     const startMinute = Math.min(Math.max(snapped, DAY_START_MIN), DAY_END_MIN - 15);
     const endMinute = startMinute + placing.durationMinutes;
-    const occupying = findOverlap(startMinute, endMinute, null);
+    const problem = scopeProblem(startMinute, endMinute, branchId);
+    if (problem) {
+      setMoveError(problem);
+      return;
+    }
+    const occupying = findOverlap(startMinute, endMinute, null, branchId);
 
     if (occupying) {
       // A locked plan can't be proposed against — reopening it first is
@@ -229,9 +257,8 @@ export default function DaySchedule() {
         type: "OPEN_PROPOSE_FOR",
         proposeSheet: {
           targetPlanId: occupying.plan.id,
-          // Proposing against a branch is a decision for that branch.
-          party: occupying.plan.party ?? [],
-          partyMode: occupying.plan.partyMode ?? "only",
+          // Proposing against a group's plan is a decision for that group.
+          branchId,
           dayIndex,
           startMinute,
           kind: placing.kind,
@@ -246,19 +273,30 @@ export default function DaySchedule() {
     setMoveError("");
     const startsAt = isoForDayMinute(trip.startDate, dayIndex, startMinute);
     const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
-    await dispatch({ type: "PLACE_AT", startsAt, endsAt, dayIndex, startMinute });
+    const result = await dispatch({ type: "PLACE_AT", startsAt, endsAt, dayIndex, startMinute, branchId });
+    if (result && !result.ok && result.error) setMoveError(result.error);
+  }
+
+  const gridRef = useRef(null);
+  function minuteAtPointer(e) {
+    const rect = gridRef.current?.getBoundingClientRect();
+    return rect ? minuteFromOffsetY(e.clientY - rect.top) : DAY_START_MIN;
   }
 
   function handleGridClick(e) {
-    if (e.target !== e.currentTarget) return; // block taps handle their own onClick
+    if (e.target !== e.currentTarget) return; // blocks and lanes handle their own taps
     if (!placing) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    handleTapAt(minuteFromOffsetY(e.clientY - rect.top));
+    handleTapAt(minuteAtPointer(e), null);
   }
 
   const suppressClickRef = useRef(false);
-  function handlePlanTap(plan) {
-    if (placing) return; // ignore taps on existing plans while armed — cancel first
+  function handlePlanTap(plan, e) {
+    if (placing) {
+      // While placing, a block is just part of the grid: the tap means
+      // "here", in this block's group.
+      handleTapAt(minuteAtPointer(e), plan.branchId ?? null);
+      return;
+    }
     if (suppressClickRef.current) {
       // A drag just ended on this block — browsers still fire the trailing
       // click, but it shouldn't also navigate to the item's details page.
@@ -355,11 +393,14 @@ export default function DaySchedule() {
     if (previewStart === info.originStart) return; // dropped back where it started
 
     const endMinute = previewStart + info.durationMinutes;
-    const inTheWay = findOverlap(previewStart, endMinute, plan.id, plan);
+    const problem = scopeProblem(previewStart, endMinute, plan.branchId ?? null);
+    if (problem) {
+      setMoveError(problem);
+      return;
+    }
+    const inTheWay = findOverlap(previewStart, endMinute, plan.id, plan.branchId ?? null);
     if (inTheWay) {
-      const clash = !plan.forEveryone || !inTheWay.plan.forEveryone
-        ? membersOf(inTheWay.plan, travelers).filter((t) => planIncludes(plan, t.id))
-        : [];
+      const clash = plan.forEveryone ? [] : membersOf(plan, travelers);
       setMoveError(
         clash.length
           ? `${namesOf(clash)} ${clash.length === 1 ? "is" : "are"} already busy then — try another slot.`
@@ -408,7 +449,7 @@ export default function DaySchedule() {
     setMoveError(
       result.conflict === "locked"
         ? "That time is pinned — ask the owner to reopen it first."
-        : "Couldn't propose that — try again."
+        : result.message || result.error || "Couldn't propose that — try again."
     );
   }
 
@@ -579,17 +620,17 @@ export default function DaySchedule() {
         )}
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-          <DayGrid cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
-            {splitBands.map((band) => {
-              const top = topForMinute(Math.max(band.startMin, DAY_START_MIN));
-              const height = (Math.min(band.endMin, DAY_END_MIN) - Math.max(band.startMin, DAY_START_MIN)) * PX_PER_MIN;
-              const elsewhere = band.groups
-                .filter((g) => !planIncludes(g, myTravelerId))
-                .flatMap((g) => membersOf(g, travelers));
-              const counts = band.groups.map((g) => membersOf(g, travelers).length).join(" + ");
+          <DayGrid ref={gridRef} cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
+            {daySplits.map(({ split, startMin, endMin }) => {
+              const top = topForMinute(Math.max(startMin, DAY_START_MIN));
+              const height = (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) * PX_PER_MIN;
+              const mine = split.branches.find((b) => b.travelerIds.includes(myTravelerId));
+              const elsewhere = travelers.filter((t) => !mine?.travelerIds.includes(t.id) && t.id !== myTravelerId);
+              const free = unassigned(split, travelers);
+              const counts = split.branches.map((b) => b.travelerIds.length).join(" + ");
               return (
                 <div
-                  key={`split-${band.startMin}`}
+                  key={`split-${split.id}`}
                   aria-hidden="true"
                   style={{
                     position: "absolute",
@@ -602,27 +643,52 @@ export default function DaySchedule() {
                     pointerEvents: "none",
                   }}
                 >
-                  <span
-                    className="mono-data-sm"
-                    style={{
-                      position: "absolute",
-                      right: 8,
-                      top: -8,
-                      padding: "0 5px",
-                      background: "var(--surface-card)",
-                      color: "var(--text-secondary)",
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {showJustMe && elsewhere.length ? `${namesOf(elsewhere)} elsewhere` : `Group split · ${counts}`}
+                  <span className="mono-data-sm" style={splitCaptionStyle}>
+                    {showJustMe
+                      ? elsewhere.length
+                        ? `${namesOf(elsewhere)} elsewhere`
+                        : "Group split"
+                      : `Group split · ${counts}${free.length ? ` · ${namesOf(free)} free` : ""}`}
+                  </span>
+                </div>
+              );
+            })}
+            {/* One lane per group: a tap target for placing into that
+                group, and the group's name at the top so an empty lane
+                still says whose hours these are. Under the blocks, so a
+                block still gets its own taps. */}
+            {lanes.map((lane) => {
+              const top = topForMinute(Math.max(lane.startMin, DAY_START_MIN));
+              const height = (Math.min(lane.endMin, DAY_END_MIN) - Math.max(lane.startMin, DAY_START_MIN)) * PX_PER_MIN;
+              return (
+                <div
+                  key={`lane-${lane.branch.id}`}
+                  role={placing ? "button" : undefined}
+                  aria-label={placing ? `Place for ${branchName(lane.branch, travelers)}` : undefined}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTapAt(minuteAtPointer(e), lane.branch.id);
+                  }}
+                  style={{
+                    position: "absolute",
+                    top,
+                    height,
+                    left: `calc(${lane.left * 100}% + 1px)`,
+                    width: `calc(${lane.width * 100}% - 2px)`,
+                    borderLeft: lane.left > 0 ? "1px dashed var(--hairline)" : undefined,
+                    background: placing ? "var(--plum-tint)" : "transparent",
+                    opacity: placing ? 0.6 : 1,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <span className="mono-data-sm" style={laneCaptionStyle}>
+                    {branchName(lane.branch, travelers)}
                   </span>
                 </div>
               );
             })}
             {laidOut.map((entry) => {
-                const { plan, numCols, col } = entry;
+                const { plan } = entry;
                 const isDragging = dragPreview?.planId === plan.id;
                 const draggable =
                   canPlan && (plan.status === "placed" || plan.status === "pencilled") && !entry.continuesBefore;
@@ -635,8 +701,9 @@ export default function DaySchedule() {
                 const clippedEnd = Math.min(endMin, DAY_END_MIN);
                 const top = topForMinute(clippedStart);
                 const height = (clippedEnd - clippedStart) * PX_PER_MIN;
-                const width = `calc(${100 / numCols}% - 4px)`;
-                const left = `calc(${(col / numCols) * 100}% + 2px)`;
+                const width = `calc(${entry.width * 100}% - 4px)`;
+                const left = `calc(${entry.left * 100}% + 2px)`;
+                const branch = plan.branchId != null ? branches.get(plan.branchId) : null;
                 // While dragging, show the block's live candidate time (not
                 // just its position) — duration is fixed, only the start
                 // (and so the end) moves. `% 1440` here is the clock face,
@@ -655,7 +722,7 @@ export default function DaySchedule() {
                     key={plan.id}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handlePlanTap(plan);
+                      handlePlanTap(plan, e);
                     }}
                     onPointerDown={(e) => handlePlanPointerDown(e, plan, entry)}
                     onPointerMove={(e) => handlePlanPointerMove(e, plan)}
@@ -673,9 +740,9 @@ export default function DaySchedule() {
                       continuesBefore={startMin < DAY_START_MIN}
                       continuesAfter={endMin > DAY_END_MIN}
                       onTap={() => {}}
-                      faces={plan.forEveryone ? null : membersOf(plan, travelers)}
-                      newcomers={takesNewcomers(plan)}
-                      tightFaces={numCols >= 3}
+                      faces={branch ? membersOf(branch, travelers) : null}
+                      newcomers={Boolean(branch?.takesNewcomers)}
+                      tightFaces={entry.width <= 1 / 3}
                     />
                   </div>
                 );
@@ -828,6 +895,31 @@ export default function DaySchedule() {
     </div>
   );
 }
+
+const splitCaptionStyle = {
+  position: "absolute",
+  right: 8,
+  top: -8,
+  padding: "0 5px",
+  background: "var(--surface-card)",
+  color: "var(--text-secondary)",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+
+const laneCaptionStyle = {
+  position: "absolute",
+  left: 6,
+  bottom: 4,
+  color: "var(--text-faint)",
+  letterSpacing: "0.04em",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  maxWidth: "calc(100% - 12px)",
+  pointerEvents: "none",
+};
 
 function navButtonStyle(edge) {
   return {

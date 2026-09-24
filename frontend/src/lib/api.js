@@ -305,20 +305,26 @@ async function request(path, { method = "GET", body } = {}) {
     return new Promise(() => {}); // navigating away — never resolves
   }
   if (!res.ok) {
-    let detail = "";
+    // Read the body once. It used to be read here and then re-read through
+    // res.clone() for err.body — but a body that has already been consumed
+    // can't be cloned, so err.body was always null and every caller that
+    // branches on a 409's detail (occupying_plan_id, contest_id, split_id…)
+    // silently fell through to its generic error.
+    const text = await res.text().catch(() => "");
+    let data = null;
     try {
-      const data = await res.json();
-      detail = typeof data.detail === "string" ? data.detail : data.detail?.message || JSON.stringify(data.detail ?? data);
+      data = text ? JSON.parse(text) : null;
     } catch {
-      detail = await res.text().catch(() => "");
+      data = null;
     }
+    const detail = data
+      ? typeof data.detail === "string"
+        ? data.detail
+        : data.detail?.message || JSON.stringify(data.detail ?? data)
+      : text;
     const err = new Error(`${method} ${path} → ${res.status}${detail ? `: ${detail}` : ""}`);
     err.status = res.status;
-    try {
-      err.body = await res.clone().json();
-    } catch {
-      err.body = null;
-    }
+    err.body = data;
     throw err;
   }
   if (res.status === 204) return null;
@@ -380,15 +386,17 @@ export const api = {
   movePlan: (planId, fields) => request(`/api/plans/${planId}`, { method: "PATCH", body: fields }),
   deletePlan: (planId) => request(`/api/plans/${planId}`, { method: "DELETE" }),
   lockPlan: (planId) => request(`/api/plans/${planId}/lock`, { method: "POST" }),
-  // Split-party plans (backend/app/party.py). Splitting moves `leaving`
-  // onto a new, empty plan over the same hours and returns [this, new];
-  // setting a party replaces who a plan is for ([] = everyone); joining
-  // moves the caller alone onto this plan's group and returns [this,
-  // ...plans they left].
-  splitPlan: (planId, payload) => request(`/api/plans/${planId}/split`, { method: "POST", body: payload }),
-  setPlanParty: (planId, party, partyMode = "only") =>
-    request(`/api/plans/${planId}/party`, { method: "PUT", body: { party, party_mode: partyMode } }),
-  joinPlan: (planId) => request(`/api/plans/${planId}/join`, { method: "POST" }),
+  // The group splitting up (backend/app/routers/splits.py). A split is
+  // hours plus its groups; plans and proposals name a group by branch_id.
+  // Reshaping sends the whole assignment of travelers to groups at once;
+  // merging keeps one group's plans for everyone; joining moves only the
+  // caller and returns the split, or null if that ended it.
+  listSplits: (tripId) => request(`/api/trips/${tripId}/splits`),
+  createSplit: (tripId, payload) => request(`/api/trips/${tripId}/splits`, { method: "POST", body: payload }),
+  reshapeSplit: (splitId, branches) => request(`/api/splits/${splitId}`, { method: "PUT", body: { branches } }),
+  mergeSplit: (splitId, keepBranchId) =>
+    request(`/api/splits/${splitId}/merge`, { method: "POST", body: { keep_branch_id: keepBranchId } }),
+  joinBranch: (branchId) => request(`/api/branches/${branchId}/join`, { method: "POST" }),
 
   // Propose a block: { starts_at, ends_at, label?, rationale?, items:
   // [{ pin_id | travel_item_id, duration_minutes? }] }. There's no

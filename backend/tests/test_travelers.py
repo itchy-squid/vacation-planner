@@ -1,7 +1,7 @@
 """Travelers: the people going, who pays for whom, per-person prices, and
 where people added later land when the group has split.
 
-See app/models.py Traveler, app/party.py and routers/travelers.py.
+See app/models.py Traveler, app/splits.py and routers/travelers.py.
 """
 
 from app.models import Contributor, Traveler, TripInvite
@@ -121,9 +121,8 @@ def test_a_per_person_price_multiplies_and_a_group_price_divides(client, trip):
 
 def test_costs_follow_the_group_on_a_split_day(client, trip, db):
     set_price(trip, "trail", 8000, "per_head")
-    plan = trip.place(start=540, end=720, pin="trail")
-    plan.party, plan.party_mode = sorted([tid(trip, "ana"), tid(trip, "lin")]), "only"
-    db.commit()
+    gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
+    plan = trip.place(start=540, end=720, pin="trail", branch=gorge)
     item = plan_json(client, trip, plan.id)["items"][0]
     assert item["sharer_ids"] == sorted([tid(trip, "ana"), tid(trip, "lin")])
     assert item["total_cents"] == 16000
@@ -151,42 +150,46 @@ def test_a_new_pin_defaults_to_per_person(client, trip):
     assert res.json()["cost_basis"] == "group"
 
 
-# ---- newcomers after a split ----
+# ---- newcomers after a split (more in tests/test_splits.py) ----
 
 
-def split(client, trip, plan, leaving, **extra):
-    res = client.post(f"/api/plans/{plan.id}/split", json={"leaving": leaving, **extra}, headers=MEI)
+def split_over(client, trip, plan, stay, leave, newcomers=None):
+    """Split the group over `plan`'s hours: `stay` keeps the plan, `leave`
+    goes off with nothing planned. `newcomers` is "stay", "leave" or None."""
+    res = client.post(
+        f"/api/trips/{trip.id}/splits",
+        json={
+            "starts_at": plan.starts_at.isoformat(),
+            "ends_at": plan.ends_at.isoformat(),
+            "branches": [
+                {"traveler_ids": sorted(tid(trip, k) for k in stay), "takes_newcomers": newcomers == "stay"},
+                {"traveler_ids": sorted(tid(trip, k) for k in leave), "takes_newcomers": newcomers == "leave"},
+            ],
+        },
+        headers=MEI,
+    )
     assert res.status_code == 201, res.text
-    return res.json()
+    return res.json()["branches"]
 
 
-def test_someone_added_after_a_split_joins_the_new_group_by_default(client, trip):
+def test_someone_added_after_a_split_joins_the_group_that_takes_newcomers(client, trip):
     plan = trip.place(start=540, end=720, pin="trail")
-    stayed, branch = split(client, trip, plan, [tid(trip, "ana"), tid(trip, "lin")])
+    split_over(client, trip, plan, ("mei", "jae"), ("ana", "lin"), newcomers="leave")
     kai = add(client, trip, "Kai")
-    stayed, branch = plan_json(client, trip, stayed["id"]), plan_json(client, trip, branch["id"])
-    assert kai["id"] in branch["party_members"]
+    stayed = plan_json(client, trip, plan.id)
     assert kai["id"] not in stayed["party_members"]
+    branches = client.get(f"/api/trips/{trip.id}/splits", headers=MEI).json()[0]["branches"]
+    assert kai["id"] in branches[1]["traveler_ids"]
 
 
-def test_newcomers_can_join_the_plan_being_split_or_neither(client, trip):
+def test_newcomers_can_join_the_group_that_stays_or_neither(client, trip):
     first = trip.place(start=540, end=600, pin="trail")
-    stayed, _ = split(client, trip, first, [tid(trip, "ana")], newcomers="stay")
+    split_over(client, trip, first, ("mei", "jae", "lin"), ("ana",), newcomers="stay")
     second = trip.place(start=700, end=760, pin="tide")
-    stayed2, branch2 = split(client, trip, second, [tid(trip, "ana")], newcomers="none")
+    split_over(client, trip, second, ("mei", "jae", "lin"), ("ana",))
     kai = add(client, trip, "Kai")
-    assert kai["id"] in plan_json(client, trip, stayed["id"])["party_members"]
-    assert kai["id"] not in plan_json(client, trip, stayed2["id"])["party_members"]
-    assert kai["id"] not in plan_json(client, trip, branch2["id"])["party_members"]
-
-
-def test_two_groups_that_both_take_newcomers_would_collide(client, trip, db):
-    """Two "except" plans at once would put the next person added on both,
-    so the overlap rule treats them as clashing."""
-    plan = trip.place(start=540, end=720, pin="trail")
-    _, branch = split(client, trip, plan, [tid(trip, "ana")])
-    res = client.put(f"/api/plans/{plan.id}/party", json={"party": [tid(trip, "ana")], "party_mode": "except"}, headers=MEI)
-    assert res.status_code == 409
+    assert kai["id"] in plan_json(client, trip, first.id)["party_members"]
+    assert kai["id"] not in plan_json(client, trip, second.id)["party_members"]
 
 
 # ---- joining and voting are about the traveler you are ----
@@ -194,31 +197,32 @@ def test_two_groups_that_both_take_newcomers_would_collide(client, trip, db):
 
 def test_joining_moves_your_traveler(client, trip, db):
     plan = trip.place(start=540, end=720, pin="trail")
-    stayed, branch = split(client, trip, plan, [tid(trip, "ana"), tid(trip, "lin")])
-    res = client.post(f"/api/plans/{branch['id']}/join", headers=JAE)
+    _, leave = split_over(client, trip, plan, ("mei", "jae"), ("ana", "lin"))
+    res = client.post(f"/api/branches/{leave['id']}/join", headers=JAE)
     assert res.status_code == 200, res.text
-    assert tid(trip, "jae") in res.json()[0]["party_members"]
-    assert tid(trip, "jae") not in plan_json(client, trip, stayed["id"])["party_members"]
-
-
-def test_a_planner_who_isnt_going_cant_join_a_group(client, trip, db):
-    plan = trip.place(start=540, end=720, pin="trail")
-    _, branch = split(client, trip, plan, [tid(trip, "ana")])
-    assert client.delete(f"/api/travelers/{tid(trip, 'jae')}", headers=MEI).status_code == 204
-    assert client.post(f"/api/plans/{branch['id']}/join", headers=JAE).status_code == 409
+    assert tid(trip, "jae") in res.json()["branches"][1]["traveler_ids"]
+    assert tid(trip, "jae") not in plan_json(client, trip, plan.id)["party_members"]
 
 
 def test_travelers_without_an_account_dont_count_as_voters(client, trip, db):
     kai = add(client, trip, "Kai")
-    plan = trip.place(start=540, end=640, pin="tide")
-    plan.party, plan.party_mode = sorted([tid(trip, "jae"), kai["id"]]), "only"
-    db.commit()
+    split = client.post(
+        f"/api/trips/{trip.id}/splits",
+        json={
+            "starts_at": at(1, 480).isoformat(), "ends_at": at(1, 720).isoformat(),
+            "branches": [
+                {"traveler_ids": sorted([tid(trip, "jae"), kai["id"]])},
+                {"traveler_ids": sorted([tid(trip, "mei"), tid(trip, "ana"), tid(trip, "lin")])},
+            ],
+        },
+        headers=MEI,
+    ).json()
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
             "starts_at": at(1, 540).isoformat(), "ends_at": at(1, 720).isoformat(),
             "items": [{"pin_id": trip.pins["vase"].id}],
-            "party": sorted([tid(trip, "jae"), kai["id"]]),
+            "branch_id": split["branches"][0]["id"],
         },
         headers=JAE,
     )

@@ -26,11 +26,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from ..custom_events import forget_orphaned_travel_items, publish_forgotten, travel_item_ids_of
+from ..custom_events import forget_orphaned_travel_items, publish_forgotten
 from ..db import get_db
 from ..events import bus
-from ..models import Contest, Contributor, Pin, Plan, TravelItem, Traveler, TripInvite
-from ..party import apply_party, encode, party_of, roster_ids
+from ..models import Contributor, Pin, TravelItem, Traveler, TripInvite
+from ..splits import add_newcomer, remove_from_splits
 from ..permissions import MEMBERS_MANAGE, TRAVELERS_MANAGE, TRIP_READ, Access, require
 from ..schemas import InviteOut, TravelerBrief, TravelerCreate, TravelerInviteCreate, TravelerOut, TravelerUpdate
 
@@ -72,7 +72,8 @@ def traveler_brief(db: Session, traveler: Traveler) -> TravelerBrief:
 
 
 def add_traveler(db: Session, trip_id: int, name: str, contributor_id: int | None = None, tint: str | None = None) -> Traveler:
-    """A new traveler at the end of the roster."""
+    """A new traveler at the end of the roster — and, where the group has
+    split up, in whichever group takes newcomers (app/splits.py)."""
     count = db.scalar(select(func.count()).select_from(Traveler).where(Traveler.trip_id == trip_id)) or 0
     last = db.scalar(select(func.max(Traveler.position)).where(Traveler.trip_id == trip_id))
     traveler = Traveler(
@@ -85,6 +86,7 @@ def add_traveler(db: Session, trip_id: int, name: str, contributor_id: int | Non
     )
     db.add(traveler)
     db.flush()
+    add_newcomer(db, trip_id, traveler.id)
     return traveler
 
 
@@ -124,46 +126,19 @@ def _check_link(db: Session, traveler: Traveler, contributor_id: int | None) -> 
 
 def remove_traveler(db: Session, traveler: Traveler) -> set[int]:
     """Take someone off the trip's roster, and so off every group and cost
-    split. A plan or decision nobody is left on goes; one that is now
-    everyone who's left becomes a plan for everyone. Anyone they were
-    paying for pays for themselves again. Returns travel item ids that may
-    now be orphaned, for the caller's custom-event cleanup."""
+    split. A group nobody is left in goes with its plans, and a split left
+    with one group becomes plans for everyone (app/splits.py). Anyone they
+    were paying for pays for themselves again. Returns travel item ids that
+    may now be orphaned, for the caller's custom-event cleanup."""
     trip_id = traveler.trip_id
     tid = traveler.id
-    roster = roster_ids(db, trip_id)
-    after = roster - {tid}
 
     for model in (Pin, TravelItem):
         for row in db.scalars(select(model).where(model.trip_id == trip_id)).all():
             if row.heads and tid in row.heads:
                 row.heads = [h for h in row.heads if h != tid]
 
-    orphan_candidates: set[int] = set()
-    for contest in db.scalars(select(Contest).where(Contest.trip_id == trip_id)).all():
-        party = party_of(contest)
-        if party.is_everyone:
-            continue
-        members = party.members(roster) - {tid}
-        if not members:
-            orphan_candidates |= travel_item_ids_of(contest.plans)
-            db.delete(contest)  # cascades to its options and votes
-            continue
-        new = encode(members, after, party.mode)
-        apply_party(contest, new)
-        for option in contest.plans:
-            apply_party(option, new)
-    db.flush()
-
-    for plan in db.scalars(select(Plan).where(Plan.trip_id == trip_id, Plan.contest_id.is_(None))).all():
-        party = party_of(plan)
-        if party.is_everyone:
-            continue
-        members = party.members(roster) - {tid}
-        if not members:
-            orphan_candidates |= travel_item_ids_of([plan])
-            db.delete(plan)
-            continue
-        apply_party(plan, encode(members, after, party.mode))
+    orphan_candidates = remove_from_splits(db, trip_id, tid)
 
     db.execute(update(Traveler).where(Traveler.paid_by_id == tid).values(paid_by_id=None))
     db.execute(delete(TripInvite).where(TripInvite.traveler_id == tid))

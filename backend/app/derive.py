@@ -20,7 +20,7 @@ pair of stops rather than a constant, and is still not wired up.
 from __future__ import annotations
 
 from .models import Plan, PlanItem
-from .party import party_of
+from .splits import audience
 from .tripclock import minutes_between
 
 
@@ -72,16 +72,15 @@ def trip_roster(plan: Plan) -> set[int]:
 def item_money(plan: Plan, item: PlanItem, roster: set[int] | None = None) -> tuple[list[int], int, int]:
     """(sharers, each_cents, total_cents) for one stop.
 
-    Sharers are the item's own heads when it has any, otherwise whoever is
-    on the plan (its party — everyone, except on a day the group has
-    split). A "per_head" price is what each of them pays and the total is
+    Sharers are the item's own heads when it has any, otherwise whoever the
+    plan is for (everyone, or its group on a split day — app/splits.py). A "per_head" price is what each of them pays and the total is
     that many times it; a "group" price is the total, and each person's
     share is a display division rounded to the cent. Floors at one sharer so
     a plan for nobody can't divide by zero."""
     roster = trip_roster(plan) if roster is None else roster
     source = item_source(item)
     heads = [h for h in (source.heads or []) if h in roster]
-    sharers = sorted(heads) if heads else sorted(party_of(plan).members(roster))
+    sharers = sorted(heads) if heads else sorted(audience(plan.branch, roster))
     count = max(1, len(sharers))
     price = source.cost_cents or 0
     if (source.cost_basis or "per_head") == "group":

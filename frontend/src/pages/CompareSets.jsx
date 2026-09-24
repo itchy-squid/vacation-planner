@@ -11,7 +11,7 @@ import TripHeader from "../components/core/TripHeader";
 import { fmtMin, slackColor } from "../data/derive";
 import { clockLabel } from "../lib/planTime";
 import { coordsForPin } from "../lib/mapLayout";
-import { namesOf, travelersWithIds } from "../lib/party";
+import { namesOf, travelersWithIds } from "../lib/splits";
 import AvatarStack from "../components/planner/AvatarStack";
 
 // Screen 5, rebuilt against the spec's Contest/Plan model. Handoff README
@@ -241,7 +241,7 @@ export default function CompareSets() {
 
   const votedCount = contest.voted_count;
   const isResolved = contest.status === "resolved";
-  // A decision for one group of a split day (lib/party.js): only they
+  // A decision for one group of a split day (lib/splits.js): only they
   // vote, and the tally and majority are counted against them.
   const forEveryone = contest.for_everyone ?? true;
   const partyIds = contest.party_members ?? [];

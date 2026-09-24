@@ -63,7 +63,8 @@ export async function seedTrip(api, { title = "trip", travelers = [], pins = [],
 }
 
 // Put something straight on the calendar: { pin } or { event }, by id.
-export async function placePlan(api, trip, { day = 1, from, to, pin, event, party = [] }) {
+// `branch` puts it in one group of a split (see splitDay below).
+export async function placePlan(api, trip, { day = 1, from, to, pin, event, branch = null }) {
   return ok(
     api.post(`/api/trips/${trip.id}/plans`, {
       data: {
@@ -71,11 +72,37 @@ export async function placePlan(api, trip, { day = 1, from, to, pin, event, part
         ends_at: at(day, to),
         status: "placed",
         items: [pin != null ? { pin_id: pin } : { travel_item_id: event }],
-        party,
+        branch_id: branch,
       },
     }),
     "place plan"
   );
+}
+
+// Split the group over some hours: `groups` is [{ label, travelers: [ids] }]
+// in order. Returns the split, whose `branches` carry the ids placePlan's
+// `branch` takes.
+export async function splitDay(api, trip, { day = 1, from, to, groups }) {
+  return ok(
+    api.post(`/api/trips/${trip.id}/splits`, {
+      data: {
+        starts_at: at(day, from),
+        ends_at: at(day, to),
+        branches: groups.map((g) => ({ label: g.label ?? "", traveler_ids: g.travelers })),
+      },
+    }),
+    "split the group"
+  );
+}
+
+export async function splitsOf(api, trip) {
+  return ok(api.get(`/api/trips/${trip.id}/splits`), "list splits");
+}
+
+export async function contestsOf(api, trip) {
+  const plans = await plansOf(api, trip);
+  const ids = [...new Set(plans.filter((p) => p.contest_id != null).map((p) => p.contest_id))];
+  return Promise.all(ids.map((id) => ok(api.get(`/api/contests/${id}`), "get contest")));
 }
 
 export async function plansOf(api, trip) {

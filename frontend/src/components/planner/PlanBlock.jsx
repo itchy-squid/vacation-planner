@@ -24,7 +24,7 @@ function ContinuationMark({ icon, color }) {
   return <FontAwesomeIcon icon={icon} style={{ width: 8, height: 8, flexShrink: 0, opacity: 0.75, color }} />;
 }
 
-// Who a plan is for, when it isn't everyone (lib/party.js): the faces of
+// Who a plan is for, when it isn't everyone (lib/splits.js): the faces of
 // the people going, riding at the end of the title row so even a compact
 // block says whose it is. A plan for everyone draws nothing — that's the
 // common case, and a row of six faces on every block would say nothing.
@@ -34,7 +34,7 @@ function ContinuationMark({ icon, color }) {
 // whole title, so one face stands in with a count beside it.
 //
 // `newcomers` marks the group anyone added to the trip later will join
-// (backend/app/party.py: an "except" party) with a small + after the faces.
+// (SplitBranch.takes_newcomers) with a small + after the faces.
 function Faces({ people, tight = false, newcomers = false }) {
   if (!people?.length) return null;
   const shown = people.slice(0, tight ? 1 : 3);
@@ -84,9 +84,7 @@ function Faces({ people, tight = false, newcomers = false }) {
 }
 
 export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false, newcomers = false }) {
-  // A branch made by splitting the group starts with no stops, only a name
-  // (or not even that): it's somebody's hours with nothing in them yet.
-  const title = plan.items.map((i) => i.title).join(" + ") || plan.label || (faces?.length ? "Nothing planned yet" : "Untitled");
+  const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
   const startLabel = plan.startDt ? clockLabel(plan.startDt.minuteOfDay) : "";
   const endLabel = plan.endDt ? clockLabel(plan.endDt.minuteOfDay) : "";
   const compact = rect.height < 34;

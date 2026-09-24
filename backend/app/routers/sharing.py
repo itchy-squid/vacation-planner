@@ -27,6 +27,7 @@ from ..models import (
     Pin,
     Plan,
     PlanStatus,
+    Split,
     TravelItem,
     Traveler,
     Trip,
@@ -121,6 +122,7 @@ def _remove_member(db: Session, member: Contributor) -> list[tuple[int, int]]:
         update(AvailabilityOverride).where(AvailabilityOverride.created_by_id == member_id).values(created_by_id=None)
     )
     db.execute(update(TripInvite).where(TripInvite.created_by_id == member_id).values(created_by_id=None))
+    db.execute(update(Split).where(Split.created_by_id == member_id).values(created_by_id=None))
 
     # They're still going even though they've left the app: their
     # traveler stays on every group and cost split, just without an

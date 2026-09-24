@@ -454,33 +454,9 @@ class PlanCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
-    # Who the plan is for, as traveler ids read through party_mode
-    # ("only", the default, or "except"). [] with "only" is everyone. See
-    # app/party.py.
-    party: list[int] = Field(default_factory=list)
-    party_mode: Literal["only", "except"] | None = None
-
-
-class PlanSplit(BaseModel):
-    """Split the group — POST /api/plans/{id}/split.
-
-    `leaving` are the people who go off and do something else over this
-    plan's hours. They get a new, empty plan of their own for those hours
-    (named `label`); everyone else stays on this one."""
-
-    leaving: list[int] = Field(min_length=1)
-    label: str = ""
-    # Which side anyone added to the trip later joins: the new group
-    # ("leave", the default), the plan being split ("stay"), or neither.
-    newcomers: Literal["leave", "stay", "none"] = "leave"
-
-
-class PlanPartySet(BaseModel):
-    """Set who a plan is for — PUT /api/plans/{id}/party. [] is everyone,
-    which is how a branch is brought back together with the rest."""
-
-    party: list[int] = Field(default_factory=list)
-    party_mode: Literal["only", "except"] | None = None
+    # The group this plan is for when the group has split up; None is
+    # everyone. See app/splits.py for where each may go.
+    branch_id: int | None = None
 
 
 class ProposalUpdate(BaseModel):
@@ -518,11 +494,10 @@ class PlanOut(BaseModel):
     created_by_id: int | None
     # The proposer's case for this plan, shown to voters.
     rationale: str
-    # Who this plan is for (app/party.py): the stored ids and mode, and —
-    # so no client has to know the rule — the travelers that comes to
-    # right now, and whether it's simply everyone.
-    party: list[int] = Field(default_factory=list)
-    party_mode: str = "except"
+    # Who this plan is for: its group on a split day (app/splits.py), or
+    # None for everyone — plus, so no screen has to look the group up, the
+    # travelers that comes to right now.
+    branch_id: int | None = None
     party_members: list[int] = Field(default_factory=list)
     for_everyone: bool = True
     items: list[PlanItemOut]
@@ -552,11 +527,9 @@ class ContestProposeCreate(BaseModel):
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
-    # Who the decision is for. A proposal inside one branch of a split day
-    # passes that branch's party; [] is the whole trip. Only plans for
-    # exactly these people are captured, and only they vote.
-    party: list[int] = Field(default_factory=list)
-    party_mode: Literal["only", "except"] | None = None
+    # The group the decision is for on a split day; None is the whole trip.
+    # Only that group's plans are captured, and only its travelers vote.
+    branch_id: int | None = None
 
 
 class ContestPlanOut(PlanOut):
@@ -578,9 +551,8 @@ class ContestOut(BaseModel):
     # The hours under contest. Every option spans exactly these.
     starts_at: datetime
     ends_at: datetime
-    # Who the decision is for, and so who votes (app/party.py).
-    party: list[int] = Field(default_factory=list)
-    party_mode: str = "except"
+    # Who the decision is for, and so who votes (app/splits.py).
+    branch_id: int | None = None
     party_members: list[int] = Field(default_factory=list)
     for_everyone: bool = True
     plans: list[ContestPlanOut]
@@ -609,6 +581,61 @@ class ContestPicked(BaseModel):
     contest itself is gone — see routers/contests.py pick_set."""
 
     placed_plans: list[PlanOut]
+
+
+# ---- The group splitting up (app/splits.py) ----
+
+
+class SplitBranchIn(BaseModel):
+    """One group, as a client describes it. `id` names an existing group
+    when reshaping a split and is left out for a new one."""
+
+    id: int | None = None
+    label: str = Field(default="", max_length=200)
+    traveler_ids: list[int] = Field(min_length=1)
+    # The one group (at most) that people added to the trip later join.
+    takes_newcomers: bool = False
+
+
+class SplitCreate(BaseModel):
+    """Split the group — POST /api/trips/{trip_id}/splits. Whatever is
+    already planned in those hours goes to the group at index
+    `keep_plans_with`; the others start with an empty calendar."""
+
+    starts_at: datetime
+    ends_at: datetime
+    branches: list[SplitBranchIn] = Field(min_length=2)
+    keep_plans_with: int = 0
+
+
+class SplitUpdate(BaseModel):
+    """Say who is in which group — PUT /api/splits/{split_id}. The whole
+    assignment at once; see app/splits.py reshape_split."""
+
+    branches: list[SplitBranchIn] = Field(min_length=2)
+
+
+class SplitMerge(BaseModel):
+    """Bring everyone back — POST /api/splits/{split_id}/merge. The kept
+    group's plans become everyone's; the others' come off the calendar."""
+
+    keep_branch_id: int
+
+
+class SplitBranchOut(BaseModel):
+    id: int
+    label: str
+    position: int
+    traveler_ids: list[int]
+    takes_newcomers: bool
+
+
+class SplitOut(BaseModel):
+    id: int
+    trip_id: int
+    starts_at: datetime
+    ends_at: datetime
+    branches: list[SplitBranchOut]
 
 
 class CommentCreate(BaseModel):

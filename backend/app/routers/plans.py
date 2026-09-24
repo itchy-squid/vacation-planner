@@ -7,9 +7,8 @@ from ..custom_events import forget_orphaned_travel_items, publish_forgotten, tra
 from ..db import get_db
 from ..derive import item_money, item_source, item_start_minutes, plan_range_minutes, plan_totals, trip_roster
 from ..events import bus
-from ..models import Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem, Traveler
-from ..party import EXCEPT, ONLY, Party, apply_party, encode, normalize_party, parties_meet, party_of, roster_ids, shared_people
-from ..permissions import PLANS_DECIDE, PLANS_JOIN, PLANS_PROPOSE, PLANS_READ, PLANS_WRITE, Access, can_see_costs, require
+from ..models import OCCUPYING_STATUSES, Contributor, Pin, Plan, PlanItem, PlanStatus, TravelItem
+from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, PLANS_WRITE, Access, can_see_costs, require
 from ..schemas import (
     PinOut,
     PlanCreate,
@@ -17,20 +16,11 @@ from ..schemas import (
     PlanItemOut,
     PlanMove,
     PlanOut,
-    PlanPartySet,
-    PlanSplit,
     TravelItemOut,
 )
+from ..splits import audience, join_names, resolve_branch, traveler_rows
 
 router = APIRouter(prefix="/api", tags=["plans"])
-
-# Any plan in one of these statuses occupies real time on the trip's
-# calendar and can conflict with a new placement — see docs/features/
-# scheduling-feature-spec.md "Direct placement". `draft` is deliberately
-# absent: a private draft nobody else can see must not be able to block
-# anybody else's placement (proposals-and-expenses spec §6.1).
-_OCCUPYING_STATUSES = (PlanStatus.placed, PlanStatus.pencilled, PlanStatus.contested, PlanStatus.locked)
-
 
 def visible_plans_condition(viewer: Contributor | None) -> ColumnElement[bool]:
     """The app's one per-contributor read filter: a draft plan belongs to
@@ -74,7 +64,6 @@ def plan_schema_kwargs(plan: Plan) -> dict:
     range_minutes = plan_range_minutes(plan)
     totals = plan_totals(plan, range_minutes)
     roster = trip_roster(plan)
-    party = party_of(plan)
     return dict(
         id=plan.id,
         trip_id=plan.trip_id,
@@ -86,10 +75,9 @@ def plan_schema_kwargs(plan: Plan) -> dict:
         contest_id=plan.contest_id,
         created_by_id=plan.created_by_id,
         rationale=plan.rationale,
-        party=list(party.ids),
-        party_mode=party.mode,
-        party_members=sorted(party.members(roster)),
-        for_everyone=party.is_everyone,
+        branch_id=plan.branch_id,
+        party_members=sorted(audience(plan.branch, roster)),
+        for_everyone=plan.branch_id is None,
         items=[_plan_item_to_schema(plan, i, roster) for i in plan.items],
         **totals,
     )
@@ -99,87 +87,58 @@ def plan_to_schema(plan: Plan) -> PlanOut:
     return PlanOut(**plan_schema_kwargs(plan))
 
 
+def _overlapping(trip_id: int, starts_at, ends_at, branch_id: int | None, statuses):
+    """Plans sharing a minute with these hours, for the same group. Any
+    shared minute counts; a plan ending exactly when another starts does
+    not conflict (see spec "Direct placement"). Same group is the whole of
+    the "who" test — app/splits.py explains why that's enough."""
+    return select(Plan).where(
+        Plan.trip_id == trip_id,
+        Plan.status.in_(statuses),
+        Plan.starts_at < ends_at,
+        Plan.ends_at > starts_at,
+        Plan.branch_id.is_(None) if branch_id is None else Plan.branch_id == branch_id,
+    )
+
+
 def find_overlapping_plan(
     db: Session,
     trip_id: int,
     starts_at,
     ends_at,
+    *,
+    branch_id: int | None,
     exclude_plan_id: int | None = None,
-    party: Party | None = None,
 ) -> Plan | None:
-    """Any shared minute counts as overlap — a plan ending exactly when
-    another starts does not conflict (see spec "Direct placement").
-
-    ...and only for a plan someone is, or would be, on twice
-    (app/party.py parties_meet). `party` is who the new or moved plan is
-    for; None is everyone, which meets every plan and keeps the old rule.
-    The time filter stays in SQL and the party test runs here: a trip has a
-    handful of plans in any window, and JSON containment is spelled
-    differently by every dialect this app runs on."""
-    stmt = select(Plan).where(
-        Plan.trip_id == trip_id,
-        Plan.status.in_(_OCCUPYING_STATUSES),
-        Plan.starts_at < ends_at,
-        Plan.ends_at > starts_at,
-    )
+    """The first plan already holding any of these hours for this group
+    (None: everyone)."""
+    stmt = _overlapping(trip_id, starts_at, ends_at, branch_id, OCCUPYING_STATUSES)
     if exclude_plan_id is not None:
         stmt = stmt.where(Plan.id != exclude_plan_id)
-    roster = roster_ids(db, trip_id)
-    for plan in db.scalars(stmt.order_by(Plan.starts_at, Plan.id)):
-        if parties_meet(party_of(plan), party, roster):
-            return plan
-    return None
+    return db.scalars(stmt.order_by(Plan.starts_at, Plan.id)).first()
 
 
-def find_overlapping_plans(db: Session, trip_id: int, starts_at, ends_at, statuses, party: Party | None = None) -> list[Plan]:
-    """Every plan in those hours with one of `statuses` that shares a
-    person with `party` (None for everyone, which is every plan)."""
-    roster = roster_ids(db, trip_id)
-    return [
-        plan
-        for plan in db.scalars(
-            select(Plan)
-            .where(
-                Plan.trip_id == trip_id,
-                Plan.status.in_(statuses),
-                Plan.starts_at < ends_at,
-                Plan.ends_at > starts_at,
-            )
-            .order_by(Plan.starts_at, Plan.id)
-        ).all()
-        if parties_meet(party_of(plan), party, roster)
-    ]
+def find_overlapping_plans(db: Session, trip_id: int, starts_at, ends_at, statuses, *, branch_id: int | None) -> list[Plan]:
+    """Every plan in those hours for this group with one of `statuses`."""
+    return list(db.scalars(_overlapping(trip_id, starts_at, ends_at, branch_id, statuses).order_by(Plan.starts_at, Plan.id)).all())
 
 
-def plan_title(plan: Plan) -> str:
-    """What a person would call this plan: its name, else its first stop."""
-    if plan.label:
-        return plan.label
-    for item in plan.items:
-        source = item.pin or item.travel_item
-        if source is not None:
-            return source.title
-    return "another plan"
-
-
-def occupied_detail(occupying: Plan, db: Session | None = None, party: Party | None = None) -> dict:
+def occupied_detail(occupying: Plan, db: Session) -> dict:
     """The 409 body every placement path shares. `occupying_contest_id` is
     what lets a client offer "add a set to the open vote" instead of always
     opening a fresh propose sheet (feature spec §6.1).
 
-    When either side is for part of the group, the message names who is
-    double-booked — "Jae is already on Liyu Lake bike loop then" is
-    something a person can act on; "that time is occupied" on a day where
-    half the group is visibly free is not."""
+    On a split day the message names who is busy — "Ana and Lin are
+    already on Taroko Gorge then" is something a person can act on; "that
+    time is occupied" on a day where half the group is visibly free is
+    not."""
     message = "That time is already occupied."
     double_booked: list[str] = []
-    theirs = party_of(occupying)
-    if db is not None and not (theirs.is_everyone and (party is None or party.is_everyone)):
-        double_booked = shared_people(db, occupying.trip_id, theirs, party)
+    if occupying.branch is not None:
+        double_booked = [t.name for t in traveler_rows(db, occupying.branch.traveler_ids or ())]
         if double_booked:
-            who = double_booked[0] if len(double_booked) == 1 else ", ".join(double_booked[:-1]) + " and " + double_booked[-1]
             verb = "is" if len(double_booked) == 1 else "are"
-            message = f"{who} {verb} already on {plan_title(occupying)} then."
+            message = f"{join_names(double_booked)} {verb} already on {occupying.title} then."
     return {
         "message": message,
         "occupying_plan_id": occupying.id,
@@ -313,16 +272,19 @@ def create_plan(
     this endpoint, or, when the 409 carries an occupying_contest_id, offer
     to add a set to the vote that's already open there."""
     is_draft = payload.status == "draft"
-    party = normalize_party(db, trip_id, payload.party, payload.party_mode)
+    # Checked for drafts too: a draft for the wrong hours of a group would
+    # only fail later, when it's published.
+    branch = resolve_branch(db, trip_id, payload.branch_id, payload.starts_at, payload.ends_at)
+    branch_id = branch.id if branch else None
     if not is_draft:
         # A draft is the start of a proposal (plans:propose); putting
         # something straight onto the calendar is plans:write.
         access.ensure(PLANS_WRITE, "Propose a block instead — you can't place things on the calendar directly")
         # A draft skips this entirely: it claims no time, so there is
         # nothing for it to conflict with (feature spec §6.4).
-        occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at, party=party)
+        occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at, branch_id=branch_id)
         if occupying is not None:
-            raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, party))
+            raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
     plan = Plan(
         trip_id=trip_id,
@@ -330,8 +292,7 @@ def create_plan(
         ends_at=payload.ends_at,
         label=payload.label,
         rationale=payload.rationale,
-        party=list(party.ids),
-        party_mode=party.mode,
+        branch_id=branch_id,
         status=PlanStatus(payload.status),
         created_by_id=access.member.id,
     )
@@ -362,9 +323,12 @@ def move_plan(
 
     new_starts = payload.starts_at if payload.starts_at is not None else plan.starts_at
     new_ends = payload.ends_at if payload.ends_at is not None else plan.ends_at
-    occupying = find_overlapping_plan(db, plan.trip_id, new_starts, new_ends, exclude_plan_id=plan.id, party=party_of(plan))
+    # A group's plan stays inside its split; a plan for everyone stays out
+    # of every split (app/splits.py).
+    resolve_branch(db, plan.trip_id, plan.branch_id, new_starts, new_ends)
+    occupying = find_overlapping_plan(db, plan.trip_id, new_starts, new_ends, branch_id=plan.branch_id, exclude_plan_id=plan.id)
     if occupying is not None:
-        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, party_of(plan)))
+        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
     plan.starts_at = new_starts
     plan.ends_at = new_ends
@@ -402,46 +366,13 @@ def delete_plan(
     # list — see app/custom_events.py. Pins are untouched and go back to
     # the tray as before.
     orphan_candidates = travel_item_ids_of([plan])
-    keep_group = not was_draft and bool(plan.items) and _is_split_group(db, plan)
-    if keep_group:
-        # One group of a split day: clear what it was doing but keep the
-        # group, empty, exactly as a fresh split leaves it. Deleting the
-        # plan outright would leave its people on no plan at all in those
-        # hours, next to another group's plan — and every way into those
-        # hours (tapping, proposing, placing) lands on that other group, so
-        # nobody could plan for them again without clearing the whole
-        # block. Removing the now-empty group is a second, deliberate step
-        # (the "bring everyone back" path).
-        plan.items.clear()
-    else:
-        db.delete(plan)
+    db.delete(plan)
     forgotten = forget_orphaned_travel_items(db, orphan_candidates)
     db.commit()
-    if keep_group:
-        bus.publish(trip_id, "plan.cleared", {"plan_id": plan_id})
-    elif not was_draft:
+    if not was_draft:
         bus.publish(trip_id, "plan.removed", {"plan_id": plan_id})
     publish_forgotten(forgotten)
     return None
-
-
-def _is_split_group(db: Session, plan: Plan) -> bool:
-    """Whether this plan is one group of a split: it's for part of the
-    trip, and some other group has a plan over the same hours."""
-    party = party_of(plan)
-    if party.is_everyone:
-        return False
-    roster = roster_ids(db, plan.trip_id)
-    others = db.scalars(
-        select(Plan).where(
-            Plan.trip_id == plan.trip_id,
-            Plan.id != plan.id,
-            Plan.status.in_(_OCCUPYING_STATUSES),
-            Plan.starts_at < plan.ends_at,
-            Plan.ends_at > plan.starts_at,
-        )
-    )
-    return any(not parties_meet(party_of(other), party, roster) for other in others)
 
 
 @router.post("/plans/{plan_id}/lock", response_model=PlanOut)
@@ -473,198 +404,3 @@ def lock_plan(
     db.refresh(plan)
     bus.publish(plan.trip_id, "plan.locked", {"plan_id": plan.id})
     return plan_to_schema(plan)
-
-
-# ---- Split-party plans (app/party.py) ----
-#
-# A split is not a row. It is two or more plans over the same hours whose
-# parties don't share a person, so these endpoints only ever change who a
-# plan is for. The overlap rule does the rest.
-
-_REPARTY_STATUSES = (PlanStatus.placed, PlanStatus.pencilled)
-
-
-def _ensure_repartyable(plan: Plan, verb: str) -> None:
-    """Who a plan is for can change while it's simply on the calendar.
-    Not while it's an option in a vote (the vote's party is the question
-    being asked — settle it first, the same way the hours are never edited
-    under a vote), and not once the owner has pinned it."""
-    if plan.status == PlanStatus.contested:
-        raise HTTPException(status_code=409, detail=f"Those hours are out for a vote. Settle it before you {verb}.")
-    if plan.status == PlanStatus.locked:
-        raise HTTPException(status_code=409, detail=f"{plan_title(plan)} is pinned. The trip owner has to reopen it before you {verb}.")
-    if plan.status not in _REPARTY_STATUSES:
-        raise HTTPException(status_code=409, detail="Only a plan on the calendar can be changed like that.")
-
-
-@router.post("/plans/{plan_id}/split", response_model=list[PlanOut], status_code=201)
-def split_plan(
-    plan_id: int,
-    payload: PlanSplit,
-    access: Access = Depends(require(PLANS_WRITE)),
-    db: Session = Depends(get_db),
-):
-    """Split the group over this plan's hours. The travelers in `leaving`
-    come off this plan and get a new, empty plan of their own for the same
-    hours; everyone else stays. Both come back, this plan first.
-
-    `newcomers` says which side anyone added to the trip later joins: the
-    new group (the default), this plan, or neither. That side is stored as
-    "everyone except the other side" (app/party.py), so a traveler added
-    next week is on it without anything being written.
-
-    One call, so there is never a moment where the leavers are on both
-    plans (which the overlap rule forbids) or on neither (which would
-    quietly drop them from the day)."""
-    plan = db.get(Plan, plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    _ensure_repartyable(plan, "split the group")
-
-    trip_id = plan.trip_id
-    roster = roster_ids(db, trip_id)
-    on_plan = party_of(plan).members(roster)
-    leaving = set(payload.leaving)
-    if not leaving <= on_plan:
-        raise HTTPException(status_code=400, detail="Only people on this plan can split off from it")
-    staying = on_plan - leaving
-    if not staying:
-        raise HTTPException(status_code=400, detail="Someone has to stay on this plan. To hand it to different people, change who it's for instead.")
-
-    def side(members: set[int], takes_newcomers: bool) -> Party:
-        """The stored party for one side. The newcomers' side is "except",
-        unless some other plan in these hours already is — then newcomers
-        already have somewhere to be at that time, and this side stays an
-        exact list rather than double-booking them."""
-        if takes_newcomers:
-            wanted = encode(members, roster, EXCEPT)
-            if find_overlapping_plan(db, trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=wanted) is None:
-                return wanted
-        return encode(members, roster, ONLY)
-
-    branch_party = side(leaving, payload.newcomers == "leave")
-    stay_party = side(staying, payload.newcomers == "stay")
-    # Everyone who isn't on either side is already somewhere else then, so
-    # only the leavers can be double-booked by the new plan.
-    occupying = find_overlapping_plan(db, trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=branch_party)
-    if occupying is not None:
-        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, branch_party))
-
-    apply_party(plan, stay_party)
-    branch = Plan(
-        trip_id=trip_id,
-        starts_at=plan.starts_at,
-        ends_at=plan.ends_at,
-        label=payload.label,
-        color=plan.color,
-        status=PlanStatus.placed,
-        party=list(branch_party.ids),
-        party_mode=branch_party.mode,
-        created_by_id=access.member.id,
-    )
-    db.add(branch)
-    db.commit()
-    db.refresh(plan)
-    db.refresh(branch)
-    bus.publish(trip_id, "plan.split", {"plan_id": plan.id, "branch_plan_id": branch.id})
-    return [plan_to_schema(plan), plan_to_schema(branch)]
-
-
-@router.put("/plans/{plan_id}/party", response_model=PlanOut)
-def set_plan_party(
-    plan_id: int,
-    payload: PlanPartySet,
-    access: Access = Depends(require(PLANS_WRITE)),
-    db: Session = Depends(get_db),
-):
-    """Say who a plan is for: traveler ids read through party_mode
-    ("only", the default, or "except" — everyone but these, including
-    anyone added later). [] with "only" is everyone, which is how a group
-    is brought back together with the rest once the other group's plans in
-    those hours are gone. A 409 names who would be double-booked, so
-    moving someone between groups is: take them off one, then put them on
-    the other."""
-    plan = db.get(Plan, plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    _ensure_repartyable(plan, "change who it's for")
-
-    party = normalize_party(db, plan.trip_id, payload.party, payload.party_mode)
-    occupying = find_overlapping_plan(db, plan.trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=party)
-    if occupying is not None:
-        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db, party))
-
-    apply_party(plan, party)
-    db.commit()
-    db.refresh(plan)
-    bus.publish(plan.trip_id, "plan.party_changed", {"plan_id": plan.id})
-    return plan_to_schema(plan)
-
-
-def my_traveler(db: Session, access: Access) -> Traveler | None:
-    return db.scalar(select(Traveler).where(Traveler.trip_id == access.trip_id, Traveler.contributor_id == access.member.id))
-
-
-@router.post("/plans/{plan_id}/join", response_model=list[PlanOut])
-def join_plan(
-    plan_id: int,
-    access: Access = Depends(require(PLANS_JOIN)),
-    db: Session = Depends(get_db),
-):
-    """Move yourself onto this group of a split day: "I'm going with
-    Ana." You come off whatever else you were on at the same time, and
-    nobody else's place changes. This is the one party change a companion
-    can make, and only for themselves — as the traveler linked to them.
-
-    Returns this plan first, then every plan you left."""
-    plan = db.get(Plan, plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    _ensure_repartyable(plan, "join it")
-    me_row = my_traveler(db, access)
-    if me_row is None:
-        raise HTTPException(status_code=409, detail="You're not listed as a traveler on this trip, so there's no group to move.")
-    me = me_row.id
-    trip_id = plan.trip_id
-    roster = roster_ids(db, trip_id)
-    target = party_of(plan)
-    if target.is_everyone:
-        raise HTTPException(status_code=409, detail="That plan is already for everyone")
-    if me in target.members(roster):
-        return [plan_to_schema(plan)]
-
-    mine = Party(ONLY, (me,))
-    leaving_from = [
-        other
-        for other in find_overlapping_plans(db, trip_id, plan.starts_at, plan.ends_at, _OCCUPYING_STATUSES, party=mine)
-        if other.id != plan.id
-    ]
-    for other in leaving_from:
-        theirs = party_of(other)
-        if theirs.is_everyone:
-            # Can't happen while the overlap rule holds: an everyone-plan
-            # and a group at the same time would already collide.
-            raise HTTPException(status_code=409, detail=f"You're on {plan_title(other)} with everyone then.")
-        _ensure_repartyable(other, "move off it")
-        if theirs.members(roster) == {me}:
-            raise HTTPException(
-                status_code=409,
-                detail=f"You're the only one on {plan_title(other)}. Remove it, or ask a planner to, before you join another group.",
-            )
-
-    for other in leaving_from:
-        theirs = party_of(other)
-        apply_party(other, encode(theirs.members(roster) - {me}, roster, theirs.mode))
-    apply_party(plan, encode(target.members(roster) | {me}, roster, target.mode))
-    db.flush()
-    # Belt and braces: after the moves, nobody may be on two things at once.
-    clash = find_overlapping_plan(db, trip_id, plan.starts_at, plan.ends_at, exclude_plan_id=plan.id, party=party_of(plan))
-    if clash is not None:
-        db.rollback()
-        raise HTTPException(status_code=409, detail=occupied_detail(clash, db, mine))
-
-    db.commit()
-    for p in [plan, *leaving_from]:
-        db.refresh(p)
-        bus.publish(trip_id, "plan.party_changed", {"plan_id": p.id})
-    return [plan_to_schema(plan), *(plan_to_schema(p) for p in leaving_from)]

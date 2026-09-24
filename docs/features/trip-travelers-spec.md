@@ -6,6 +6,11 @@ party can be "everyone except …") and the Expenses parts of
 `proposals-and-expenses-feature-spec.md` (prices are per person, and there
 is no more `traveller_count`).
 
+> **Superseded in part (Sep 24, 2026):** `Plan.party`, `Contest.party` and
+> `party_mode` were replaced by `Split` / `SplitBranch` records and a
+> `branch_id` on plans and contests. See `split-party-plans-spec.md`. The
+> party sections below describe the earlier design.
+
 ## The model
 
 - **`Traveler`** (`app/models.py`) is someone going on the trip, which is a

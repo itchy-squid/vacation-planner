@@ -159,6 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend-fqdn: ${{ steps.deploy.outputs.backendUrl }}
+      frontend-url: ${{ steps.deploy.outputs.frontendUrl }}
       postgres-fqdn: ${{ steps.deploy.outputs.postgresFqdn }}
     steps:
       - uses: actions/checkout@v4
@@ -321,3 +322,63 @@ jobs:
         env:
           SWA_CLI_DEPLOYMENT_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
         run: npx --yes @azure/static-web-apps-cli@2 deploy ./dist --env production
+
+  e2e:
+    # End-to-end tests (e2e/README.md) against what was just deployed --
+    # dev only, never prod. Signs in as the dedicated test account from
+    # the dev environment's E2E_AUTH_STATE secret and only ever touches
+    # trips that account created; the suite checks both before it deletes
+    # anything. Runs inside this workflow's per-environment concurrency
+    # lock, so another PR can't redeploy dev underneath it.
+    needs: [resolve-environment, infra, backend, frontend]
+    if: needs.resolve-environment.outputs.environment == 'dev'
+    environment: dev
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    env:
+      E2E_BASE_URL: ${{ needs.infra.outputs.frontend-url }}
+      E2E_API_URL: ${{ needs.infra.outputs.backend-fqdn }}
+      E2E_ACCOUNT_EMAIL: ${{ vars.E2E_ACCOUNT_EMAIL }}
+      E2E_AUTH_STATE: ${{ secrets.E2E_AUTH_STATE }}
+      E2E_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check the test account is set up
+        id: configured
+        run: |
+          if [ -z "$E2E_AUTH_STATE" ] || [ -z "$E2E_ACCOUNT_EMAIL" ]; then
+            echo "::warning::E2E tests skipped: set the dev environment's E2E_AUTH_STATE secret and E2E_ACCOUNT_EMAIL variable (see e2e/README.md)."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+        working-directory: .
+
+      - uses: actions/checkout@v4
+        if: steps.configured.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.configured.outputs.run == 'true'
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        if: steps.configured.outputs.run == 'true'
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        if: steps.configured.outputs.run == 'true'
+        run: npx playwright test
+
+      - name: Upload report
+        if: failure() && steps.configured.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14

@@ -11,6 +11,7 @@ from .routers import (
     plans,
     sharing,
     spa_redirect,
+    splits,
     travel_items,
     travelers,
     trips,
@@ -40,6 +41,7 @@ app.include_router(trips.router)
 app.include_router(pins.router)
 app.include_router(plans.router)
 app.include_router(contests.router)
+app.include_router(splits.router)
 app.include_router(travel_items.router)
 app.include_router(comments.router)
 app.include_router(sharing.router)

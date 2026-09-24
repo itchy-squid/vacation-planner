@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowRight } from "@fortawesome/free-solid-svg-icons";
 import AvatarStack from "../components/planner/AvatarStack";
 import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
-import { membersOf, namesOf, partyKey, planIncludes } from "../lib/party";
+import { membersOf, namesOf, planIncludes } from "../lib/splits";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
@@ -29,12 +29,12 @@ export default function FinalItinerary() {
   const me = useMyTraveler();
   const myId = me?.id ?? null;
 
-  // Once the group splits up for part of a day (lib/party.js), "the
+  // Once the group splits up for part of a day (lib/splits.js), "the
   // itinerary" stops being one list. Yours is the default: the stops
   // you're on, who with, and a line for where everyone else is — which is
   // what answers "when do we meet up?". The whole group's view keeps every
   // stop and says whose each one is.
-  const hasSplits = useMemo(() => plans.some((p) => !p.forEveryone), [plans]);
+  const hasSplits = state.splits.length > 0;
   const [mine, setMine] = useState(true);
   const showMine = mine && hasSplits && myId != null;
 
@@ -86,7 +86,7 @@ export default function FinalItinerary() {
         settledPlans
           .filter((p) => !planIncludes(p, myId))
           .forEach((p) => {
-            const key = partyKey(p);
+            const key = p.branchId;
             if (!byGroup.has(key)) byGroup.set(key, { people: membersOf(p, travelers), titles: [], endMin: 0 });
             const g = byGroup.get(key);
             p.items.forEach((item) => g.titles.push(item.title));

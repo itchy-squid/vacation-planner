@@ -543,7 +543,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
         </div>
 
         <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--hairline)" }}>
-          <WhoIsGoing plan={plan} editable={editable} startMin={startMinute} endMin={endMinute} />
+          <WhoIsGoing plan={plan} editable={editable} />
         </div>
 
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 14 }}>

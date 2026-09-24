@@ -216,10 +216,9 @@ function normalizePlan(p) {
     // The proposer's case for this plan, shown to voters on the compare
     // screen. Empty for anything not proposed through the block flow.
     rationale: p.rationale ?? "",
-    // Who this plan is for (lib/party.js): the stored ids and mode, plus
-    // the travelers that comes to and whether it's simply everyone.
-    party: p.party ?? [],
-    partyMode: p.party_mode ?? "except",
+    // Who this plan is for (lib/splits.js): its group on a split day, or
+    // null for everyone — plus the travelers that comes to right now.
+    branchId: p.branch_id ?? null,
     partyMembers: p.party_members ?? [],
     forEveryone: p.for_everyone ?? true,
     items: (p.items ?? []).map(normalizePlanItem),
@@ -228,6 +227,27 @@ function normalizePlan(p) {
     // No movingMinutes: there is one definition of slack now, and it
     // doesn't subtract a guess at travel time. See backend/app/derive.py.
     slackMinutes: p.slack_minutes,
+  };
+}
+
+// The group splitting up (lib/splits.js): the hours, and each group in
+// position order.
+function normalizeSplit(s) {
+  return {
+    id: s.id,
+    tripId: s.trip_id,
+    startsAt: s.starts_at,
+    endsAt: s.ends_at,
+    startDt: parseApiDateTime(s.starts_at),
+    endDt: parseApiDateTime(s.ends_at),
+    branches: (s.branches ?? []).map((b) => ({
+      id: b.id,
+      splitId: s.id,
+      label: b.label ?? "",
+      position: b.position,
+      travelerIds: b.traveler_ids ?? [],
+      takesNewcomers: Boolean(b.takes_newcomers),
+    })),
   };
 }
 
@@ -250,6 +270,11 @@ function proposalConflict(err) {
   }
   if (detail.locked_plan_id) {
     return { conflict: "locked", lockedPlanId: detail.locked_plan_id, message: detail.message };
+  }
+  // The hours cross a split: a proposal for everyone reaching into them,
+  // or one for a group reaching past them (backend/app/splits.py).
+  if (detail.split_id) {
+    return { conflict: "split", splitId: detail.split_id, message: detail.message };
   }
   return null;
 }
@@ -294,6 +319,7 @@ function emptyTripView() {
     pins: {},
     overrides: {},
     plans: [],
+    splits: [],
     travelItems: {},
     travelers: [],
     currentUserId: null,
@@ -309,12 +335,13 @@ async function loadTripView(tripId, trips) {
   rememberLastTripId(trip.id);
   const otherTripRows = trips.filter((t) => t.id !== trip.id);
 
-  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw] = await Promise.all([
+  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw, splitsRaw] = await Promise.all([
     api.listContributors(trip.id),
     api.listPins(trip.id),
     api.listPlans(trip.id),
     api.listTravelItems(trip.id),
     api.listTravelers(trip.id),
+    api.listSplits(trip.id),
   ]);
   const travelers = travelersRaw.map(normalizeTraveler);
 
@@ -424,6 +451,7 @@ async function loadTripView(tripId, trips) {
     pins,
     overrides,
     plans,
+    splits: splitsRaw.map(normalizeSplit),
     travelItems,
     travelers,
     currentUserId,
@@ -440,6 +468,7 @@ const initialState = {
   pins: {},
   overrides: {}, // "<pinId>|<day>-<band>": boolean
   plans: [], // Plan[], each carrying contestId (null unless contested/locked-from-a-contest)
+  splits: [], // Split[] — where the group has split up (lib/splits.js)
   travelItems: {}, // travelItemId -> TravelItem
   travelers: [], // Traveler[], roster order — who is going (see normalizeTraveler)
   currentUserId: null,
@@ -453,7 +482,7 @@ const initialState = {
   // of these are transient/local — nothing here persists until PLACE_AT /
   // CONFIRM_PROPOSE actually call the API.
   placing: null, // { kind: "pin" | "travel", refId, durationMinutes, label }
-  proposeSheet: null, // { targetPlanId, targetLabel, dayIndex, startMinute, kind, refId, durationMinutes, label }
+  proposeSheet: null, // { targetPlanId, branchId, dayIndex, startMinute, kind, refId, durationMinutes, label }
 };
 
 function reducer(state, action) {
@@ -469,7 +498,7 @@ function reducer(state, action) {
       return { ...state, switchingTripId: null };
 
     case "SET_PLANS_AND_ITEMS":
-      return { ...state, plans: action.plans, travelItems: action.travelItems };
+      return { ...state, plans: action.plans, splits: action.splits, travelItems: action.travelItems };
 
     case "ARM_PLACEMENT":
       return { ...state, placing: action.placing, proposeSheet: null };
@@ -713,13 +742,17 @@ export function PlannerProvider({ children }) {
         case "REFRESH_PLANS_AND_ITEMS": {
           if (!state.trip) return;
           const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
-          const [plansRaw, travelItemsRaw] = await Promise.all([
+          // Splits travel with plans: splitting, merging and moving people
+          // between groups all change what the calendar draws.
+          const [plansRaw, travelItemsRaw, splitsRaw] = await Promise.all([
             api.listPlans(state.trip.id),
             api.listTravelItems(state.trip.id),
+            api.listSplits(state.trip.id),
           ]);
           dispatch({
             type: "SET_PLANS_AND_ITEMS",
             plans: plansRaw.map(normalizePlan),
+            splits: splitsRaw.map(normalizeSplit),
             travelItems: Object.fromEntries(travelItemsRaw.map((t) => [t.id, normalizeTravelItem(t, contributorsById)])),
           });
           return;
@@ -740,6 +773,8 @@ export function PlannerProvider({ children }) {
               ends_at: action.endsAt,
               status: "placed",
               items: [placing.kind === "pin" ? { pin_id: placing.refId } : { travel_item_id: placing.refId }],
+              // Which group's lane the tap landed in on a split day.
+              branch_id: action.branchId ?? null,
             });
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             dispatch({ type: "CANCEL_PLACING" });
@@ -751,8 +786,7 @@ export function PlannerProvider({ children }) {
                 type: "OPEN_PROPOSE",
                 proposeSheet: {
                   targetPlanId: err.body.detail.occupying_plan_id,
-                  party: target?.party ?? [],
-                  partyMode: target?.partyMode ?? "only",
+                  branchId: target?.branchId ?? null,
                   dayIndex: action.dayIndex,
                   startMinute: action.startMinute,
                   kind: placing.kind,
@@ -764,7 +798,7 @@ export function PlannerProvider({ children }) {
               return { ok: false, opened: "propose" };
             }
             console.error("place failed", err);
-            return { ok: false, error: err.message };
+            return { ok: false, error: apiMessage(err) };
           }
         }
 
@@ -814,8 +848,7 @@ export function PlannerProvider({ children }) {
               label: action.label ?? "",
               rationale: action.rationale ?? "",
               items: action.items,
-              party: action.party ?? [],
-              party_mode: action.partyMode ?? "only",
+              branch_id: action.branchId ?? null,
             });
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, contestId: contest.id };
@@ -855,11 +888,9 @@ export function PlannerProvider({ children }) {
             startsAt: action.startsAt,
             endsAt: action.endsAt,
             items: [sheet.kind === "pin" ? { pin_id: sheet.refId } : { travel_item_id: sheet.refId }],
-            // Proposing against one branch of a split day is a decision
-            // for that branch's people only (backend/app/routers/
-            // contests.py open_block_contest).
-            party: sheet.party ?? [],
-            partyMode: sheet.partyMode ?? "only",
+            // Proposing against one group's plan is a decision for that
+            // group only (backend/app/routers/contests.py open_block_contest).
+            branchId: sheet.branchId ?? null,
           });
           if (result.ok) dispatch({ type: "CLOSE_PROPOSE" });
           return result;
@@ -886,8 +917,7 @@ export function PlannerProvider({ children }) {
               label: action.label ?? "",
               rationale: action.rationale ?? "",
               items: action.items,
-              party: action.party ?? [],
-              party_mode: action.partyMode ?? "only",
+              branch_id: action.branchId ?? null,
             });
             if (action.replaceDraftId) await api.deletePlan(action.replaceDraftId);
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
@@ -922,37 +952,31 @@ export function PlannerProvider({ children }) {
           }
         }
 
-        // Split-party plans (lib/party.js). Each returns { ok } or
-        // { ok: false, error } with the server's sentence, which names who
-        // would be double-booked — the only part of a refusal a person can
-        // act on.
-        case "SPLIT_PLAN": {
+        // The group splitting up (lib/splits.js). Each returns { ok } or
+        // { ok: false, error } with the server's sentence, which names
+        // what's in the way — the only part of a refusal a person can act
+        // on. `branches` is the API's own shape: [{ id?, label,
+        // traveler_ids, takes_newcomers }].
+        case "CREATE_SPLIT":
+        case "RESHAPE_SPLIT":
+        case "MERGE_SPLIT":
+        case "JOIN_BRANCH": {
+          if (!state.trip) return { ok: false };
           try {
-            const [, branch] = await api.splitPlan(action.planId, {
-              leaving: action.leaving,
-              label: action.label ?? "",
-              newcomers: action.newcomers ?? "leave",
-            });
-            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
-            return { ok: true, branchPlanId: branch.id };
-          } catch (err) {
-            return { ok: false, error: apiMessage(err) };
-          }
-        }
-
-        case "SET_PLAN_PARTY": {
-          try {
-            await api.setPlanParty(action.planId, action.party, action.partyMode ?? "only");
-            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
-            return { ok: true };
-          } catch (err) {
-            return { ok: false, error: apiMessage(err) };
-          }
-        }
-
-        case "JOIN_PLAN": {
-          try {
-            await api.joinPlan(action.planId);
+            if (action.type === "CREATE_SPLIT") {
+              await api.createSplit(state.trip.id, {
+                starts_at: action.startsAt,
+                ends_at: action.endsAt,
+                branches: action.branches,
+                keep_plans_with: action.keepPlansWith ?? 0,
+              });
+            } else if (action.type === "RESHAPE_SPLIT") {
+              await api.reshapeSplit(action.splitId, action.branches);
+            } else if (action.type === "MERGE_SPLIT") {
+              await api.mergeSplit(action.splitId, action.keepBranchId);
+            } else {
+              await api.joinBranch(action.branchId);
+            }
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true };
           } catch (err) {

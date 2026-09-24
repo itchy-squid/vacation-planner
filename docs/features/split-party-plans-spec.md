@@ -1,127 +1,166 @@
 # Split-party plans — implementation notes
 
-Lets part of the group do something different over the same hours: Ana and
-Lin on the Taroko Gorge trail from 08:00 to 11:00 while the other four bike
-Liyu Lake, then everyone back together at the night market.
+This covers part of the group doing something different over the same hours.
+For example, Ana and Lin take the Taroko Gorge trail from 08:00 to 11:00 while
+the others bike Liyu Lake, and then everyone meets at the night market.
 
 Mockups: https://claude.ai/artifact/4sKjE7Eh5ybMnsXXpCEA2g (Sep 23, 2026).
-Amends `proposals-and-expenses-feature-spec.md` and
-`candidate-sets-and-times-spec.md` where called out.
+Amends `proposals-and-expenses-feature-spec.md`,
+`candidate-sets-and-times-spec.md` and `trip-travelers-spec.md` where
+called out.
 
-## The model
+## History
 
-`Plan.party` and `Contest.party` are JSON lists of contributor ids, and
-`[]` means everyone. That's the same convention `Pin.heads` uses. Two plans
-may share hours only if **nobody is on both**:
+The first version (Sep 23, 2026) had no split record. Every plan and contest
+carried a `party` (traveler ids read through `party_mode`), and a split was
+inferred wherever two plans for different people shared hours. That made
+every operation on a split as a whole fragile:
 
-```
-parties_meet(a, b) = a == [] or b == [] or set(a) & set(b)
-collides(p, q)     = hours overlap and parties_meet(p.party, q.party)
-```
+- **"Bring everyone back" returned 409 whenever the other group still had
+  plans.** It only re-partied one plan. Nothing could merge a split.
+- **The proposal hour picker couldn't claim hours during a split.** It
+  clipped at *any* pinned plan, and it guessed the audience from the
+  selection, which it also used to decide what to clip at.
+- **Tapping into split hours while placing did nothing.** Blocks covered
+  the lanes, and a tap on a block while placing was ignored.
 
-A split isn't stored anywhere. It's simply two plans for different people
-at the same time, and the day grid draws a split wherever it finds that.
+Every screen re-derived the split in its own way. The model below replaces
+that (Sep 24, 2026, migration `d52b8e1f7a93`).
 
-Parties are always stored normalized (`app/party.py normalize_party`):
-sorted, de-duplicated, and `[]` when the list covers the whole roster. So
-comparing parties is plain list equality, and someone who joins the trip
-later is automatically on every plan for everyone.
+## The model (`backend/app/splits.py`)
 
-Migration `f3a8d2c61b90` adds both columns with a server default of `[]`,
-so no backfill is needed. On downgrade it deletes every plan and contest
-that isn't for everyone, because the old overlap rule can't represent them.
+- **`Split`**: a trip, `starts_at`, `ends_at`.
+- **`SplitBranch`**: one group of a split, with `label`, `position`,
+  `traveler_ids` (exactly who is in it) and `takes_newcomers` (at most one
+  per split).
+- **`Plan.branch_id`, `Contest.branch_id`**: the group a plan or decision
+  is for. `None` means everyone. `party` and `party_mode` are gone.
 
-## Server
+Three rules, kept in `app/splits.py`:
 
-- **Overlap** (`routers/plans.py`): `find_overlapping_plan(s)` takes a
-  `party`. The time filter stays in SQL and the party test runs in Python,
-  because JSON containment is written differently on SQLite and Postgres,
-  and a trip has only a handful of plans in any window. A 409's
-  `occupied_detail` names who's double-booked in `message` ("Lin is
-  already on Wild Boy trail loop then.") and in `double_booked`.
-- **`POST /plans/{id}/split`** `{ leaving, label? }` (`plans:write`): the
-  people leaving come off this plan and get a new, empty plan over the
-  same hours. It's one transaction and returns `[this, new]`.
-- **`DELETE /plans/{id}`** on one group of a split (a plan for part of
-  the trip with another group's plan in the same hours) clears its stops
-  but keeps the group as an empty plan, the way a fresh split leaves it.
-  Deleting the plan outright used to leave its people on no plan next to
-  the other group's, and every way into those hours then landed on the
-  other group. Deleting the empty group removes it.
-- **`PUT /plans/{id}/party`** `{ party }` (`plans:write`): sets who a plan
-  is for. Sending `[]` brings a branch back together with everyone, which
-  409s by name until the other branch's plans in those hours are gone.
-- **`POST /plans/{id}/join`** (`plans:join`, new, companions and up):
-  moves the caller alone onto this group, off whatever they were on at the
-  same time. It refuses if that would leave another group empty.
-- All three refuse contested plans ("settle the vote first") and locked
-  ones ("the owner has to reopen it").
-- **Contests** (`routers/contests.py`): `ContestProposeCreate.party`.
-  `open_block_contest` only looks at plans whose party meets the
-  proposal's, and refuses (409, naming whose) if any of those plans is for
-  a *different* party than the proposal. One "on the board" option can't
-  hold two groups' days. Each group can run its own vote over the same
-  hours. Options, the incumbent and the plans placed by `pick_set` all
-  inherit the contest's party. `contributor_count` and the majority count
-  only voting-role members of the party, and `toggle_vote` 403s anyone
-  outside it. Drafts carry a party through publish.
-- **Members leaving** (`routers/sharing.py _strip_from_parties`): the
-  person is removed from every party. A plan or contest nobody is left on
-  is deleted, and a party that now covers everyone who's left becomes `[]`.
-- **Seed**: Taiwan day 7 (Hualien) is a split day.
-- **Tests**: `tests/test_split_party.py` (23 tests).
+1. Splits on a trip never overlap.
+2. A plan or contest in a branch lies inside its split's hours. A plan for
+   everyone never overlaps a split (`resolve_branch`, used by every path
+   that claims time). A refusal is a 409 carrying `split_id`.
+3. So two plans collide exactly when their hours overlap **and they have
+   the same `branch_id`** (both `None` included). That's a plain SQL
+   filter (`routers/plans.py _overlapping`).
+
+A split has at least two groups, and nobody is in two of them. Someone in
+no group is allowed and shown as "free, in neither group".
+
+## API
+
+| Call | Scope | What it does |
+| --- | --- | --- |
+| `GET /api/trips/{id}/splits` | plans:read | Every split on the trip, with its groups |
+| `POST /api/trips/{id}/splits` `{starts_at, ends_at, branches, keep_plans_with}` | plans:write | Splits the group. The plans already in those hours go to the group at `keep_plans_with`. |
+| `PUT /api/splits/{id}` `{branches}` | plans:write | Says who is in which group, as the whole assignment at once. Existing groups are named by `id`, new ones have no `id`, and a group that's left out is removed (only if it has nothing planned). |
+| `POST /api/splits/{id}/merge` `{keep_branch_id}` | plans:write | Brings everyone back. The kept group's plans and votes become everyone's, and the other groups' plans come off the calendar the same way an unplace does. |
+| `POST /api/branches/{id}/join` | plans:join | Moves the caller's own traveler into this group. Returns the split, or `null` if the move ended it. |
+
+Placing, moving, proposing and drafts take a `branch_id`. `PlanOut` and
+`ContestOut` carry `branch_id`, `party_members` (the travelers it's for
+right now) and `for_everyone`.
+
+What gets refused, and why:
+
+- **Splitting** is refused over a plan only partly inside the hours, over a
+  vote in progress, or over a pinned plan. A pinned plan was pinned for
+  everyone, so the owner reopens it before it can become one group's.
+- **Merging** is refused while another group has a pinned plan or a vote
+  in progress. The message names it.
+- **Joining** is refused when it would leave a group that has plans with
+  nobody in it. A group left empty with nothing planned is removed. A split
+  left with one group dissolves, and its plans become everyone's.
+- **Votes**: only a group's travelers vote on its decisions
+  (`voter_ids`). Someone who moves out of a group loses their vote there.
+- **Travelers.** Someone added to the trip joins every group that takes
+  newcomers (`add_newcomer`, called from `add_traveler`). When someone is
+  removed from the trip, they're taken out of every group. A group left
+  with nobody goes, along with its plans, and a split left with one group
+  dissolves.
+
+## Migration `d52b8e1f7a93`
+
+Existing splits are rebuilt from the parties. For each trip, plans that
+aren't for everyone are clustered by overlapping hours (drafts left out).
+Each cluster becomes a split over its hours, with one group per distinct
+party.
+
+- If no party took newcomers and some travelers were on none of the
+  parties, those travelers get a group of their own.
+- A cluster that turns out to be one party covering everyone is not a
+  split, and its plans become plans for everyone.
+- Contests and drafts join the group with their party whose split contains
+  their hours.
+
+The downgrade writes each group back onto its plans and contests as a party.
+The group that took newcomers becomes "except everyone else". The round trip
+was tested on SQLite, **not on Postgres**.
 
 ## Frontend
 
-- `lib/party.js`: `partyKey`, `partiesMeet`, `planIncludes`,
-  `partyMembers`, `namesOf`.
-- **Day grid** (`lib/dayGrid.js`): `layoutDayPlans` divides each cluster
-  into one lane per party and packs columns inside each lane, so a vote
-  inside one group widens that group's lane only. `splitBandsFrom` gives
-  the dashed "Group split · 4 + 2" bracket. `PlanBlock` shows the faces of
-  a plan's party (collapsed to one face and a count at three or more
-  columns). An **Everyone / Just me** switch appears on split days, and in
-  Just me the bracket reads "Ana and Lin elsewhere".
-- The drag-to-move overlap check honours parties.
-- **Who's going** (`components/planner/WhoIsGoing.jsx`, in
-  `PlanDetailsSheet`) offers Split the group, Change who's going, Bring
-  everyone back, and Join this group. It also lists what the other groups
-  are doing over the same hours.
-- **Proposals** (`ProposeBlock`): the block's party comes from the
-  contest, then a reopened draft, then `location.state.party`, then the
-  hours themselves. If the hours hold one group's plans, the block is for
-  that group, and if they hold several, it's for yours. The board column,
-  set letter, clash detection and vote card are all scoped to that party.
-  The quick-propose sheet uses the party of the plan it was opened on.
-- **Compare**: a banner names the group the decision is for, and voting is
-  hidden for anyone outside it.
-- **Expenses**: `headcountFor(item, trip, contributors, party)` falls back
-  to the plan's party before `traveller_count`. Rows only other people
-  share are dimmed and left out of your share.
-- **Final itinerary**: My itinerary (the default once any plan has a party)
-  shows your stops, "with Jae, Theo and Priya", and one line per other
-  group. The Whole group view shows every stop with whose it is.
+- **`lib/splits.js`** replaces `lib/party.js`. State carries `splits`
+  (loaded with the trip and refreshed with the plans).
+- **Day grid** (`lib/dayGrid.js splitLanes` and `layoutDayPlans`). Each
+  split's hours are divided into one lane per group, in the split's own
+  order. An empty group still gets a lane, named at its foot. A group's
+  plans pack into its lane, and plans for everyone pack across the full
+  width.
+  - While placing, a tap in a lane places the item for that group, and a
+    tap on a block counts as a tap at that time in that block's group.
+  - Dragging a plan outside its split, or dragging a plan for everyone into
+    a split, is refused with a message saying why.
+  - "Just me" keeps only your group's lane.
+- **Propose, step 2** (`lib/windowClaim.js`, `WindowSelection`).
+  - The drag picks who the block is for from where it starts. Inside a
+    split it's for a group: yours by default, and the chips under the grid
+    switch it. Anywhere else it's for everyone.
+  - A block for a group can only reach its split's hours and clips only at
+    that group's own pinned plans. A block for everyone clips at splits.
+  - The selection covers only the group's lane.
+- **Who's going** (`WhoIsGoing.jsx`).
+  - A plan for everyone offers Split the group.
+  - A plan in a group shows the group and what the other groups have
+    planned. It offers Join this group, Change who's going, where
+    newcomers go, and Bring everyone back. Bring everyone back names what
+    will come off the calendar before anything changes.
+- **Compare, Expenses, Final itinerary**: unchanged in behaviour. They read
+  `party_members` and `for_everyone`, and the itinerary groups other people's
+  plans by `branchId`.
+- **`lib/api.js`** now keeps an error's parsed body. It used to try to
+  re-read an already consumed body, so `err.body` was always null and every
+  409-detail branch (open the propose sheet, jump to the running vote, name
+  the clash) was dead.
 
-## Decisions (from the mockup's open questions)
+## Tests
 
-1. Parties are made of contributors, not travellers.
-2. People left out of both groups are allowed. The UI shows who is
-   elsewhere but doesn't block anything.
+- **Backend**: `tests/test_splits.py` (37 tests) covers where plans may go,
+  splitting, reshaping, joining, merging, votes inside a group, and travelers
+  joining or leaving the trip. `tests/test_travelers.py` covers newcomers and
+  costs.
+- **End to end**: `e2e/tests/splits.spec.js` covers four flows. They are
+  splitting from a plan, placing into one group's lane while both groups are
+  busy, proposing a block for one group during a split (the reported bug),
+  and bringing everyone back.
+
+## Decisions
+
+1. A party is made of travelers (see `trip-travelers-spec.md`).
+2. Someone in no group is allowed and shown, not blocked.
 3. Companions can move themselves between groups (`plans:join`).
-4. Splitting isn't put to a vote: a planner splits the group.
-5. There are no multi-day splits; each day's plans carry their own party.
+4. The group doesn't vote on whether to split. A planner splits it.
+5. No multi-day splits are designed, though nothing in the model forbids
+   them.
+6. Moving people between groups is allowed even when a group has a pinned
+   plan. Pinning fixes the time, not who goes.
 
 ## Known gaps
 
-- There's no single "merge" action. Bringing a group back is: remove the
-  other group's plans, remove that group's now-empty plan, then choose
-  Bring everyone back.
-- The step-2 hour picker still clips at *any* locked plan, including one
-  for another group. The server only refuses locked plans for the
-  proposal's own party.
-- Placing a new item from the add sheet always creates a plan for
-  everyone. Tapping into one group's hours opens the propose sheet for
-  that group rather than placing the item for it directly.
-- The migration round trip was tested on SQLite only, not on Postgres 16.
-- There's still no frontend test suite. The screens were checked by hand
-  against the seeded split day.
+- A split's hours can't be resized. Bring everyone back and split again.
+- Splitting starts from a plan's details sheet, so a split can't yet be
+  made over empty hours from the UI (the API allows it).
+- The migration hasn't been run against Postgres.
+- A group's lane name sits at the lane's foot and is hidden when the
+  group's plans fill the lane.

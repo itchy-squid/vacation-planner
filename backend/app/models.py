@@ -28,6 +28,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -78,6 +79,7 @@ class Trip(Base):
     plans: Mapped[list["Plan"]] = relationship(back_populates="trip", cascade="all, delete-orphan", foreign_keys="Plan.trip_id")
     contests: Mapped[list["Contest"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
     invites: Mapped[list["TripInvite"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    splits: Mapped[list["Split"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
     travelers: Mapped[list["Traveler"]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="Traveler.position, Traveler.id"
     )
@@ -142,8 +144,7 @@ class Traveler(Base):
       someone else can't pay for others (routers/travelers.py enforces it),
       so "what I'm paying" is always me plus the people pointing at me.
 
-    Plan.party, Contest.party and Pin/TravelItem.heads all hold traveler
-    ids."""
+    SplitBranch.traveler_ids and Pin/TravelItem.heads hold traveler ids."""
 
     __tablename__ = "travelers"
     __table_args__ = (UniqueConstraint("trip_id", "contributor_id", name="uq_traveler_trip_contributor"),)
@@ -215,8 +216,8 @@ class Pin(Base):
     # "group", so their totals didn't move. See app/derive.py item_money.
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")
     # Which travelers share this cost. [] means whoever is on the plan it's
-    # scheduled in — the plan's party, which is everyone except on a day
-    # the group has split.
+    # scheduled in: everyone, or the plan's group when the group has split
+    # up (Split below).
     heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
@@ -312,6 +313,12 @@ class PlanStatus(str, enum.Enum):
     locked = "locked"
 
 
+# Every status that holds real time on the calendar and so can collide with
+# a placement. `draft` is deliberately absent: a private draft nobody else
+# can see must never block anybody else (proposals-and-expenses spec §6.1).
+OCCUPYING_STATUSES = (PlanStatus.placed, PlanStatus.pencilled, PlanStatus.contested, PlanStatus.locked)
+
+
 class ContestStatus(str, enum.Enum):
     open = "open"
     resolved = "resolved"
@@ -341,15 +348,12 @@ class Plan(Base):
     # screen ("Why (optional)" in the proposal flow's review step). Empty
     # for every plan that wasn't proposed through that flow.
     rationale: Mapped[str] = mapped_column(Text, default="")
-    # Who this plan is for, as traveler ids read through party_mode:
-    # "only" means exactly these travelers; "except" means everyone on the
-    # trip but these — including anyone added later. Everyone is
-    # ("except", []). Two plans may share hours only when nobody is on both
-    # (app/party.py parties_meet); there is no "split" row, just plans for
-    # different people at the same time. Always stored normalized — see
-    # app/party.py normalize_party.
-    party: Mapped[list[int]] = mapped_column(JSON, default=list)
-    party_mode: Mapped[str] = mapped_column(String(8), default="except")
+    # Which group this plan is for when the group has split up (see Split
+    # below). None is everyone. A plan in a branch lies inside its split's
+    # hours; a plan for everyone never overlaps a split (app/splits.py).
+    # SET NULL only matters for drafts: a branch is removed deliberately,
+    # and every path that removes one deals with its placed plans first.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("split_branches.id", ondelete="SET NULL"), nullable=True, index=True)
     status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus), default=PlanStatus.placed)
     # Circular with Contest.winning_plan_id (a Contest is created only after
     # a Plan already exists to contest against) — use_alter, same pattern as
@@ -363,6 +367,19 @@ class Plan(Base):
     contest: Mapped["Contest | None"] = relationship(back_populates="plans", foreign_keys=[contest_id])
     created_by: Mapped[Contributor | None] = relationship()
     votes: Mapped[list["Vote"]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+    branch: Mapped["SplitBranch | None"] = relationship()
+
+    @property
+    def title(self) -> str:
+        """What a person would call this plan: its name, else its first
+        stop. Used wherever a refusal has to say which plan is in the way."""
+        if self.label:
+            return self.label
+        for item in self.items:
+            source = item.pin or item.travel_item
+            if source is not None:
+                return source.title
+        return "another plan"
 
 
 class PlanItem(Base):
@@ -425,12 +442,10 @@ class Contest(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[ContestStatus] = mapped_column(Enum(ContestStatus), default=ContestStatus.open)
-    # The people this decision is for, same shape and meaning as
-    # Plan.party. Every option in the contest carries it, only those
-    # people vote, and the majority is counted against them. [] is the
-    # whole trip, as before.
-    party: Mapped[list[int]] = mapped_column(JSON, default=list)
-    party_mode: Mapped[str] = mapped_column(String(8), default="except")
+    # The group this decision is for, same meaning as Plan.branch_id. Every
+    # option in the contest is in it, only its travelers vote, and the
+    # majority is counted against them. None is the whole trip.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("split_branches.id", ondelete="SET NULL"), nullable=True, index=True)
     winning_plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", use_alter=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -438,6 +453,64 @@ class Contest(Base):
     trip: Mapped[Trip] = relationship(back_populates="contests")
     plans: Mapped[list[Plan]] = relationship(back_populates="contest", cascade="all, delete-orphan", foreign_keys="Plan.contest_id")
     votes: Mapped[list["Vote"]] = relationship(back_populates="contest", cascade="all, delete-orphan")
+    branch: Mapped["SplitBranch | None"] = relationship()
+
+
+class Split(Base):
+    """The group splitting up for a stretch of hours: Ana and Lin on the
+    Taroko Gorge trail from 08:00 to 11:00 while everyone else bikes Liyu
+    Lake. Its branches say who is in which group; plans and contests in
+    those hours belong to one branch each.
+
+    The rules that keep the calendar drawable (app/splits.py):
+    - splits on one trip never overlap each other;
+    - a plan in a branch lies inside its split's hours, and a plan for
+      everyone never overlaps a split;
+    - so two plans collide exactly when their hours overlap and they are
+      for the same branch (or both for everyone).
+
+    A split has at least two branches, and nobody is on two of them.
+    Someone on no branch is allowed: they're doing their own thing."""
+
+    __tablename__ = "splits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    trip: Mapped[Trip] = relationship(back_populates="splits")
+    branches: Mapped[list["SplitBranch"]] = relationship(
+        back_populates="split", cascade="all, delete-orphan", order_by="SplitBranch.position, SplitBranch.id"
+    )
+
+
+class SplitBranch(Base):
+    """One group of a split. `traveler_ids` is exactly who is in it, and
+    `takes_newcomers` marks the one branch (at most one per split) that a
+    traveler added to the trip later joins — routers/travelers.py writes
+    them onto it when they're added."""
+
+    __tablename__ = "split_branches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    split_id: Mapped[int] = mapped_column(ForeignKey("splits.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str] = mapped_column(String(200), default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    traveler_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    takes_newcomers: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    split: Mapped[Split] = relationship(back_populates="branches")
+
+    @property
+    def trip_id(self) -> int:
+        return self.split.trip_id
+
+    def members(self, roster: set[int]) -> set[int]:
+        """The travelers in this group who are still on the trip."""
+        return set(self.traveler_ids or ()) & roster
 
 
 class Vote(Base):

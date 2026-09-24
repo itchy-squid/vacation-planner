@@ -8,7 +8,8 @@ import AvatarStack from "../components/planner/AvatarStack";
 import HeadsPicker from "../components/planner/HeadsPicker";
 import Stepper from "../components/forms/Stepper";
 import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess, useMyTraveler } from "../state/PlannerContext";
-import { membersOf, namesOf, partiesMeet, partyKey, planIncludes } from "../lib/party";
+import { branchName, branchesById, splitsOnDay } from "../lib/splits";
+import { claimBounds, refitSelection } from "../lib/windowClaim";
 import { api } from "../lib/api";
 import { useNavGuard, useGuardedNavigate } from "../state/NavGuard";
 import { getTripDays } from "../data/trip";
@@ -91,7 +92,7 @@ export default function ProposeBlock() {
   const dayIndex = Number(useParams().day) || 1;
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, plans, pins, travelItems, contributors, travelers, overrides } = state;
+  const { trip, plans, splits, pins, travelItems, contributors, travelers, overrides } = state;
   const myTraveler = useMyTraveler();
 
   const reopenedDraftId = location.state?.draftPlanId ?? null;
@@ -121,6 +122,17 @@ export default function ProposeBlock() {
     () => (reopenedDraftId ? plans.find((p) => p.id === reopenedDraftId) : null),
     [plans, reopenedDraftId]
   );
+  const daySplits = useMemo(() => splitsOnDay(splits, trip.startDate, dayIndex), [splits, trip.startDate, dayIndex]);
+  const branches = useMemo(() => branchesById(splits), [splits]);
+
+  // Who this block is for: one group of a split (lib/splits.js), or null
+  // for everyone. A running vote or a reopened draft already says; a fresh
+  // claim takes it from where the drag starts in step 2
+  // (lib/windowClaim.js), and the group chips there can switch it. Only
+  // that audience's plans are swept up into "on the board", and only its
+  // travelers vote (backend/app/routers/contests.py open_block_contest).
+  const [branchId, setBranchId] = useState(reopenedDraft?.branchId ?? null);
+  const branch = branchId != null ? branches.get(branchId) ?? null : null;
 
   // Reopening a draft, or joining a running decision, drops you straight
   // into step 3 — in both cases the hours are already settled and there is
@@ -198,6 +210,7 @@ export default function ProposeBlock() {
       .then((c) => {
         if (!live) return;
         setContest(c);
+        setBranchId(c.branch_id ?? null);
         setSelection({ startMin: minuteOfIso(c.starts_at), endMin: minuteOfIso(c.starts_at) + contestWindowMinutes(c) });
         const target = editPlanId ? c.plans.find((p) => p.id === editPlanId) : null;
         if (!target) return;
@@ -236,58 +249,44 @@ export default function ProposeBlock() {
       .map((e) => e.plan);
   }, [dayEntries, selection]);
 
-  // Who this block is for (lib/party.js) — a { party, partyMode,
-  // partyMembers, forEveryone } like a plan's. A running vote, or a
-  // reopened draft, already says. Otherwise the hours do: on a day the
-  // group has split, a block claimed over one group's plans is a decision
-  // for that group — and where the hours hold more than one group's, it's
-  // yours. Only the people it's for vote on it, and only their plans are
-  // swept up into "on the board" (backend/app/routers/contests.py
-  // open_block_contest).
-  const group = useMemo(() => {
-    const everyone = { party: [], partyMode: "except", partyMembers: travelers.map((t) => t.id), forEveryone: true };
-    const pick = (p) => ({ party: p.party ?? [], partyMode: p.partyMode ?? "except", partyMembers: p.partyMembers ?? [], forEveryone: p.forEveryone ?? true });
-    if (contest) {
-      return {
-        party: contest.party ?? [],
-        partyMode: contest.party_mode ?? "except",
-        partyMembers: contest.party_members ?? [],
-        forEveryone: contest.for_everyone ?? true,
-      };
-    }
-    if (reopenedDraft) return pick(reopenedDraft);
-    if (location.state?.group) return location.state.group;
-    const groups = new Map();
-    plansInHours.forEach((p) => groups.set(partyKey(p), p));
-    if (groups.size === 1) return pick([...groups.values()][0]);
-    if (groups.size > 1) {
-      const mine = [...groups.values()].find((p) => !p.forEveryone && planIncludes(p, myTraveler?.id ?? null));
-      return mine ? pick(mine) : everyone;
-    }
-    return everyone;
-  }, [contest, reopenedDraft, location.state, plansInHours, myTraveler, travelers]);
-
   const insidePlans = useMemo(
-    () => plansInHours.filter((p) => partiesMeet(p, group)),
-    [plansInHours, group]
+    () => plansInHours.filter((p) => (p.branchId ?? null) === branchId),
+    [plansInHours, branchId]
   );
+
+  // Whose money this block is: the group's travelers, or everyone.
+  const audienceIds = useMemo(
+    () => (branch ? branch.travelerIds : travelers.map((t) => t.id)),
+    [branch, travelers]
+  );
+
   // The people who'd vote: members linked to a traveler in the block's
   // group (everyone who can vote, for a block for everyone). Travelers
   // without an account don't vote.
   const voters = useMemo(() => {
     const canVote = contributors.filter((c) => c.role !== "reader");
-    if (group.forEveryone) return canVote;
-    const linked = new Set(membersOf(group, travelers).map((t) => t.contributorId).filter((id) => id != null));
+    if (!branch) return canVote;
+    const linked = new Set(
+      travelers.filter((t) => branch.travelerIds.includes(t.id)).map((t) => t.contributorId).filter((id) => id != null)
+    );
     return canVote.filter((c) => linked.has(c.id));
-  }, [group, contributors, travelers]);
+  }, [branch, contributors, travelers]);
 
-  // Only votes that are this group's business can clash with this block
-  // or be joined by it; the other group's vote over the same hours is
-  // their own (backend/app/routers/contests.py open_block_contest).
-  const partyWindows = useMemo(
-    () => contestWindowsFrom(dayEntries.filter((e) => partiesMeet(e.plan, group))),
-    [dayEntries, group]
+  // Only votes that are this audience's business can clash with this
+  // block or be joined by it; another group's vote over the same hours is
+  // its own (backend/app/routers/contests.py open_block_contest).
+  const audienceWindows = useMemo(
+    () => contestWindowsFrom(dayEntries.filter((e) => (e.plan.branchId ?? null) === branchId)),
+    [dayEntries, branchId]
   );
+
+  // Switching which group the block is for keeps the claimed hours where
+  // that group can have them.
+  function chooseBranch(nextBranchId) {
+    setError("");
+    setBranchId(nextBranchId);
+    setSelection((current) => refitSelection(current, claimBounds(dayEntries, daySplits, nextBranchId)));
+  }
 
   // The hours in the drag that are already out for a vote. An exactly
   // matching window is fine — that's how a further set joins an existing
@@ -296,18 +295,18 @@ export default function ProposeBlock() {
   const clashingContest = useMemo(() => {
     if (!selection) return null;
     return (
-      partyWindows.find(
+      audienceWindows.find(
         (w) =>
           overlaps(selection.startMin, selection.endMin, w.startMin, w.endMin) &&
           !(w.startMin === selection.startMin && w.endMin === selection.endMin)
       ) ?? null
     );
-  }, [selection, partyWindows]);
+  }, [selection, audienceWindows]);
 
   const matchingContest = useMemo(() => {
     if (!selection) return null;
-    return partyWindows.find((w) => w.startMin === selection.startMin && w.endMin === selection.endMin) ?? null;
-  }, [selection, partyWindows]);
+    return audienceWindows.find((w) => w.startMin === selection.startMin && w.endMin === selection.endMin) ?? null;
+  }, [selection, audienceWindows]);
 
   // Everything the claim would sweep up — the "on the board" side of the
   // comparison, and the source of the "N items sit in these hours" count.
@@ -625,7 +624,7 @@ export default function ProposeBlock() {
     // Backing out to step 2 only makes sense when there is a step 2 to go
     // back to. On the contest paths the hours were never up for
     // negotiation, so the message belongs where the reader already is.
-    if (contestId && (result.conflict === "contest" || result.conflict === "locked")) {
+    if (contestId && (result.conflict === "contest" || result.conflict === "locked" || result.conflict === "split")) {
       setError(result.message || "Those hours are no longer available.");
       return true;
     }
@@ -643,6 +642,13 @@ export default function ProposeBlock() {
     if (result.conflict === "locked") {
       setStep(2);
       setError("Those hours contain a pinned item. Drag up to its edge instead.");
+      return true;
+    }
+    if (result.conflict === "split") {
+      // The group split up (or came back together) since these hours were
+      // picked: pick them again against the day as it is now.
+      setStep(2);
+      setError(result.message || "The group has split up over some of those hours.");
       return true;
     }
     return false;
@@ -687,7 +693,7 @@ export default function ProposeBlock() {
     const { startsAt, endsAt } = windowIso();
     const result = reopenedDraftId
       ? await publishExistingDraft(startsAt, endsAt)
-      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems(), party: group.party, partyMode: group.partyMode });
+      : await dispatch({ type: "PROPOSE_BLOCK", startsAt, endsAt, label: name.trim(), rationale: rationale.trim(), items: payloadItems(), branchId });
     setBusy(false);
     if (result.ok) {
       committedRef.current = true;
@@ -710,8 +716,7 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
-      party: group.party,
-      partyMode: group.partyMode,
+      branchId,
     });
     if (!saved.ok) return saved;
     return dispatch({ type: "PUBLISH_DRAFT", planId: saved.planId });
@@ -730,8 +735,7 @@ export default function ProposeBlock() {
       label: name.trim(),
       rationale: rationale.trim(),
       items: payloadItems(),
-      party: group.party,
-      partyMode: group.partyMode,
+      branchId,
     });
     setBusy(false);
     if (result.ok) {
@@ -787,10 +791,16 @@ export default function ProposeBlock() {
           tripDays={tripDays}
           dayIndex={dayIndex}
           dayEntries={dayEntries}
-          contestWindows={partyWindows}
+          daySplits={daySplits}
+          branchId={branchId}
+          onChooseBranch={chooseBranch}
+          myTravelerId={myTraveler?.id ?? null}
+          travelers={travelers}
+          contestWindows={audienceWindows}
           selection={selection}
-          onChange={(next) => {
+          onChange={(next, nextBranchId) => {
             setError("");
+            setBranchId(nextBranchId);
             setSelection(next);
           }}
           insideCount={insideItems.length}
@@ -812,7 +822,7 @@ export default function ProposeBlock() {
           windowMinutes={windowMinutes}
           plannedMinutes={plannedMinutes}
           stops={stops.map((s) => {
-            return { ...s, ...stopMoney(s, group.partyMembers) };
+            return { ...s, ...stopMoney(s, audienceIds) };
           })}
           pullInGroups={pullInGroups}
           title={editing ? "Edit this set" : "Your block"}
@@ -862,10 +872,10 @@ export default function ProposeBlock() {
                 )
               : boardColumn(insideItems, selection, windowMinutes)
           }
-          yours={yoursColumn(stops, selection, windowMinutes, group.partyMembers)}
+          yours={yoursColumn(stops, selection, windowMinutes, audienceIds)}
           showTotals={seesAllCosts}
           contributors={voters}
-          groupLabel={group.forEveryone ? "" : namesOf(membersOf(group, travelers))}
+          groupLabel={branch ? branchName(branch, travelers) : ""}
           busy={busy}
           error={error}
           isDraft={Boolean(reopenedDraftId)}
@@ -1066,6 +1076,11 @@ function StepTwo({
   tripDays,
   dayIndex,
   dayEntries,
+  daySplits,
+  branchId,
+  onChooseBranch,
+  myTravelerId,
+  travelers,
   contestWindows,
   selection,
   onChange,
@@ -1124,10 +1139,20 @@ function StepTwo({
       </div>
 
       <div className="screen-scroll" style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
-        <WindowSelection dayEntries={dayEntries} selection={selection} onChange={onChange} contestWindows={contestWindows} />
+        <WindowSelection
+          dayEntries={dayEntries}
+          daySplits={daySplits}
+          branchId={branchId}
+          myTravelerId={myTravelerId}
+          travelers={travelers}
+          selection={selection}
+          onChange={onChange}
+          contestWindows={contestWindows}
+        />
       </div>
 
       <div style={{ flex: "none", background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "14px 16px 22px" }}>
+        <GroupChooser daySplits={daySplits} branchId={branchId} travelers={travelers} onChoose={onChooseBranch} />
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
           <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}>
             {selection
@@ -1179,6 +1204,44 @@ function StepTwo({
         </button>
       </div>
     </>
+  );
+}
+
+// Which group a block inside split hours is for. Shown only once the
+// selection is in a split: the drag picked a group from where it started
+// (the viewer's own, by default), and this is how to pick another.
+function GroupChooser({ daySplits, branchId, travelers, onChoose }) {
+  const home = branchId != null ? daySplits.find((s) => s.split.branches.some((b) => b.id === branchId)) : null;
+  if (!home) return null;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className="mono-caption" style={{ marginBottom: 6 }}>
+        The group is split up then. This block is for
+      </div>
+      <div role="group" aria-label="Which group this block is for" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {home.split.branches.map((b) => {
+          const on = b.id === branchId;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChoose(b.id)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "var(--radius-xl)",
+                border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+                background: on ? "var(--plum-tint)" : "var(--surface-card)",
+                font: "600 12px var(--font-sans)",
+                color: on ? "var(--accent)" : "var(--text-secondary)",
+              }}
+            >
+              {branchName(b, travelers)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
