@@ -626,7 +626,10 @@ export function PlannerProvider({ children }) {
         }
 
         case "ARM_PLACE_TRAVEL": {
-          const item = state.travelItems[action.travelItemId];
+          // `item` lets a caller that has only just created the travel
+          // item arm it straight away: `state` here is this render's, and
+          // APPLY_TRAVEL_ITEM hasn't re-rendered into it yet.
+          const item = action.item ?? state.travelItems[action.travelItemId];
           if (!item) return;
           dispatch({
             type: "ARM_PLACEMENT",

@@ -114,8 +114,10 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
             dayIndex={dayIndex}
             travelers={travelers}
             onBack={() => setMode("menu")}
-            onCreated={(id) => {
-              dispatch({ type: "ARM_PLACE_TRAVEL", travelItemId: id });
+            onCreated={(item) => {
+              // Hand over the item itself: the store hasn't re-rendered
+              // with it yet, so looking it up by id alone finds nothing.
+              dispatch({ type: "ARM_PLACE_TRAVEL", travelItemId: item.id, item });
               onClose();
             }}
             onError={setError}
@@ -463,7 +465,7 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
     setBusy(true);
     onError("");
     try {
-      const created = await dispatch({
+      let created = await dispatch({
         type: "CREATE_TRAVEL_ITEM",
         payload: {
           title: draft.title.trim(),
@@ -477,9 +479,9 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
         // TravelItemCreate doesn't take heads (backend/app/schemas.py), so
         // a non-default split is a follow-up patch rather than part of
         // the create.
-        await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: draft.heads } });
+        created = await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: draft.heads } });
       }
-      onCreated(created.id);
+      onCreated(created);
     } catch {
       onError("Couldn't add that — try again.");
       setBusy(false);

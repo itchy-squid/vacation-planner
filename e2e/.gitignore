@@ -1,0 +1,5 @@
+node_modules/
+# Signed-in session for the test account -- a credential, never commit it.
+.auth/
+test-results/
+playwright-report/
