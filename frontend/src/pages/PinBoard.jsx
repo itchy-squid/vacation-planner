@@ -5,19 +5,27 @@ import { usePlannerState, useCan } from "../state/PlannerContext";
 import RoleTag from "../components/core/RoleTag";
 import TripHeader from "../components/core/TripHeader";
 import HeaderIconButton from "../components/core/HeaderIconButton";
+import EmptyBoard from "../components/planner/EmptyBoard";
+import InviteSheet from "../components/sharing/InviteSheet";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
 // Board/Map segment switch is gone: the lasso map (pages/LassoMap.jsx) is
 // out of the main flow, still routed but no longer linked from here or
 // from the bottom nav. Filtering is local UI state only in this pass.
-// The "+" opens pages/NewPin.jsx to add a pin from a link.
+// The "+" opens pages/NewPin.jsx to add a pin from a link. With no pins
+// yet the board is components/planner/EmptyBoard.jsx instead, which says
+// what the board is for and carries the ways to start (and the invite
+// sheet, for the owner) — so the "+" is hidden there rather than offered
+// twice.
 export default function PinBoard() {
   const navigate = useNavigate();
   const { trip: TRIP, pins, contributors: CONTRIBUTORS } = usePlannerState();
   // Companions and planners both add pins (ideas:add); what each may do
   // to an existing one is decided on its own screen (pages/EditVisit.jsx).
-  const canEdit = useCan()("ideas:add");
+  const can = useCan();
+  const canEdit = can("ideas:add");
   const [region, setRegion] = useState("All");
+  const [inviting, setInviting] = useState(false);
 
   const PINS = useMemo(() => Object.values(pins), [pins]);
 
@@ -44,6 +52,28 @@ export default function PinBoard() {
   filtered.forEach((pin, i) => columns[i % 2].push(pin));
 
   const initialFor = (pin) => CONTRIBUTORS.find((c) => c.id === pin.who)?.initial ?? "?";
+  const newPin = (focus) => navigate(`/trips/${TRIP.id}/new-pin${focus ? `?focus=${focus}` : ""}`);
+  const isEmpty = PINS.length === 0;
+
+  if (isEmpty) {
+    return (
+      <div className="screen">
+        <div className="screen-scroll" style={{ paddingBottom: 24 }}>
+          <TripHeader />
+          <div style={{ height: 14 }} />
+          <EmptyBoard
+            canAdd={canEdit}
+            canInvite={can("members:manage")}
+            ownerName={TRIP.owner?.name}
+            onAddLink={() => newPin("link")}
+            onAddPlace={() => newPin("title")}
+            onInvite={() => setInviting(true)}
+          />
+        </div>
+        {inviting ? <InviteSheet trip={TRIP} onClose={() => setInviting(false)} /> : null}
+      </div>
+    );
+  }
 
   return (
     <div className="screen">
@@ -58,7 +88,7 @@ export default function PinBoard() {
                 glyph="+"
                 label="Add pin"
                 glyphSize={20}
-                onClick={() => navigate(`/trips/${TRIP.id}/new-pin`)}
+                onClick={() => newPin()}
               />
             ) : null
           }

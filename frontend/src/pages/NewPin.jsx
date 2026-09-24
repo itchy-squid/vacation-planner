@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import TextField from "../components/forms/TextField";
 import Button from "../components/core/Button";
 import HomeButton from "../components/core/HomeButton";
@@ -39,6 +39,11 @@ export default function NewPin() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
   const { pins, trip } = usePlannerState();
+  // Which field to start in. The empty board's "Type a place" row sends
+  // ?focus=title, since someone with a name and no link shouldn't land
+  // in the link field; everything else starts on the link, as before.
+  const [searchParams] = useSearchParams();
+  const focusTitle = searchParams.get("focus") === "title";
 
   const knownRegions = [...new Set(Object.values(pins).map((p) => p.region).filter(Boolean))];
 
@@ -109,7 +114,7 @@ export default function NewPin() {
             placeholder="Paste a link — maps, Instagram, an article…"
             mono
             size={12.5}
-            autoFocus
+            autoFocus={!focusTitle}
           />
 
           <div>
@@ -140,6 +145,7 @@ export default function NewPin() {
             placeholder={deriveTitleFromLink(link.trim()) || "e.g. Vase Rock"}
             weight={600}
             size={15}
+            autoFocus={focusTitle}
           />
           <TextField
             label="Place"

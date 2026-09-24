@@ -1,0 +1,468 @@
+<title>Ideas Board Onboarding</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --pg:#eeedf1; --pg-text:#1b1a1f; --pg-sub:#5d5b66; --pg-rule:rgba(27,26,31,.12); --pg-card:#ffffff;
+  --pg-accent:#8f4478; --pg-accent-soft:rgba(143,68,120,.1);
+  /* app tokens (phones always render the app's light UI) */
+  --a-page:#f4f3f5; --a-card:#fff; --a-inset:#f9f8fa; --a-ink:#1b1a1f; --a-2:#6f6d78; --a-mute:#8c8a95;
+  --a-hair:rgba(27,26,31,.09); --a-border:rgba(27,26,31,.12); --a-plum:#8f4478; --a-plum-tint:rgba(143,68,120,.08);
+  --a-teal:#3d8a9c; --a-moss:#6f7f3c; --a-photo:repeating-linear-gradient(45deg,#e4e2e8 0 8px,#edecf0 8px 16px);
+  --sans:"Libre Franklin",system-ui,sans-serif; --serif:"Newsreader",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){color-scheme:dark;--pg:#16151a;--pg-text:#efedf2;--pg-sub:#a6a3ae;--pg-rule:rgba(255,255,255,.12);--pg-card:#211f26;--pg-accent:#d08bbb;--pg-accent-soft:rgba(208,139,187,.14)}
+}
+:root[data-theme="dark"]{color-scheme:dark;--pg:#16151a;--pg-text:#efedf2;--pg-sub:#a6a3ae;--pg-rule:rgba(255,255,255,.12);--pg-card:#211f26;--pg-accent:#d08bbb;--pg-accent-soft:rgba(208,139,187,.14)}
+
+*{box-sizing:border-box}
+body{background:var(--pg);color:var(--pg-text);font:15px/1.55 var(--sans);padding:0 16px;margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding-block:40px 64px}
+h1{font:500 clamp(30px,5vw,44px)/1.1 var(--serif);margin:0 0 12px;text-wrap:balance}
+h2{font:500 26px/1.2 var(--serif);margin:0 0 6px;text-wrap:balance}
+.eyebrow{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--pg-accent)}
+.lede{max-width:66ch;color:var(--pg-sub);margin:0}
+.lede strong{color:var(--pg-text);font-weight:600}
+section{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:36px;align-items:start;padding-block:40px;border-top:1px solid var(--pg-rule)}
+section.two{grid-template-columns:minmax(0,1fr) auto}
+.copy p{max-width:62ch;margin:10px 0 0}
+.copy ul{margin:12px 0 0;padding-left:18px;max-width:60ch;display:grid;gap:6px}
+.copy li::marker{color:var(--pg-accent)}
+.tag{display:inline-block;font:500 11px var(--mono);padding:3px 8px;border-radius:999px;background:var(--pg-accent-soft);color:var(--pg-accent);margin-left:8px;vertical-align:middle}
+.effort{font:400 12px var(--mono);color:var(--pg-sub);margin-top:14px}
+.hint{font:500 12px var(--sans);color:var(--pg-accent);margin-top:14px}
+.phones{display:flex;gap:18px;flex-wrap:wrap}
+@media (max-width:760px){section,section.two{grid-template-columns:1fr}.phones{justify-content:center}}
+
+/* ---------- phone ---------- */
+.phone{width:300px;max-width:100%;height:600px;border-radius:34px;background:#1b1a1f;padding:9px;box-shadow:0 20px 40px -18px rgba(0,0,0,.35);flex:none}
+.scr{position:relative;height:100%;border-radius:26px;overflow:hidden;background:var(--a-page);color:var(--a-ink);font-family:var(--sans);display:flex;flex-direction:column}
+.cap{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--pg-sub);text-align:center;margin-top:10px}
+.hdr{display:flex;align-items:center;gap:6px;padding:16px 12px 4px}
+.hdr .back{width:22px;color:var(--a-2);font-size:18px;text-align:center}
+.hdr .name{flex:1;font:400 19px/1.2 var(--serif);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ibtn{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--a-2);font-size:17px}
+.ibtn.plus{font-size:20px}
+.ibtn.hot{background:var(--a-plum);color:#fff}
+.mc{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--a-mute)}
+.body{flex:1;overflow:hidden;padding:6px 12px 0;display:flex;flex-direction:column;gap:10px}
+.nav{background:#111;display:flex;justify-content:center;gap:2px;padding:9px 0 16px;flex:none}
+.nav span{font:14px system-ui,sans-serif;color:rgba(255,255,255,.6);padding:0 8px;position:relative}
+.nav span.on{color:#c77fb0}
+.nav .badge{position:absolute;top:-6px;right:-2px;min-width:15px;height:15px;border-radius:8px;background:var(--a-plum);color:#fff;font:600 9px/15px var(--sans);text-align:center;padding:0 4px}
+
+.btn{height:40px;border-radius:12px;background:var(--a-plum);color:#fff;font:600 13px var(--sans);border:0;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;cursor:pointer}
+.btn.sec{background:var(--a-card);color:var(--a-ink);border:1px solid var(--a-border)}
+button{font-family:inherit}
+button:focus-visible,input:focus-visible{outline:2px solid var(--a-plum);outline-offset:2px}
+
+/* masonry cards */
+.mas{display:flex;gap:8px}
+.mas>div{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+.pin{background:var(--a-card);border:1px solid var(--a-hair);border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(27,26,31,.04)}
+.pin .ph{background:var(--a-photo);height:84px}
+.mas>div:nth-child(2) .pin .ph{height:110px}
+.pin .t{font:600 12px/1.3 var(--sans);padding:8px 9px 0}
+.pin .r{display:flex;align-items:center;gap:5px;font:400 10.5px var(--sans);color:var(--a-2);padding:3px 9px 9px}
+.pin .r i{width:5px;height:5px;border-radius:50%;background:var(--a-plum)}
+.mas>div:nth-child(2) .pin .r i{background:var(--a-teal)}
+.pin.ghost{border:1.5px dashed var(--a-border);background:transparent;box-shadow:none;opacity:.75}
+.pin.ghost .ph{opacity:.55}
+.pin.ghost .t,.pin.ghost .r{color:var(--a-mute)}
+.pin.new{animation:pop .35s ease-out}
+.pin .todo{margin:0 9px 9px;font:500 10px var(--sans);color:var(--a-plum);background:var(--a-plum-tint);border-radius:6px;padding:4px 6px}
+@keyframes pop{from{transform:scale(.92);opacity:.3}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.pin.new{animation:none}}
+
+/* concept 0 today */
+.nothing{flex:1}
+
+/* concept 1 */
+.hero1 h3{font:400 23px/1.15 var(--serif);margin:6px 0 4px}
+.hero1 p{font:400 12px/1.45 var(--sans);color:var(--a-2);margin:0}
+.ways{display:flex;flex-direction:column;background:var(--a-card);border:1px solid var(--a-hair);border-radius:14px;overflow:hidden}
+.way{display:flex;gap:10px;align-items:center;padding:10px 11px;border-top:1px solid var(--a-hair);text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;cursor:pointer;color:inherit}
+.way:first-child{border-top:0}
+.way .g{width:30px;height:30px;border-radius:9px;background:var(--a-plum-tint);color:var(--a-plum);display:grid;place-items:center;font:600 14px var(--sans);flex:none}
+.way b{display:block;font:600 12.5px var(--sans)}
+.way small{display:block;font:400 10.5px var(--sans);color:var(--a-mute)}
+.way .chev{margin-left:auto;color:var(--a-mute)}
+.exlabel{display:flex;align-items:center;gap:8px}
+.exlabel::after{content:"";flex:1;height:1px;background:var(--a-hair)}
+
+/* concept 2 composer */
+.composer{background:var(--a-card);border-top:1px solid var(--a-hair);padding:9px 10px;display:flex;gap:6px;flex:none}
+.composer input{flex:1;min-width:0;height:38px;border:1px solid var(--a-border);border-radius:10px;padding:0 10px;font:400 12.5px var(--sans);background:var(--a-inset);color:var(--a-ink)}
+.composer button{height:38px;border:0;border-radius:10px;background:var(--a-plum);color:#fff;font:600 12.5px var(--sans);padding:0 12px;cursor:pointer}
+.composer button:disabled{opacity:.4;cursor:default}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:500 10.5px var(--sans);padding:4px 9px;border-radius:999px;border:1px solid var(--a-border);background:var(--a-card);color:var(--a-ink);cursor:pointer}
+.toast{position:absolute;left:12px;right:12px;bottom:118px;background:#1b1a1f;color:#f2f1f4;border-radius:10px;padding:9px 11px;font:400 11.5px var(--sans);display:flex;justify-content:space-between;gap:8px}
+.toast b{color:#e3a6cf;font-weight:600}
+
+/* concept 3 steps */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.step{background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit}
+.step .bar{height:4px;border-radius:2px;background:var(--a-border)}
+.step.done .bar{background:var(--a-teal)}
+.step.cur .bar{background:var(--a-plum)}
+.step .l{font:500 10px var(--sans);color:var(--a-mute);margin-top:5px}
+.step.cur .l,.step.sel .l{color:var(--a-ink)}
+.step.sel .l{text-decoration:underline;text-underline-offset:3px}
+.nudge{background:var(--a-card);border:1px solid var(--a-hair);border-radius:14px;padding:11px 12px}
+.nudge .k{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--a-plum)}
+.nudge p{margin:4px 0 9px;font:400 12px/1.45 var(--sans);color:var(--a-2)}
+.nudge p b{color:var(--a-ink);font-weight:600}
+
+/* concept 4 checklist sheet */
+.dim{position:absolute;inset:0;background:rgba(27,26,31,.28)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--a-card);border-radius:18px 18px 0 0;padding:10px 14px 20px;box-shadow:0 -6px 22px rgba(27,26,31,.09)}
+.grab{width:36px;height:4px;border-radius:2px;background:var(--a-border);margin:0 auto 12px}
+.sheet h3{font:400 21px/1.2 var(--serif);margin:0}
+.sheet .sub{font:400 11.5px var(--sans);color:var(--a-2);margin:3px 0 10px}
+.chk{display:flex;gap:10px;align-items:flex-start;width:100%;padding:9px 0;border:0;border-top:1px solid var(--a-hair);background:none;text-align:left;cursor:pointer;color:inherit}
+.chk .box{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--a-border);flex:none;display:grid;place-items:center;font:700 11px var(--sans);color:#fff;margin-top:1px}
+.chk.on .box{background:var(--a-teal);border-color:var(--a-teal)}
+.chk.on b{color:var(--a-mute);text-decoration:line-through}
+.chk b{display:block;font:600 12.5px var(--sans)}
+.chk small{display:block;font:400 10.5px var(--sans);color:var(--a-mute)}
+.chk .go{margin-left:auto;font:600 11px var(--sans);color:var(--a-plum);align-self:center}
+.chk.on .go{visibility:hidden}
+.pill{font:600 10.5px var(--mono);background:var(--a-plum-tint);color:var(--a-plum);border-radius:999px;padding:4px 8px}
+
+/* concept 5 plan empty */
+.planbox{flex:1;border:1.5px dashed var(--a-border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;gap:8px}
+.planbox h4{font:400 18px/1.2 var(--serif);margin:0}
+.planbox p{font:400 11.5px/1.45 var(--sans);color:var(--a-2);margin:0 0 4px}
+.daytabs{display:flex;gap:6px}
+.daytabs span{font:500 11px var(--sans);padding:5px 10px;border-radius:999px;border:1px solid var(--a-border);background:var(--a-card)}
+.daytabs span.on{background:#1b1a1f;color:#fff;border-color:#1b1a1f}
+.pinrow{display:flex;gap:9px;align-items:center;background:var(--a-card);border:1px solid var(--a-hair);border-radius:12px;padding:8px}
+.pinrow .ph{width:44px;height:44px;border-radius:8px;background:var(--a-photo);flex:none}
+.pinrow b{font:600 12px var(--sans);display:block}
+.pinrow small{font:400 10.5px var(--sans);color:var(--a-mute)}
+.pinrow .add{margin-left:auto;font:600 11px var(--sans);color:var(--a-plum);border:1px solid var(--a-plum);border-radius:999px;padding:4px 9px;white-space:nowrap}
+.readonly{text-align:center;padding:30px 10px}
+.readonly h4{font:400 20px/1.2 var(--serif);margin:0 0 6px}
+.readonly p{font:400 12px/1.45 var(--sans);color:var(--a-2);margin:0}
+
+.rec{background:var(--pg-card);border:1px solid var(--pg-rule);border-radius:16px;padding:22px 24px;margin-top:8px}
+.rec ol{margin:12px 0 0;padding-left:20px;display:grid;gap:10px;max-width:74ch}
+.rec code{font:12.5px var(--mono);background:var(--pg-accent-soft);padding:1px 5px;border-radius:4px}
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px;padding-bottom:36px">
+    <div class="eyebrow">Vacation planner · UX mockups · Sep 2026</div>
+    <h1>Getting started on the Ideas board</h1>
+    <p class="lede">Someone new opens a trip, lands on <strong>Ideas</strong>, and sees a trip name, “Ideation · 0 pins”, and a small <strong>+</strong> in the corner. Nothing tells them what an idea is, how to add one, or that Ideas feeds Plan and Itinerary. These mockups show five ways to fix that. They build on each other, and the recommended order is at the bottom. The phones are clickable.</p>
+  </header>
+
+  <!-- Today -->
+  <section>
+    <div class="copy">
+      <div class="eyebrow">Today</div>
+      <h2>What a new trip looks like now</h2>
+      <p>The only action on the screen is a 30px “+” in the header, next to the settings gear. There are no region chips because there are no pins, so most of the screen is blank.</p>
+      <ul>
+        <li>Creating a trip sends you back to Trips Home, not into the trip. You then have to choose between “Open board” and “Start schedule” before you know the difference.</li>
+        <li>“Pins”, “Ideation” and “board” are three names for one thing. The tab says “Ideas”.</li>
+        <li>Plan opens on an empty day grid with “0 unplaced”. It doesn’t say that ideas come from the other tab.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="phone"><div class="scr">
+        <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn plus">+</span><span class="ibtn">⚙</span></div>
+        <div class="body"><div class="mc" style="padding:4px 8px">Ideation · 0 pins</div><div class="nothing"></div></div>
+        <div class="nav"><span class="on">Ideas</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+      </div></div>
+      <div class="cap">Current empty board</div>
+    </div>
+  </section>
+
+  <!-- 1 -->
+  <section>
+    <div class="copy">
+      <div class="eyebrow">Concept 1</div>
+      <h2>An empty board that explains itself <span class="tag">Recommended</span></h2>
+      <p>When a trip has no ideas, the board says what it is for in one sentence and offers the three ways to start as large, labeled rows. Below them, two faded example cards show what an idea looks like once it’s added, with a photo, region, cost and who added it.</p>
+      <ul>
+        <li>“Paste a link” and “Type a place” both open the existing New pin form, with the right field focused.</li>
+        <li>“Invite people” opens the invite sheet, so the owner learns early that others can add ideas too.</li>
+        <li>Readers see a different message: “Nothing here yet. Amanda is still collecting ideas.” No actions are shown.</li>
+        <li>The example cards go away as soon as the first real idea is added.</li>
+      </ul>
+      <div class="effort">Effort: small · PinBoard.jsx only · no backend change</div>
+    </div>
+    <div>
+      <div class="phone"><div class="scr">
+        <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn">⚙</span></div>
+        <div class="body">
+          <div class="hero1" style="padding:0 4px">
+            <div class="mc">Ideas</div>
+            <h3>What might you do on this trip?</h3>
+            <p>Collect places, food and activities here. Anyone on the trip can add them. When you have a few, arrange them into days on Plan.</p>
+          </div>
+          <div class="ways">
+            <button class="way" type="button"><span class="g">↗</span><span><b>Paste a link</b><small>Google Maps, Instagram, a blog post</small></span><span class="chev">›</span></button>
+            <button class="way" type="button"><span class="g">✎</span><span><b>Type a place</b><small>“Vase Rock” or “night market”</small></span><span class="chev">›</span></button>
+            <button class="way" type="button"><span class="g">+</span><span><b>Invite people</b><small>They can add their own ideas</small></span><span class="chev">›</span></button>
+          </div>
+          <div class="mc exlabel">Example</div>
+          <div class="mas">
+            <div><div class="pin ghost"><div class="ph"></div><div class="t">Vase Rock</div><div class="r"><i></i>Xiaoliuqiu</div></div></div>
+            <div><div class="pin ghost"><div class="ph"></div><div class="t">Raohe Night Market</div><div class="r"><i></i>Taipei</div></div></div>
+          </div>
+        </div>
+        <div class="nav"><span class="on">Ideas</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+      </div></div>
+      <div class="cap">Empty trip, owner or companion</div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <div class="copy">
+      <div class="eyebrow">Concept 2</div>
+      <h2>Add an idea without leaving the board <span class="tag">Recommended</span></h2>
+      <p>Today adding an idea is a full-screen form with five fields, then the edit screen. A bar above the tabs takes a link or a name, adds the card right away, and keeps you on the board so you can add several in a row. The card shows “Add time and cost” so people know there’s more they can fill in later.</p>
+      <ul>
+        <li>A link fills in the title from the page, the same way <code style="font:12px var(--mono)">deriveTitleFromLink</code> does now.</li>
+        <li>After adding, a short message offers “Add details” to open the edit screen.</li>
+        <li>Suggestion chips appear only when the board is empty, to show the kind of thing people add.</li>
+        <li>The “+” in the header can stay for people who want the full form.</li>
+      </ul>
+      <div class="effort">Effort: small to medium · new QuickAdd component · uses the existing CREATE_PIN</div>
+      <div class="hint">Try it: type a place and press Add.</div>
+    </div>
+    <div>
+      <div class="phone"><div class="scr" id="qa">
+        <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn plus">+</span><span class="ibtn">⚙</span></div>
+        <div class="body">
+          <div class="mc" style="padding:0 4px" id="qaCount">Ideas · 1</div>
+          <div class="mas" id="qaMas">
+            <div><div class="pin"><div class="ph"></div><div class="t">Vase Rock</div><div class="r"><i></i>Xiaoliuqiu</div><div class="todo">Add time and cost</div></div></div>
+            <div></div>
+          </div>
+          <div class="chips" id="qaChips">
+            <button class="chip" type="button">Raohe Night Market</button>
+            <button class="chip" type="button">Taroko Gorge</button>
+            <button class="chip" type="button">Jiufen</button>
+          </div>
+        </div>
+        <div class="toast" id="qaToast" hidden><span>Added <b id="qaToastName"></b></span><b>Add details</b></div>
+        <form class="composer" id="qaForm">
+          <input id="qaInput" aria-label="Paste a link or name a place" placeholder="Paste a link or name a place" autocomplete="off">
+          <button id="qaBtn" type="submit" disabled>Add</button>
+        </form>
+        <div class="nav"><span class="on">Ideas</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+      </div></div>
+      <div class="cap">Quick-add bar above the tabs</div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <div class="copy">
+      <div class="eyebrow">Concept 3</div>
+      <h2>Show where the trip is, and what comes next</h2>
+      <p>A thin four-step bar under the trip name: Ideas, Plan, Decide, Itinerary. It fills in from the trip’s real state, using data the app already has: the number of ideas, placed blocks, open votes and locked days. Below it, one card says what to do next. It changes as the trip moves along and can be dismissed.</p>
+      <ul>
+        <li>0 ideas: “Add a few ideas to get started.”</li>
+        <li>3 or more ideas and nothing placed: “Ready to plan? Put your ideas onto days.” with a button to Plan.</li>
+        <li>Open votes: “2 blocks are waiting for your vote.”</li>
+        <li>This works on every main screen, not only Ideas. It answers “what is this tab for?”</li>
+      </ul>
+      <div class="effort">Effort: medium · a new TripProgress component in TripHeader · reads PlannerContext</div>
+      <div class="hint">Try it: tap a step to see its nudge.</div>
+    </div>
+    <div>
+      <div class="phone"><div class="scr">
+        <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn plus">+</span><span class="ibtn">⚙</span></div>
+        <div class="body">
+          <div class="steps" id="steps" role="tablist" aria-label="Trip progress">
+            <button type="button" class="step done" data-i="0"><div class="bar"></div><div class="l">Ideas · 4</div></button>
+            <button type="button" class="step cur sel" data-i="1"><div class="bar"></div><div class="l">Plan</div></button>
+            <button type="button" class="step" data-i="2"><div class="bar"></div><div class="l">Decide</div></button>
+            <button type="button" class="step" data-i="3"><div class="bar"></div><div class="l">Itinerary</div></button>
+          </div>
+          <div class="nudge" id="nudge">
+            <div class="k" id="nk">Next step</div>
+            <p id="np"><b>4 ideas so far.</b> Ready to plan? Put them onto days, and anything you can’t agree on goes to a vote.</p>
+            <button class="btn" type="button" id="nb">Start planning days</button>
+          </div>
+          <div class="mas">
+            <div><div class="pin"><div class="ph"></div><div class="t">Vase Rock</div><div class="r"><i></i>Xiaoliuqiu</div></div><div class="pin"><div class="ph"></div><div class="t">Jiufen Old Street</div><div class="r"><i></i>New Taipei</div></div></div>
+            <div><div class="pin"><div class="ph"></div><div class="t">Raohe Night Market</div><div class="r"><i></i>Taipei</div></div></div>
+          </div>
+        </div>
+        <div class="nav"><span class="on">Ideas</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+      </div></div>
+      <div class="cap">Progress bar and next-step card</div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <div class="copy">
+      <div class="eyebrow">Concept 4</div>
+      <h2>Land in the trip with a short checklist</h2>
+      <p>After “Create trip”, open the new trip’s Ideas board instead of going back to Trips Home. A sheet lists the four things that make a trip useful. Each item links to where it gets done and ticks itself off when that happens. You can close the sheet, and it becomes a “2 of 4” pill in the header until everything is done.</p>
+      <ul>
+        <li>Items: name the trip (already done), add your first idea, invite travelers, put an idea on a day.</li>
+        <li>The checklist is stored per member, so people who join by invite get a shorter version: add an idea, look at Plan.</li>
+        <li>The redirect is a one-line change in NewTrip.jsx. It helps even if the checklist ships later.</li>
+      </ul>
+      <div class="effort">Effort: medium · a per-member “dismissed” flag or localStorage · redirect is trivial</div>
+      <div class="hint">Try it: tap the items to check them off.</div>
+    </div>
+    <div>
+      <div class="phone"><div class="scr">
+        <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="pill" id="ckPill">1 of 4</span><span class="ibtn">⚙</span></div>
+        <div class="body"><div class="mc" style="padding:0 4px">Ideas · 0</div></div>
+        <div class="nav"><span class="on">Ideas</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+        <div class="dim"></div>
+        <div class="sheet" id="ck">
+          <div class="grab"></div>
+          <h3>Your trip is ready</h3>
+          <div class="sub">Four steps to a plan everyone can see.</div>
+          <button type="button" class="chk on"><span class="box">✓</span><span><b>Name your trip</b><small>Taiwan, spring 2027</small></span><span class="go">›</span></button>
+          <button type="button" class="chk"><span class="box">✓</span><span><b>Add your first idea</b><small>A place, a restaurant, a link</small></span><span class="go">Add</span></button>
+          <button type="button" class="chk"><span class="box">✓</span><span><b>Invite travelers</b><small>They can add ideas and vote</small></span><span class="go">Invite</span></button>
+          <button type="button" class="chk"><span class="box">✓</span><span><b>Put an idea on a day</b><small>On the Plan tab</small></span><span class="go">Plan</span></button>
+        </div>
+      </div></div>
+      <div class="cap">Right after creating a trip</div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="two">
+    <div class="copy">
+      <div class="eyebrow">Concept 5</div>
+      <h2>Connect Ideas and Plan</h2>
+      <p>The two tabs don’t mention each other. Small changes on both sides make the path between them clear.</p>
+      <ul>
+        <li><b>Plan with no ideas</b> says “Ideas you add show up here to place on days” and offers a button to Ideas, instead of an empty grid and a disabled “0 unplaced”.</li>
+        <li><b>A count on the Plan tab</b> shows how many ideas aren’t on a day yet, so there’s a reason to open it.</li>
+        <li><b>“Add to a day”</b> on each idea (in the edit screen or as a long-press on the card) opens Plan with that idea ready to place.</li>
+      </ul>
+      <div class="effort">Effort: small for the empty state and badge · medium for “Add to a day”</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn">⚙</span></div>
+          <div class="body" style="padding-bottom:12px">
+            <div class="daytabs"><span class="on">Day 1</span><span>Day 2</span><span>Day 3</span><span>Day 4</span></div>
+            <div class="planbox">
+              <div class="mc">Plan · Day 1</div>
+              <h4>No ideas to place yet</h4>
+              <p>Ideas you add show up here, ready to drop onto a day.</p>
+              <button class="btn" type="button" style="width:auto;padding:0 18px">Go to Ideas</button>
+            </div>
+          </div>
+          <div class="nav"><span>Ideas</span><span class="on">Plan</span><span>Expenses</span><span>Itinerary</span></div>
+        </div></div>
+        <div class="cap">Plan, before any ideas</div>
+      </div>
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn plus">+</span><span class="ibtn">⚙</span></div>
+          <div class="body">
+            <div class="mc" style="padding:0 4px">Ideas · 3 · 3 not on a day</div>
+            <div class="pinrow"><div class="ph"></div><div><b>Vase Rock</b><small>Xiaoliuqiu · 1h</small></div><span class="add">Add to a day</span></div>
+            <div class="pinrow"><div class="ph"></div><div><b>Raohe Night Market</b><small>Taipei · 2h</small></div><span class="add">Add to a day</span></div>
+            <div class="pinrow"><div class="ph"></div><div><b>Taroko Gorge</b><small>Hualien · 5h</small></div><span class="add">Add to a day</span></div>
+          </div>
+          <div class="nav"><span class="on">Ideas</span><span>Plan<em class="badge" style="font-style:normal">3</em></span><span>Expenses</span><span>Itinerary</span></div>
+        </div></div>
+        <div class="cap">Count on the Plan tab</div>
+      </div>
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="back">‹</span><span class="name">Taiwan, spring 2027</span><span class="ibtn">⚙</span></div>
+          <div class="body">
+            <div class="readonly">
+              <div class="mc" style="margin-bottom:8px">View only</div>
+              <h4>Nothing here yet</h4>
+              <p>Amanda is still collecting ideas for this trip. They’ll show up here as they’re added.</p>
+            </div>
+            <div class="mas" style="opacity:.5">
+              <div><div class="pin ghost"><div class="ph"></div><div class="t">Example idea</div><div class="r"><i></i>Region</div></div></div>
+              <div><div class="pin ghost"><div class="ph"></div><div class="t">Example idea</div><div class="r"><i></i>Region</div></div></div>
+            </div>
+          </div>
+          <div class="nav"><span class="on">Ideas</span><span>Plan</span><span>Itinerary</span></div>
+        </div></div>
+        <div class="cap">Empty board for a reader</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="rec">
+    <div class="eyebrow">Suggested order</div>
+    <h2>Ship in three small steps</h2>
+    <ol>
+      <li><b>Land in the trip, and explain the empty board.</b> Change NewTrip.jsx to go to <code>/trips/:id/board</code> after creating a trip, and add Concept 1’s empty state, including the reader version. This is the cheapest fix for the exact problem.</li>
+      <li><b>Quick add, and connect the tabs.</b> Add Concept 2’s bar and Concept 5’s Plan empty state and tab count. Together they make “add ideas, then place them” clear without any tutorial.</li>
+      <li><b>Guidance over time.</b> Add Concept 3’s next-step card, or Concept 4’s checklist. Both answer “what now?”, so pick one: the checklist suits first-time setup, and the progress bar stays useful for the rest of the trip.</li>
+    </ol>
+    <p style="margin:14px 0 0;color:var(--pg-sub);max-width:74ch">Either way, use one word everywhere. The tab says “Ideas”, so the screen caption, the “+” label, the New pin form and Trips Home (“Open board”, “pins”) should all say “idea” too. Each step needs an e2e test for the new-user path: create a trip, see the empty board, add an idea, and see it on Plan.</p>
+  </div>
+</div>
+
+<script>
+// Concept 2: quick add
+(function(){
+  const form=document.getElementById('qaForm'),input=document.getElementById('qaInput'),btn=document.getElementById('qaBtn');
+  const cols=[...document.getElementById('qaMas').children],count=document.getElementById('qaCount');
+  const toast=document.getElementById('qaToast'),tname=document.getElementById('qaToastName'),chips=document.getElementById('qaChips');
+  let n=1,t;
+  const titleFrom=v=>{try{if(/^(https?:\/\/|www\.)/i.test(v)){return new URL(/^https?:/i.test(v)?v:'https://'+v).hostname.replace(/^www\./,'')}}catch(e){}return v};
+  function add(v){
+    v=v.trim(); if(!v) return;
+    const title=titleFrom(v);
+    const col=cols[n%2]; n++;
+    const card=document.createElement('div'); card.className='pin new';
+    card.innerHTML='<div class="ph"></div><div class="t"></div><div class="r"><i></i>No region yet</div><div class="todo">Add time and cost</div>';
+    card.querySelector('.t').textContent=title;
+    col.prepend(card);
+    count.textContent='Ideas · '+n;
+    // keep the demo phone tidy: trim oldest cards
+    cols.forEach(c=>{while(c.children.length>2)c.lastElementChild.remove()});
+    chips.hidden=true;
+    tname.textContent=title; toast.hidden=false; clearTimeout(t); t=setTimeout(()=>toast.hidden=true,2600);
+    input.value=''; btn.disabled=true;
+  }
+  input.addEventListener('input',()=>btn.disabled=!input.value.trim());
+  form.addEventListener('submit',e=>{e.preventDefault();add(input.value)});
+  chips.addEventListener('click',e=>{const c=e.target.closest('.chip');if(c){add(c.textContent);c.remove()}});
+})();
+
+// Concept 3: steps
+(function(){
+  const copy=[
+    ['Ideas','<b>4 ideas so far.</b> Keep adding, or invite Mei and Kai to add theirs.','Invite people'],
+    ['Next step','<b>4 ideas so far.</b> Ready to plan? Put them onto days, and anything you can’t agree on goes to a vote.','Start planning days'],
+    ['Decide','Nothing to vote on yet. When two people plan the same time differently, it shows up here to vote on.','See how voting works'],
+    ['Itinerary','Days appear here once their plans are settled. Everyone gets the same day-by-day list.','Preview itinerary'],
+  ];
+  const steps=[...document.querySelectorAll('#steps .step')];
+  steps.forEach(s=>s.addEventListener('click',()=>{
+    steps.forEach(x=>x.classList.remove('sel')); s.classList.add('sel');
+    const c=copy[+s.dataset.i];
+    document.getElementById('nk').textContent=c[0];
+    document.getElementById('np').innerHTML=c[1];
+    document.getElementById('nb').textContent=c[2];
+  }));
+})();
+
+// Concept 4: checklist
+(function(){
+  const items=[...document.querySelectorAll('#ck .chk')],pill=document.getElementById('ckPill');
+  const upd=()=>{pill.textContent=items.filter(i=>i.classList.contains('on')).length+' of 4'};
+  items.forEach(i=>i.addEventListener('click',()=>{i.classList.toggle('on');upd()}));
+})();
+</script>
