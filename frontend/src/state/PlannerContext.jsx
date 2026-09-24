@@ -959,6 +959,7 @@ export function PlannerProvider({ children }) {
         // traveler_ids, takes_newcomers }].
         case "CREATE_SPLIT":
         case "RESHAPE_SPLIT":
+        case "RETIME_SPLIT":
         case "MERGE_SPLIT":
         case "JOIN_BRANCH": {
           if (!state.trip) return { ok: false };
@@ -972,6 +973,8 @@ export function PlannerProvider({ children }) {
               });
             } else if (action.type === "RESHAPE_SPLIT") {
               await api.reshapeSplit(action.splitId, action.branches);
+            } else if (action.type === "RETIME_SPLIT") {
+              await api.retimeSplit(action.splitId, action.startsAt, action.endsAt);
             } else if (action.type === "MERGE_SPLIT") {
               await api.mergeSplit(action.splitId, action.keepBranchId);
             } else {

@@ -1,5 +1,5 @@
 import { test, expect } from "../support/fixtures.js";
-import { dayUrl, dragHours, openPlan, tapLane } from "../support/calendar.js";
+import { dayUrl, dragHours, dragSplitEdge, openPlan, tapLane } from "../support/calendar.js";
 import { contestsOf, placePlan, plansOf, splitDay, splitsOf } from "../support/seed.js";
 
 // The group splitting up for part of a day (backend/app/splits.py): a split
@@ -106,6 +106,43 @@ test.describe("splitting the group", () => {
     // The other group's plan was never touched.
     const gorgePlan = (await plansOf(api, trip)).find((p) => p.items[0]?.pin?.title === "Gorge trail");
     expect(gorgePlan).toMatchObject({ status: "placed", branch_id: gorge.id });
+  });
+
+  // A split's edges drag like a block does. Nothing changes hands, so an
+  // edge can't be dragged past the group's own plans or over a plan for
+  // everyone; either says what's in the way and leaves the split alone.
+  test("drags a split's edges to change its hours", async ({ page, api, seed }) => {
+    const trip = await seed({ travelers: ["Ana", "Lin"], pins: [{ title: "Gorge trail" }, { title: "Night market" }] });
+    const split = await splitDay(api, trip, {
+      from: "09:00",
+      to: "12:00",
+      groups: [
+        { label: "Gorge", travelers: [trip.travelers.Ana, trip.travelers.Lin] },
+        { label: "Lake", travelers: [trip.me] },
+      ],
+    });
+    const [gorge] = split.branches;
+    await placePlan(api, trip, { from: "09:00", to: "10:00", pin: trip.pins["Gorge trail"], branch: gorge.id });
+    await placePlan(api, trip, { from: "13:00", to: "14:00", pin: trip.pins["Night market"] });
+    await page.goto(dayUrl(trip));
+
+    await dragSplitEdge(page, "ends", "12:00", "13:00");
+    await expect(page.getByRole("separator", { name: /^Split ends 13:00/ })).toBeVisible();
+
+    await dragSplitEdge(page, "ends", "13:00", "14:00");
+    await expect(page.getByText("Night market for everyone runs 13:00–14:00, inside those hours.", { exact: false })).toBeVisible();
+
+    await dragSplitEdge(page, "starts", "09:00", "10:00");
+    await expect(page.getByText("Gorge trail for Gorge runs 09:00–10:00, outside those hours.", { exact: false })).toBeVisible();
+
+    await dragSplitEdge(page, "starts", "09:00", "08:00");
+    await expect(page.getByRole("separator", { name: /^Split starts 08:00/ })).toBeVisible();
+
+    const [after] = await splitsOf(api, trip);
+    expect(after.starts_at).toContain("T08:00");
+    expect(after.ends_at).toContain("T13:00");
+    const plans = await plansOf(api, trip);
+    expect(plans.find((p) => p.items[0]?.pin?.title === "Gorge trail").branch_id).toBe(gorge.id);
   });
 
   test("brings everyone back, keeping one group's plans", async ({ page, api, seed }) => {

@@ -389,11 +389,13 @@ export const api = {
   // The group splitting up (backend/app/routers/splits.py). A split is
   // hours plus its groups; plans and proposals name a group by branch_id.
   // Reshaping sends the whole assignment of travelers to groups at once;
-  // merging keeps one group's plans for everyone; joining moves only the
+  // retiming changes only its hours (nothing changes hands); merging keeps one group's plans for everyone; joining moves only the
   // caller and returns the split, or null if that ended it.
   listSplits: (tripId) => request(`/api/trips/${tripId}/splits`),
   createSplit: (tripId, payload) => request(`/api/trips/${tripId}/splits`, { method: "POST", body: payload }),
   reshapeSplit: (splitId, branches) => request(`/api/splits/${splitId}`, { method: "PUT", body: { branches } }),
+  retimeSplit: (splitId, startsAt, endsAt) =>
+    request(`/api/splits/${splitId}/hours`, { method: "PUT", body: { starts_at: startsAt, ends_at: endsAt } }),
   mergeSplit: (splitId, keepBranchId) =>
     request(`/api/splits/${splitId}/merge`, { method: "POST", body: { keep_branch_id: keepBranchId } }),
   joinBranch: (branchId) => request(`/api/branches/${branchId}/join`, { method: "POST" }),

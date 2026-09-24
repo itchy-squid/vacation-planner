@@ -615,6 +615,14 @@ class SplitUpdate(BaseModel):
     branches: list[SplitBranchIn] = Field(min_length=2)
 
 
+class SplitHours(BaseModel):
+    """Change a split's hours — PUT /api/splits/{split_id}/hours. Nothing
+    changes hands; see app/splits.py retime_split for what's refused."""
+
+    starts_at: datetime
+    ends_at: datetime
+
+
 class SplitMerge(BaseModel):
     """Bring everyone back — POST /api/splits/{split_id}/merge. The kept
     group's plans become everyone's; the others' come off the calendar."""

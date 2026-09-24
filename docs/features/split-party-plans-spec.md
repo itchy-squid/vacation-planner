@@ -56,6 +56,7 @@ no group is allowed and shown as "free, in neither group".
 | `GET /api/trips/{id}/splits` | plans:read | Every split on the trip, with its groups |
 | `POST /api/trips/{id}/splits` `{starts_at, ends_at, branches, keep_plans_with}` | plans:write | Splits the group. The plans already in those hours go to the group at `keep_plans_with`. |
 | `PUT /api/splits/{id}` `{branches}` | plans:write | Says who is in which group, as the whole assignment at once. Existing groups are named by `id`, new ones have no `id`, and a group that's left out is removed (only if it has nothing planned). |
+| `PUT /api/splits/{id}/hours` `{starts_at, ends_at}` | plans:write | Changes when the split starts and ends. Nothing changes hands. |
 | `POST /api/splits/{id}/merge` `{keep_branch_id}` | plans:write | Brings everyone back. The kept group's plans and votes become everyone's, and the other groups' plans come off the calendar the same way an unplace does. |
 | `POST /api/branches/{id}/join` | plans:join | Moves the caller's own traveler into this group. Returns the split, or `null` if the move ended it. |
 
@@ -68,6 +69,11 @@ What gets refused, and why:
 - **Splitting** is refused over a plan only partly inside the hours, over a
   vote in progress, or over a pinned plan. A pinned plan was pinned for
   everyone, so the owner reopens it before it can become one group's.
+- **Changing a split's hours** (`retime_split`) is refused when the new
+  hours would leave any group's plan or vote outside them, take in a plan
+  or vote for everyone, or overlap another split. Unlike splitting, it
+  never hands plans to a group: move the thing in the way first. The 409
+  names it and carries its `plan_id` (or the other split's `split_id`).
 - **Merging** is refused while another group has a pinned plan or a vote
   in progress. The message names it.
 - **Joining** is refused when it would leave a group that has plans with
@@ -113,6 +119,12 @@ was tested on SQLite, **not on Postgres**.
   - Dragging a plan outside its split, or dragging a plan for everyone into
     a split, is refused with a message saying why.
   - "Just me" keeps only your group's lane.
+  - Each edge of a split that falls on the day has a grip
+    (`SplitEdgeHandle.jsx`), for planners (`plans:write`) when not placing.
+    Dragging it moves that edge in 15-minute snaps, and the outline, lanes
+    and caption follow live. On drop, `lib/splits.js splitHoursProblem`
+    runs the server's checks against the day's plans and shows the same
+    sentence, so a refused drag says why without a round trip.
 - **Propose, step 2** (`lib/windowClaim.js`, `WindowSelection`).
   - The drag picks who the block is for from where it starts. Inside a
     split it's for a group: yours by default, and the chips under the grid
@@ -136,14 +148,15 @@ was tested on SQLite, **not on Postgres**.
 
 ## Tests
 
-- **Backend**: `tests/test_splits.py` (37 tests) covers where plans may go,
-  splitting, reshaping, joining, merging, votes inside a group, and travelers
+- **Backend**: `tests/test_splits.py` (45 tests) covers where plans may go,
+  splitting, changing a split's hours, reshaping, joining, merging, votes inside a group, and travelers
   joining or leaving the trip. `tests/test_travelers.py` covers newcomers and
   costs.
-- **End to end**: `e2e/tests/splits.spec.js` covers four flows. They are
+- **End to end**: `e2e/tests/splits.spec.js` covers five flows. They are
   splitting from a plan, placing into one group's lane while both groups are
   busy, proposing a block for one group during a split (the reported bug),
-  and bringing everyone back.
+  dragging a split's edges (including both refusals), and bringing everyone
+  back.
 
 ## Decisions
 
@@ -158,7 +171,9 @@ was tested on SQLite, **not on Postgres**.
 
 ## Known gaps
 
-- A split's hours can't be resized. Bring everyone back and split again.
+- A split's edges are dragged one at a time; the whole split can't be
+  slid to other hours in one move. A split's edge can only be dragged on
+  the day it falls on.
 - Splitting starts from a plan's details sheet, so a split can't yet be
   made over empty hours from the UI (the API allows it).
 - The migration hasn't been run against Postgres.

@@ -44,6 +44,25 @@ export async function dragHours(page, from, to, x = 0.25) {
   await page.mouse.up();
 }
 
+// Drag one edge of a split ("starts" or "ends") from the hour it's at to
+// another, by its grip (components/planner/SplitEdgeHandle.jsx). The grip
+// sits just off its hour line, so move it by the distance between the two
+// hours' labels rather than to a label.
+export async function dragSplitEdge(page, edge, from, to) {
+  const grip = page.getByRole("separator", { name: `Split ${edge} ${from}. Drag to change.` });
+  await grip.scrollIntoViewIfNeeded();
+  const g = await grip.boundingBox();
+  const a = await page.getByText(from, { exact: true }).first().boundingBox();
+  const b = await page.getByText(to, { exact: true }).first().boundingBox();
+  if (!g || !a || !b) throw new Error(`No split ${edge} grip at ${from}, or no ${to} on the calendar`);
+  const x = g.x + g.width / 2;
+  const y = g.y + g.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + (b.y - a.y), { steps: 8 });
+  await page.mouse.up();
+}
+
 // Open a plan's details sheet by tapping its block. A block that has only
 // just been placed can be re-rendered by the refetch that follows, eating
 // the first tap, so keep tapping until the sheet is up.

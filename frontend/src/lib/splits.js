@@ -14,7 +14,7 @@
 // are for right now) and `forEveryone`, so screens that only want faces or
 // names never need to look the branch up.
 
-import { dayIndexForDate } from "./planTime";
+import { clockLabel, dayIndexForDate } from "./planTime";
 
 // Every branch of every split, by id.
 export function branchesById(splits) {
@@ -94,6 +94,36 @@ export function splitsOnDay(splits, tripStartDate, dayIndex) {
 // The split on this day whose hours hold `minute`, or null.
 export function splitAt(daySplits, minute) {
   return daySplits.find((s) => minute >= s.startMin && minute < s.endMin) ?? null;
+}
+
+// Why a split can't take these hours on this day, if it can't — the same
+// refusals, in the same words, as backend/app/splits.py retime_split, so
+// a dragged edge that won't hold says what's in the way without a round
+// trip. Only this day's plans are checked (`entries`, from lib/dayGrid.js
+// plansOnDay); the server checks the rest.
+export function splitHoursProblem(daySplit, startMin, endMin, { daySplits, entries, travelers }) {
+  const { split } = daySplit;
+  const other = daySplits.find((s) => s.split.id !== split.id && startMin < s.endMin && endMin > s.startMin);
+  if (other) return `The group is already split up from ${clockLabel(other.startMin)}–${clockLabel(other.endMin)}.`;
+
+  const branches = new Map(split.branches.map((b) => [b.id, b]));
+  for (const entry of entries) {
+    const branchId = entry.plan.branchId ?? null;
+    if (branches.has(branchId) && (entry.startMin < startMin || entry.endMin > endMin)) {
+      return inTheWay(entry, `for ${branchName(branches.get(branchId), travelers)}`, "outside those hours");
+    }
+    if (branchId == null && entry.startMin < endMin && entry.endMin > startMin) {
+      return inTheWay(entry, "for everyone", "inside those hours");
+    }
+  }
+  return null;
+}
+
+function inTheWay({ plan, startMin, endMin }, whose, where) {
+  const hours = `${clockLabel(startMin)}–${clockLabel(endMin)}`;
+  if (plan.status === "contested") return `There's a vote in progress ${whose} from ${hours}, ${where}. Settle it first.`;
+  const title = plan.label || plan.items?.[0]?.title || "A plan";
+  return `${title} ${whose} runs ${hours}, ${where}. Move it first.`;
 }
 
 // The whole-assignment payload PUT /api/splits/{id} takes, from a split

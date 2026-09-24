@@ -70,6 +70,14 @@ def reshape(client, split_id, branches, user=MEI):
     return client.put(f"/api/splits/{split_id}", json={"branches": branches}, headers=user)
 
 
+def retime(client, split_id, *, start, end, user=MEI):
+    return client.put(
+        f"/api/splits/{split_id}/hours",
+        json={"starts_at": at(1, start).isoformat(), "ends_at": at(1, end).isoformat()},
+        headers=user,
+    )
+
+
 # ---- where plans may go ----
 
 
@@ -243,6 +251,91 @@ def test_splitting_needs_plans_write(client, trip, db):
     db.commit()
     res = create_split(client, trip, start=540, end=720, groups=[("", ("mei",)), ("", ("ana",))], user=JAE)
     assert res.status_code == 403
+
+
+# ---- changing a split's hours ----
+
+
+def test_a_splits_hours_grow_and_shrink_around_its_groups_plans(client, trip, db):
+    gorge, lake = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
+    hike = trip.place(start=540, end=620, pin="trail", branch=gorge)
+    hike_id, split_id = hike.id, gorge.split_id
+
+    grown = retime(client, split_id, start=420, end=780)
+    assert grown.status_code == 200, grown.text
+    assert grown.json()["starts_at"].startswith("2026-10-03T07:00")
+    assert grown.json()["ends_at"].startswith("2026-10-03T13:00")
+    # The new hours are the groups' to plan in.
+    assert place(client, trip, start=720, end=780, pin="tide", branch=lake).status_code == 201
+
+    shrunk = retime(client, split_id, start=540, end=780)
+    assert shrunk.status_code == 200, shrunk.text
+    reload(db)
+    assert db.get(Plan, hike_id).branch_id == gorge.id, "nothing changes hands"
+    # And the hours given back are everyone's again.
+    assert place(client, trip, start=480, end=540, pin="ice").status_code == 201
+
+
+def test_a_split_cant_shrink_past_a_groups_plan(client, trip):
+    gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720, labels=("Taroko Gorge",))
+    hike = trip.place(start=540, end=660, pin="trail", branch=gorge)
+    res = retime(client, gorge.split_id, start=480, end=600)
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["plan_id"] == hike.id
+    assert detail["message"] == "Wild Boy trail loop for Taroko Gorge runs 09:00–11:00, outside those hours. Move it first."
+
+
+def test_a_split_cant_shrink_past_a_groups_vote(client, trip):
+    _, lake = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
+    vote = propose(client, trip, start=540, end=720, stops=["vase"], branch=lake)
+    assert vote.status_code == 201, vote.text
+    res = retime(client, lake.split_id, start=480, end=660)
+    assert res.status_code == 409
+    assert res.json()["detail"]["message"] == (
+        "There's a vote in progress for Mei and Jae from 09:00–12:00, outside those hours. Settle it first."
+    )
+
+
+def test_a_split_cant_take_in_a_plan_for_everyone(client, trip):
+    gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
+    lunch = trip.place(start=720, end=780, pin="ice")
+    res = retime(client, gorge.split_id, start=480, end=750)
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["plan_id"] == lunch.id
+    assert detail["message"] == "Shaved ice for everyone runs 12:00–13:00, inside those hours. Move it first."
+
+
+def test_a_split_cant_take_in_a_vote_for_everyone(client, trip):
+    gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=1100, end=1200)
+    vote = propose(client, trip, start=780, end=1080, stops=["vase"])
+    assert vote.status_code == 201, vote.text
+    res = retime(client, gorge.split_id, start=1000, end=1200)
+    assert res.status_code == 409
+    assert res.json()["detail"]["message"].startswith("There's a vote in progress for everyone from 13:00–18:00")
+
+
+def test_a_split_cant_grow_into_another(client, trip):
+    first, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=600)
+    second, _ = trip.split(("ana",), ("mei",), start=720, end=840)
+    res = retime(client, first.split_id, start=480, end=780)
+    assert res.status_code == 409
+    assert res.json()["detail"]["split_id"] == second.split_id
+    # Meeting it edge to edge is fine.
+    assert retime(client, first.split_id, start=480, end=720).status_code == 200
+
+
+def test_a_split_has_to_end_after_it_starts(client, trip):
+    gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
+    assert retime(client, gorge.split_id, start=600, end=600).status_code == 400
+
+
+def test_changing_a_splits_hours_needs_plans_write(client, trip, db):
+    gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
+    trip.jae.role = "companion"
+    db.commit()
+    assert retime(client, gorge.split_id, start=480, end=780, user=JAE).status_code == 403
 
 
 # ---- who is in which group ----

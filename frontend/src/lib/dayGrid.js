@@ -23,6 +23,10 @@ export const GUTTER_W = 44;
 // nowhere to put even one stop.
 export const MIN_SELECTION_MIN = 30;
 
+// Pointer travel (px) before a pointer-down on something draggable counts
+// as a drag rather than a tap.
+export const DRAG_THRESHOLD_PX = 5;
+
 export function snapToGrid(rawMinute) {
   return Math.round(rawMinute / SNAP_MIN) * SNAP_MIN;
 }
@@ -178,6 +182,18 @@ export function splitLanes(daySplits, keepBranch = () => true) {
     });
   }
   return lanes;
+}
+
+// A { startMin, endMin } span with one edge dragged `deltaMinutes` —
+// snapped, kept on the grid, and never shorter than one snap. The other
+// edge stays put. Used for a split's edges (pages/DaySchedule.jsx).
+export function spanWithEdgeMoved({ startMin, endMin }, edge, deltaMinutes) {
+  if (edge === "start") {
+    const moved = snapToGrid(startMin + deltaMinutes);
+    return { startMin: Math.min(Math.max(moved, DAY_START_MIN), endMin - SNAP_MIN), endMin };
+  }
+  const moved = snapToGrid(endMin + deltaMinutes);
+  return { startMin, endMin: Math.max(Math.min(moved, DAY_END_MIN), startMin + SNAP_MIN) };
 }
 
 // Every entry with its { left, width } fractions of the grid. A plan in a

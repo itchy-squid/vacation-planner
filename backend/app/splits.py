@@ -16,10 +16,11 @@ kept:
    on which plan; `branch_id` equality is the whole test, and it runs in
    SQL (routers/plans.py find_overlapping_plan).
 
-The operations that change a split — creating it, changing who is in which
-group, someone moving themselves, bringing everyone back, and travelers
-joining or leaving the trip — all live here, so each invariant is enforced
-in one place rather than re-derived by every endpoint.
+The operations that change a split — creating it, changing its hours,
+changing who is in which group, someone moving themselves, bringing
+everyone back, and travelers joining or leaving the trip — all live here,
+so each invariant is enforced in one place rather than re-derived by every
+endpoint.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import NoReturn
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -286,6 +288,64 @@ def reshape_split(db: Session, split: Split, branches: Sequence[BranchSpec]) -> 
     for branch in split.branches:
         _prune_votes(db, branch)
     return split
+
+
+def retime_split(db: Session, split: Split, starts_at: datetime, ends_at: datetime) -> Split:
+    """Change a split's hours — its edge dragged on the calendar.
+
+    Nothing changes hands, unlike splitting: rules 1 and 2 have to hold
+    over the new hours exactly as things are. So the hours still have to
+    hold everything planned or out for a vote in each group, and can't
+    reach into another split or take in anything for everyone. (A vote's
+    proposal spans the vote's whole window, so checking plans covers
+    votes too.) Each refusal is a 409 naming what's in the way, with its
+    `plan_id` or `split_id`: the fix is to move that thing first, and a
+    person needs to know which thing it is."""
+    start, end = as_trip_time(starts_at), as_trip_time(ends_at)
+    if end <= start:
+        raise HTTPException(status_code=400, detail="A split has to end after it starts.")
+
+    clash = split_overlapping(db, split.trip_id, starts_at, ends_at, exclude_split_id=split.id)
+    if clash is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": f"The group is already split up from {_hours(clash)}.", "split_id": clash.id},
+        )
+
+    for branch in split.branches:
+        for plan in _plans_in(db, branch):
+            if as_trip_time(plan.starts_at) < start or as_trip_time(plan.ends_at) > end:
+                _refuse_retime(plan, f"for {branch_name(db, branch)}", "outside those hours")
+
+    for_everyone = db.scalars(
+        select(Plan)
+        .where(
+            Plan.trip_id == split.trip_id,
+            Plan.branch_id.is_(None),
+            Plan.status.in_(OCCUPYING_STATUSES),
+            Plan.starts_at < ends_at,
+            Plan.ends_at > starts_at,
+        )
+        .order_by(Plan.starts_at)
+    ).first()
+    if for_everyone is not None:
+        _refuse_retime(for_everyone, "for everyone", "inside those hours")
+
+    split.starts_at = starts_at
+    split.ends_at = ends_at
+    db.flush()
+    return split
+
+
+def _refuse_retime(plan: Plan, whose: str, where: str) -> NoReturn:
+    """The 409 for a split's new hours that would leave `plan` on the
+    wrong side of its edge."""
+    hours = f"{_clock(plan.starts_at)}–{_clock(plan.ends_at)}"
+    if plan.status == PlanStatus.contested:
+        message = f"There's a vote in progress {whose} from {hours}, {where}. Settle it first."
+    else:
+        message = f"{plan.title} {whose} runs {hours}, {where}. Move it first."
+    raise HTTPException(status_code=409, detail={"message": message, "plan_id": plan.id})
 
 
 def join_branch(db: Session, branch: SplitBranch, traveler_id: int) -> Split | None:

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronRight, faPlus } from "@fortawesome/free-solid-svg-icons";
@@ -6,6 +6,7 @@ import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
+import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
@@ -13,6 +14,7 @@ import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
+  DRAG_THRESHOLD_PX,
   PX_PER_MIN,
   SNAP_MIN,
   contestWindowsFrom,
@@ -24,10 +26,11 @@ import {
   planDurationMinutes,
   planStartMinute,
   planEndMinute,
+  spanWithEdgeMoved,
   topForMinute,
 } from "../lib/dayGrid";
 import TripHeader from "../components/core/TripHeader";
-import { branchName, branchesById, membersOf, namesOf, splitsOnDay, unassigned } from "../lib/splits";
+import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
 // against the spec's Plan/PlanItem/Contest model (see docs/features/
@@ -41,7 +44,6 @@ import { branchName, branchesById, membersOf, namesOf, splitsOnDay, unassigned }
 // lib/dayGrid.js and components/planner/DayGrid.jsx, because the proposal
 // flow's hour picker renders the same grid with a selection layer over it
 // rather than a lookalike of it (see pages/ProposeBlock.jsx).
-const DRAG_THRESHOLD_PX = 5; // pointer travel (px) before a pointer-down on a block counts as a drag rather than a tap
 
 export default function DaySchedule() {
   const navigate = useNavigate();
@@ -99,9 +101,19 @@ export default function DaySchedule() {
   const dayHasSplit = daySplits.length > 0;
   const [justMe, setJustMe] = useState(false);
   const showJustMe = justMe && dayHasSplit && myTravelerId != null;
+  // A split whose edge is being dragged (see "Drag a split's edge" below)
+  // is drawn — outline and lanes — at the hours it's being dragged to.
+  const [splitPreview, setSplitPreview] = useState(null); // { splitId, startMin, endMin }
+  const shownSplits = useMemo(
+    () =>
+      splitPreview
+        ? daySplits.map((s) => (s.split.id === splitPreview.splitId ? { ...s, ...splitPreview } : s))
+        : daySplits,
+    [daySplits, splitPreview]
+  );
   const lanes = useMemo(
-    () => splitLanes(daySplits, showJustMe ? (b) => b.travelerIds.includes(myTravelerId) : undefined),
-    [daySplits, showJustMe, myTravelerId]
+    () => splitLanes(shownSplits, showJustMe ? (b) => b.travelerIds.includes(myTravelerId) : undefined),
+    [shownSplits, showJustMe, myTravelerId]
   );
   const laidOut = useMemo(() => layoutDayPlans(dayEntries, lanes), [dayEntries, lanes]);
 
@@ -424,6 +436,49 @@ export default function DaySchedule() {
     setDragPreview(null);
   }
 
+  // ---- Drag a split's edge ------------------------------------------------
+  // A split's outline has a grip on each edge that's on this day; dragging
+  // one changes when the split starts or ends, the same way dragging a
+  // block moves a plan (components/planner/SplitEdgeHandle.jsx owns the
+  // gesture). Nothing changes hands, so the new hours still have to hold
+  // every group's plans and stay clear of plans for everyone and other
+  // splits — splitHoursProblem says so before the server has to. The
+  // preview stays up until the refetch lands, so a good drop doesn't
+  // flicker back to the old hours first.
+  const splitEdgesDraggable = canPlan && !placing;
+
+  function splitDragged(daySplit, edge, deltaMinutes) {
+    return { splitId: daySplit.split.id, ...spanWithEdgeMoved(daySplit, edge, deltaMinutes) };
+  }
+
+  function handleSplitEdgeDrag(daySplit, edge, deltaMinutes) {
+    if (!splitPreview) setMoveError("");
+    setSplitPreview(splitDragged(daySplit, edge, deltaMinutes));
+  }
+
+  async function handleSplitEdgeDrop(daySplit, edge, deltaMinutes) {
+    const next = splitDragged(daySplit, edge, deltaMinutes);
+    if (next.startMin === daySplit.startMin && next.endMin === daySplit.endMin) {
+      setSplitPreview(null);
+      return;
+    }
+    const problem = splitHoursProblem(daySplit, next.startMin, next.endMin, { daySplits, entries: dayEntries, travelers });
+    if (problem) {
+      setSplitPreview(null);
+      setMoveError(problem);
+      return;
+    }
+    setSplitPreview(next);
+    const result = await dispatch({
+      type: "RETIME_SPLIT",
+      splitId: daySplit.split.id,
+      startsAt: isoForDayMinute(trip.startDate, dayIndex, next.startMin),
+      endsAt: isoForDayMinute(trip.startDate, dayIndex, next.endMin),
+    });
+    setSplitPreview(null);
+    if (!result.ok) setMoveError(result.error || "Couldn't change the split's hours — try again.");
+  }
+
   // ---- Propose sheet -----------------------------------------------------
   const targetPlan = proposeSheet ? plans.find((p) => p.id === proposeSheet.targetPlanId) : null;
   const targetLabel = targetPlan ? targetPlan.items.map((i) => i.title).join(" + ") || targetPlan.label : "that slot";
@@ -621,7 +676,7 @@ export default function DaySchedule() {
 
         <div style={{ background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "18px 16px 24px" }}>
           <DayGrid ref={gridRef} cursor={placing ? "crosshair" : "default"} onClick={handleGridClick}>
-            {daySplits.map(({ split, startMin, endMin }) => {
+            {shownSplits.map(({ split, startMin, endMin }) => {
               const top = topForMinute(Math.max(startMin, DAY_START_MIN));
               const height = (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) * PX_PER_MIN;
               const mine = split.branches.find((b) => b.travelerIds.includes(myTravelerId));
@@ -644,11 +699,13 @@ export default function DaySchedule() {
                   }}
                 >
                   <span className="mono-data-sm" style={splitCaptionStyle}>
-                    {showJustMe
-                      ? elsewhere.length
-                        ? `${namesOf(elsewhere)} elsewhere`
-                        : "Group split"
-                      : `Group split · ${counts}${free.length ? ` · ${namesOf(free)} free` : ""}`}
+                    {splitPreview?.splitId === split.id
+                      ? `Group split · ${clockLabel(startMin)}–${clockLabel(endMin)}`
+                      : showJustMe
+                        ? elsewhere.length
+                          ? `${namesOf(elsewhere)} elsewhere`
+                          : "Group split"
+                        : `Group split · ${counts}${free.length ? ` · ${namesOf(free)} free` : ""}`}
                   </span>
                 </div>
               );
@@ -747,6 +804,28 @@ export default function DaySchedule() {
                   </div>
                 );
             })}
+            {/* A grip on each of a split's edges that falls on this day
+                (a split running on from yesterday has no start edge here).
+                After the blocks, so a block touching the edge doesn't
+                cover its grip. */}
+            {splitEdgesDraggable &&
+              daySplits.map((daySplit) => {
+                const shown = shownSplits.find((s) => s.split.id === daySplit.split.id);
+                const active = splitPreview?.splitId === daySplit.split.id;
+                const edgeProps = (edge) => ({
+                  edge,
+                  active,
+                  onDrag: (delta) => handleSplitEdgeDrag(daySplit, edge, delta),
+                  onDrop: (delta) => handleSplitEdgeDrop(daySplit, edge, delta),
+                  onCancel: () => setSplitPreview(null),
+                });
+                return (
+                  <Fragment key={`split-edges-${daySplit.split.id}`}>
+                    {daySplit.startMin >= DAY_START_MIN && <SplitEdgeHandle minute={shown.startMin} {...edgeProps("start")} />}
+                    {daySplit.endMin <= DAY_END_MIN && <SplitEdgeHandle minute={shown.endMin} {...edgeProps("end")} />}
+                  </Fragment>
+                );
+              })}
           </DayGrid>
         </div>
       </div>

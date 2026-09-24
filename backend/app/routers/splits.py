@@ -3,10 +3,11 @@
 - GET  /api/trips/{trip_id}/splits      every split on the trip
 - POST /api/trips/{trip_id}/splits      split the group over some hours
 - PUT  /api/splits/{split_id}           say who is in which group
+- PUT  /api/splits/{split_id}/hours     change when the split starts and ends
 - POST /api/splits/{split_id}/merge     bring everyone back together
 - POST /api/branches/{branch_id}/join   move yourself into a group
 
-Splitting, reshaping and merging are plans:write — they change what the
+Splitting, reshaping, retiming and merging are plans:write — they change what the
 calendar says for other people. Joining is plans:join, which companions
 have: it only ever moves the caller, as the traveler they are.
 """
@@ -22,8 +23,8 @@ from ..db import get_db
 from ..events import bus
 from ..models import Split, SplitBranch, Traveler
 from ..permissions import PLANS_JOIN, PLANS_READ, PLANS_WRITE, Access, require
-from ..schemas import SplitBranchIn, SplitCreate, SplitMerge, SplitOut, SplitUpdate
-from ..splits import BranchSpec, create_split, join_branch, merge_split, reshape_split
+from ..schemas import SplitBranchIn, SplitCreate, SplitHours, SplitMerge, SplitOut, SplitUpdate
+from ..splits import BranchSpec, create_split, join_branch, merge_split, reshape_split, retime_split
 
 router = APIRouter(prefix="/api", tags=["splits"])
 
@@ -82,6 +83,20 @@ def put_split(
     db: Session = Depends(get_db),
 ):
     split = reshape_split(db, _split_or_404(db, split_id), _specs(payload.branches))
+    db.commit()
+    db.refresh(split)
+    bus.publish(split.trip_id, "split.updated", {"split_id": split.id})
+    return split_to_schema(split)
+
+
+@router.put("/splits/{split_id}/hours", response_model=SplitOut)
+def put_split_hours(
+    split_id: int,
+    payload: SplitHours,
+    _: Access = Depends(require(PLANS_WRITE)),
+    db: Session = Depends(get_db),
+):
+    split = retime_split(db, _split_or_404(db, split_id), payload.starts_at, payload.ends_at)
     db.commit()
     db.refresh(split)
     bus.publish(split.trip_id, "split.updated", {"split_id": split.id})
