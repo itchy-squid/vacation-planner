@@ -224,6 +224,11 @@ pins, the travel-item form for travel items) as a row of contributor-initial
 chips, defaulting to none selected — which means everyone, and is what makes
 `× traveller_count` the common case.
 
+> **Superseded 2026-09-27:** `heads` no longer exists. A stop's cost is
+> shared by the travelers on its plan (`app/derive.py item_money`), and the
+> `· A, M` suffix now appears when that is a subset (a group on a split
+> day). See `trip-travelers-spec.md`.
+
 ---
 
 ## 5. Proposal creation

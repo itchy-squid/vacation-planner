@@ -11,10 +11,11 @@ import {
   faRoute,
 } from "@fortawesome/free-solid-svg-icons";
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
-import HeadsPicker from "./HeadsPicker";
 import CostField from "../forms/CostField";
 import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
 import { textFieldStyle } from "../forms/TextField";
+import PinOrderToggle from "./PinOrderToggle";
+import { heartCount, heartsSuffix, inPinOrder, usePinOrder } from "../../lib/popularity";
 
 // Everything you can add to a day, behind the one "+ Add" button that
 // replaced pages/DaySchedule.jsx's tray (see docs/features/scheduling-
@@ -51,7 +52,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
   const navigate = useNavigate();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, travelers } = state;
+  const { trip } = state;
 
   const [mode, setMode] = useState("menu");
   const [error, setError] = useState("");
@@ -112,7 +113,6 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
         {mode === "custom" && (
           <CustomEventForm
             dayIndex={dayIndex}
-            travelers={travelers}
             onBack={() => setMode("menu")}
             onCreated={(item) => {
               // Hand over the item itself: the store hasn't re-rendered
@@ -252,10 +252,14 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
     [filter, dayRegions]
   );
 
+  const [order, setOrder] = usePinOrder();
   const shownPins = useMemo(() => {
     const set = filter.length ? new Set(filter) : null;
-    return pins.filter((p) => !set || set.has(p.region));
-  }, [pins, filter]);
+    return inPinOrder(
+      pins.filter((p) => !set || set.has(p.region)),
+      order
+    );
+  }, [pins, filter, order]);
 
   // One armed slot across the whole list, since only one row can
   // plausibly be mid-confirm at a time — the rule the tray used, kept.
@@ -353,13 +357,16 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
           </>
         )}
 
-        <div className="mono-caption" style={{ marginTop: travelItems.length ? 16 : 10 }}>Pins</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: travelItems.length ? 12 : 6 }}>
+          <div className="mono-caption">Pins</div>
+          {shownPins.length > 1 ? <PinOrderToggle value={order} onChange={setOrder} /> : null}
+        </div>
         {shownPins.length ? (
           shownPins.map((pin) => (
             <PickerRow
               key={pin.id}
               title={pin.title}
-              meta={`${pin.region} · ${pin.dur}m`}
+              meta={`${pin.region} · ${pin.dur}m${heartsSuffix(heartCount(pin))}`}
               photoUrl={pin.photoUrl}
               armed={armedKey === `pin:${pin.id}`}
               onArm={() => onArm("pin", pin.id)}
@@ -455,8 +462,8 @@ function PickerRow({ title, meta, photoUrl, icon, armed, onArm, onDelete }) {
 
 // ---- custom event ---------------------------------------------------------
 
-function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, dispatch }) {
-  const [draft, setDraft] = useState({ title: "", kind: "other", dur: 60, cost: 0, costBasis: "per_head", heads: [] });
+function CustomEventForm({ dayIndex, onBack, onCreated, onError, dispatch }) {
+  const [draft, setDraft] = useState({ title: "", kind: "other", dur: 60, cost: 0, costBasis: "per_head" });
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
@@ -465,7 +472,7 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
     setBusy(true);
     onError("");
     try {
-      let created = await dispatch({
+      const created = await dispatch({
         type: "CREATE_TRAVEL_ITEM",
         payload: {
           title: draft.title.trim(),
@@ -475,12 +482,6 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
           cost_basis: draft.costBasis,
         },
       });
-      if (draft.heads.length) {
-        // TravelItemCreate doesn't take heads (backend/app/schemas.py), so
-        // a non-default split is a follow-up patch rather than part of
-        // the create.
-        created = await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: draft.heads } });
-      }
       onCreated(created);
     } catch {
       onError("Couldn't add that — try again.");
@@ -533,12 +534,6 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
           onChange={(cost) => setDraft((d) => ({ ...d, cost }))}
           basis={draft.costBasis}
           onBasis={(costBasis) => setDraft((d) => ({ ...d, costBasis }))}
-        />
-
-        <HeadsPicker
-          travelers={travelers}
-          value={draft.heads}
-          onChange={(heads) => setDraft((d) => ({ ...d, heads }))}
         />
 
         {/* "Add and place", not the tray's old "Add to tray": this sheet

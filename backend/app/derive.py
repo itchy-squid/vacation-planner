@@ -46,12 +46,6 @@ def item_cost_cents(item: PlanItem) -> int:
     return item_source(item).cost_cents
 
 
-def item_heads(item: PlanItem) -> list[int]:
-    if item.pin_id is not None:
-        return list(item.pin.heads or [])
-    return list(item.travel_item.heads or [])
-
-
 def item_start_minutes(plan: Plan, item: PlanItem) -> int:
     """Minutes from plan.starts_at. An explicit offset wins; otherwise the
     stops pack end to end in position order, which is what every plan the
@@ -72,15 +66,17 @@ def trip_roster(plan: Plan) -> set[int]:
 def item_money(plan: Plan, item: PlanItem, roster: set[int] | None = None) -> tuple[list[int], int, int]:
     """(sharers, each_cents, total_cents) for one stop.
 
-    Sharers are the item's own heads when it has any, otherwise whoever the
-    plan is for (everyone, or its group on a split day — app/splits.py). A "per_head" price is what each of them pays and the total is
-    that many times it; a "group" price is the total, and each person's
-    share is a display division rounded to the cent. Floors at one sharer so
-    a plan for nobody can't divide by zero."""
+    Sharers are whoever the plan is for: everyone, or its group on a split
+    day (app/splits.py). A cost follows the people going, so it is never
+    narrowed per item — who *pays* each share is the payer rule on
+    Traveler.paid_by_id, applied where costs are shown. A "per_head" price
+    is what each of them pays and the total is that many times it; a
+    "group" price is the total, and each person's share is a display
+    division rounded to the cent. Floors at one sharer so a plan for nobody
+    can't divide by zero."""
     roster = trip_roster(plan) if roster is None else roster
     source = item_source(item)
-    heads = [h for h in (source.heads or []) if h in roster]
-    sharers = sorted(heads) if heads else sorted(audience(plan.branch, roster))
+    sharers = sorted(audience(plan.branch, roster))
     count = max(1, len(sharers))
     price = source.cost_cents or 0
     if (source.cost_basis or "per_head") == "group":

@@ -7,6 +7,7 @@ import TripHeader from "../components/core/TripHeader";
 import HeaderIconButton from "../components/core/HeaderIconButton";
 import EmptyBoard from "../components/planner/EmptyBoard";
 import InviteSheet from "../components/sharing/InviteSheet";
+import RegionFilter, { ALL_REGIONS } from "../components/planner/RegionFilter";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
 // Board/Map segment switch is gone: the lasso map (pages/LassoMap.jsx) is
@@ -24,28 +25,34 @@ export default function PinBoard() {
   // to an existing one is decided on its own screen (pages/EditVisit.jsx).
   const can = useCan();
   const canEdit = can("ideas:add");
-  const [region, setRegion] = useState("All");
+  const [region, setRegion] = useState(ALL_REGIONS);
   const [inviting, setInviting] = useState(false);
 
   const PINS = useMemo(() => Object.values(pins), [pins]);
 
-  // Region chips are the trip's actual pin regions (from the backend),
-  // not a fixed list — alphabetical so the order is stable regardless of
-  // pin insertion order or which trip is active.
+  // The filter's regions are the trip's actual pin regions (from the
+  // backend), not a fixed list — alphabetical so the order is stable
+  // regardless of pin insertion order or which trip is active. Counts are
+  // for the region sheet a long list collapses into.
   const REGIONS = useMemo(() => {
-    const set = new Set(PINS.map((p) => p.region).filter(Boolean));
-    return [...set].sort((a, b) => a.localeCompare(b));
+    const counts = new Map();
+    PINS.forEach((p) => {
+      if (p.region) counts.set(p.region, (counts.get(p.region) ?? 0) + 1);
+    });
+    return [...counts]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [PINS]);
 
   // If the active trip changes (see PlannerContext's OPEN_TRIP) and the
   // selected region filter no longer exists on it, fall back to "All"
   // rather than silently showing zero pins.
   useEffect(() => {
-    if (region !== "All" && !REGIONS.includes(region)) setRegion("All");
+    if (region !== ALL_REGIONS && !REGIONS.some((r) => r.name === region)) setRegion(ALL_REGIONS);
   }, [REGIONS, region]);
 
   const filtered = useMemo(() => {
-    return region === "All" ? PINS : PINS.filter((p) => p.region === region);
+    return region === ALL_REGIONS ? PINS : PINS.filter((p) => p.region === region);
   }, [region, PINS]);
 
   const columns = [[], []];
@@ -98,26 +105,7 @@ export default function PinBoard() {
           {canEdit ? null : <RoleTag role="reader">View only</RoleTag>}
         </div>
 
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 var(--gutter-screen) 16px" }}>
-          {["All", ...REGIONS].map((r) => (
-            <button
-              key={r}
-              onClick={() => setRegion(r)}
-              style={{
-                flex: "none",
-                padding: "6px 12px",
-                borderRadius: 999,
-                font: "500 12px var(--font-sans)",
-                background: region === r ? "var(--surface-inverse)" : "var(--surface-card)",
-                color: region === r ? "#fff" : "var(--text-primary)",
-                border: region === r ? "none" : "1px solid var(--border)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+        <RegionFilter regions={REGIONS} total={PINS.length} value={region} onChange={setRegion} />
 
         <div style={{ display: "flex", gap: 10, padding: "0 var(--gutter-screen)" }}>
           {columns.map((col, ci) => (

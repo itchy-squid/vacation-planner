@@ -25,6 +25,7 @@ from ..models import (
     Comment,
     Contributor,
     Pin,
+    PinHeart,
     Plan,
     PlanStatus,
     Split,
@@ -88,8 +89,10 @@ def change_role(
         member.role = payload.role
         if Role(payload.role) not in VOTING_ROLES:
             # Readers don't vote. A vote left behind would keep counting
-            # toward a tally its caster can no longer change.
+            # toward a tally its caster can no longer change — and the
+            # same goes for a heart on an idea.
             db.execute(delete(Vote).where(Vote.contributor_id == member.id))
+            db.execute(delete(PinHeart).where(PinHeart.contributor_id == member.id))
         db.commit()
         db.refresh(member)
         bus.publish(trip_id, "member.updated", {"contributor_id": member.id, "role": member.role})
@@ -101,7 +104,7 @@ def _remove_member(db: Session, member: Contributor) -> list[tuple[int, int]]:
 
     Pins, travel items, placed plans and proposals stay, unattributed.
     Their private drafts go (nobody else can see them to keep them), as do
-    their votes and comments, which only mean anything as theirs. Their id
+    their votes, hearts and comments, which only mean anything as theirs. Their id
     stays on the roster as a traveler without an account."""
     trip_id = member.trip_id
     member_id = member.id
@@ -114,6 +117,7 @@ def _remove_member(db: Session, member: Contributor) -> list[tuple[int, int]]:
         db.delete(plan)
 
     db.execute(delete(Vote).where(Vote.contributor_id == member_id))
+    db.execute(delete(PinHeart).where(PinHeart.contributor_id == member_id))
     db.execute(delete(Comment).where(Comment.contributor_id == member_id))
     db.execute(update(Plan).where(Plan.created_by_id == member_id).values(created_by_id=None))
     db.execute(update(Pin).where(Pin.added_by_id == member_id).values(added_by_id=None))

@@ -77,7 +77,7 @@ export default function EmptyBoard({ canAdd, canInvite, ownerName, onAddLink, on
         <div style={{ display: "flex", gap: 10, opacity: 0.55, pointerEvents: "none", userSelect: "none" }}>
           {EXAMPLES.map((pin, i) => (
             <div key={pin.id} style={{ flex: 1, minWidth: 0 }}>
-              <PinCard pin={pin} column={i} contributorInitial="A" onOpen={() => {}} />
+              <PinCard pin={pin} column={i} contributorInitial="A" onOpen={() => {}} example />
             </div>
           ))}
         </div>

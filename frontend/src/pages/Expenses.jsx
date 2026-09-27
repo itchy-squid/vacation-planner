@@ -241,7 +241,7 @@ function ExpenseRow({ row }) {
     row.startMinuteOfDay != null ? clockLabel(row.startMinuteOfDay) : null,
     price,
     `${row.headcount} ${row.headcount === 1 ? "person" : "people"}`,
-    row.headsLabel || null,
+    row.sharersLabel || null,
   ]
     .filter(Boolean)
     .join(" · ");

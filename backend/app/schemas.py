@@ -4,13 +4,43 @@ frontend/src/lib/api.js)."""
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from . import photo_storage
 from .permissions import can_see_costs
+
+
+# --- links a person pasted ------------------------------------------------------
+
+# Browsers drop tabs and newlines anywhere in a URL and ignore leading
+# control characters and spaces, so "java\tscript:" is still javascript:.
+# Normalise the same way before reading the scheme.
+_URL_IGNORED = re.compile(r"[\t\n\r]")
+_URL_LEADING_IGNORED = "".join(chr(c) for c in range(0x21))  # C0 controls and space
+_URL_SCHEME = re.compile(r"^([a-z][a-z0-9+.-]*):", re.IGNORECASE)
+_WEB_SCHEMES = {"http", "https"}
+
+
+def _web_link(value: str | None) -> str | None:
+    """A link someone else on the trip will open: http(s), or no scheme at
+    all (the frontend reads "example.com" as https://example.com). Anything
+    else — javascript:, data:, vbscript: — is refused rather than stored,
+    since it would run in whoever clicks it (frontend/src/lib/externalHref.js
+    is the client-side half of the same rule)."""
+    if not value:
+        return value
+    normalised = _URL_IGNORED.sub("", value).lstrip(_URL_LEADING_IGNORED)
+    match = _URL_SCHEME.match(normalised)
+    if match and match.group(1).lower() not in _WEB_SCHEMES:
+        raise ValueError("Links have to start with http:// or https://")
+    return value
+
+
+WebLink = Annotated[str, AfterValidator(_web_link)]
 
 
 class MeOut(BaseModel):
@@ -250,7 +280,7 @@ class PinCreate(BaseModel):
     cost_cents: int = 0
     cost_basis: CostBasis = "per_head"
     notes: str = ""
-    link: str = ""
+    link: WebLink = ""
     tags: list[str] = Field(default_factory=list)
     # Pasted directly by the person adding the pin (see pages/NewPin.jsx)
     # rather than scraped from the link's page — a plain server-side
@@ -258,8 +288,8 @@ class PinCreate(BaseModel):
     # plenty of real pages do exactly that. photo_url is the image
     # itself, hotlinked rather than copied; photo_source_url is the page
     # it came from, kept so the pin can credit and link back to it.
-    photo_url: str | None = None
-    photo_source_url: str | None = None
+    photo_url: WebLink | None = None
+    photo_source_url: WebLink | None = None
 
 
 class PinUpdate(BaseModel):
@@ -268,15 +298,11 @@ class PinUpdate(BaseModel):
     duration_minutes: int | None = None
     cost_cents: int | None = None
     cost_basis: CostBasis | None = None
-    # Traveler ids sharing this pin's cost; [] means whoever is on the plan
-    # it's scheduled in. Edited as a row of initial chips on
-    # pages/EditVisit.jsx.
-    heads: list[int] | None = None
     notes: str | None = None
-    link: str | None = None
+    link: WebLink | None = None
     tags: list[str] | None = None
-    photo_url: str | None = None
-    photo_source_url: str | None = None
+    photo_url: WebLink | None = None
+    photo_source_url: WebLink | None = None
 
 
 class PinOut(BaseModel):
@@ -293,7 +319,6 @@ class PinOut(BaseModel):
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None
     cost_basis: str = "per_head"
-    heads: list[int] | None
     notes: str
     link: str
     tags: list[str]
@@ -306,6 +331,9 @@ class PinOut(BaseModel):
     # app/routers/pins.py for how these are written.
     availability_rule: "AvailabilityRuleOut | None" = None
     availability_overrides: list[AvailabilityOverrideOut] = Field(default_factory=list)
+    # Contributor ids of everyone who has hearted this pin, earliest first
+    # (app/models.py PinHeart). Its length is the pin's popularity.
+    hearted_by: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _sign_photo_url(self) -> "PinOut":
@@ -328,7 +356,7 @@ class PinOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "PinOut":
-        _redact_costs(self, "cost_cents", "heads", added_by_id=self.added_by_id)
+        _redact_costs(self, "cost_cents", added_by_id=self.added_by_id)
         return self
 
 
@@ -356,7 +384,7 @@ class TravelItemCreate(BaseModel):
     cost_cents: int = 0
     cost_basis: CostBasis = "per_head"
     notes: str = ""
-    link: str = ""
+    link: WebLink = ""
 
 
 class TravelItemUpdate(BaseModel):
@@ -365,9 +393,8 @@ class TravelItemUpdate(BaseModel):
     duration_minutes: int | None = None
     cost_cents: int | None = None
     cost_basis: CostBasis | None = None
-    heads: list[int] | None = None
     notes: str | None = None
-    link: str | None = None
+    link: WebLink | None = None
 
 
 class TravelItemOut(BaseModel):
@@ -379,7 +406,6 @@ class TravelItemOut(BaseModel):
     duration_minutes: int
     cost_cents: int | None
     cost_basis: str = "per_head"
-    heads: list[int] | None
     notes: str
     link: str
     added_by_id: int | None
@@ -387,7 +413,7 @@ class TravelItemOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "TravelItemOut":
-        _redact_costs(self, "cost_cents", "heads", added_by_id=self.added_by_id)
+        _redact_costs(self, "cost_cents", added_by_id=self.added_by_id)
         return self
 
 

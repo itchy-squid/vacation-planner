@@ -144,7 +144,7 @@ class Traveler(Base):
       someone else can't pay for others (routers/travelers.py enforces it),
       so "what I'm paying" is always me plus the people pointing at me.
 
-    SplitBranch.traveler_ids and Pin/TravelItem.heads hold traveler ids."""
+    SplitBranch.traveler_ids holds traveler ids."""
 
     __tablename__ = "travelers"
     __table_args__ = (UniqueConstraint("trip_id", "contributor_id", name="uq_traveler_trip_contributor"),)
@@ -215,10 +215,6 @@ class Pin(Base):
     # it, like a van or a villa. Items from before per-person prices are
     # "group", so their totals didn't move. See app/derive.py item_money.
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")
-    # Which travelers share this cost. [] means whoever is on the plan it's
-    # scheduled in: everyone, or the plan's group when the group has split
-    # up (Split below).
-    heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -236,6 +232,36 @@ class Pin(Base):
     added_by: Mapped[Contributor | None] = relationship()
     availability_rule: Mapped["AvailabilityRule | None"] = relationship(back_populates="pin", uselist=False, cascade="all, delete-orphan")
     availability_overrides: Mapped[list["AvailabilityOverride"]] = relationship(back_populates="pin", cascade="all, delete-orphan")
+    # Loaded with the pin (selectin), since every pin response carries who
+    # hearted it — the board's count and the place/propose sort read it.
+    hearts: Mapped[list["PinHeart"]] = relationship(
+        back_populates="pin", cascade="all, delete-orphan", lazy="selectin", order_by="PinHeart.created_at"
+    )
+
+    @property
+    def hearted_by(self) -> list[int]:
+        """Contributor ids, earliest heart first."""
+        return [heart.contributor_id for heart in self.hearts]
+
+
+class PinHeart(Base):
+    """One person saying "I'd like to do this" about an idea on the board.
+    A toggle, at most one per person per pin. The count is how popular the
+    idea is, which is what "Most hearted" sorts by when placing a pin or
+    pulling one into a proposal. Unlike a Vote it decides nothing: it's a
+    signal for whoever does the planning, so anyone who may vote may heart.
+    Goes with its person when they leave the trip or become a reader, the
+    same as their votes (routers/sharing.py)."""
+
+    __tablename__ = "pin_hearts"
+    __table_args__ = (UniqueConstraint("pin_id", "contributor_id", name="uq_pin_heart_pin_contributor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pin_id: Mapped[int] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
+    contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    pin: Mapped[Pin] = relationship(back_populates="hearts")
 
 
 class AvailabilityRule(Base):
@@ -287,9 +313,6 @@ class TravelItem(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     cost_cents: Mapped[int] = mapped_column(Integer, default=0)
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")  # as Pin.cost_basis
-    # Same meaning as Pin.heads above: the travelers sharing this cost,
-    # empty meaning whoever is on the plan.
-    heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)

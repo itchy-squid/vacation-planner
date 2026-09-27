@@ -4,15 +4,16 @@ import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import TextField, { TextArea, textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
-import HeadsPicker from "../components/planner/HeadsPicker";
 import CostField from "../components/forms/CostField";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
-import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useIdeaAccess, usePinHeart } from "../state/PlannerContext";
+import PinHearts from "../components/planner/PinHearts";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
 import { getTripDays } from "../data/trip";
 import { dayIndexAndBandForPlan, isoForDayMinute } from "../lib/planTime";
+import { externalHref } from "../lib/externalHref";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 
@@ -70,11 +71,6 @@ function baselineFrom(pin) {
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
-    // Traveler ids sharing this pin's cost; [] means whoever is on the
-    // plan it's scheduled in. Kept in
-    // the draft like every other field so Save writes it in the same PATCH
-    // and the discard guard covers it.
-    heads: pin.heads ?? [],
   };
 }
 
@@ -175,14 +171,6 @@ export default function EditVisit() {
     if (!form || !baseline) return {};
     const changed = {};
     Object.keys(baseline).forEach((key) => {
-      // `heads` is an array, so identity comparison would call every save
-      // dirty. Order is meaningless in it, hence the sort before compare.
-      if (key === "heads") {
-        const a = [...(form.heads ?? [])].sort();
-        const b = [...(baseline.heads ?? [])].sort();
-        if (a.length !== b.length || a.some((id, i) => id !== b[i])) changed.heads = form.heads;
-        return;
-      }
       if (form[key] !== baseline[key]) changed[key] = form[key];
     });
     return changed;
@@ -213,6 +201,11 @@ export default function EditVisit() {
   // and the bottom tab bar. Not armed mid-save — the draft is on its way to
   // the server at that point, and Save navigates by itself when it lands.
   useNavGuard(Boolean(pin) && dirty && !saving && !deleting, DISCARD_PROMPT);
+
+  // Not part of the draft: a heart is yours rather than an edit to the
+  // pin, so it lands the moment it's tapped, for readers of this screen
+  // who can't edit anything else here too.
+  const heart = usePinHeart(pin);
 
   if (!pin) {
     return (
@@ -433,6 +426,7 @@ export default function EditVisit() {
   const footnote = inContestedPlan
     ? `Saving recomputes this plan's totals. All ${state.contributors.length} contributors see the edit.`
     : `All ${state.contributors.length} contributors see the edit once you save.`;
+  const linkHref = externalHref(form.link);
 
   return (
     <div className="screen">
@@ -522,8 +516,8 @@ export default function EditVisit() {
               <button
                 type="button"
                 aria-label="Open link in new tab"
-                disabled={!form.link}
-                onClick={() => window.open(form.link, "_blank", "noopener,noreferrer")}
+                disabled={!linkHref}
+                onClick={() => window.open(linkHref, "_blank", "noopener,noreferrer")}
                 style={{
                   flex: "none",
                   width: 44,
@@ -586,18 +580,6 @@ export default function EditVisit() {
             />
           ) : null}
 
-          {/* Sits directly under the cost because it's who pays it — see
-              the Expenses screen, where the two are shown together as
-              "$85 each · 4 people". */}
-          {canSeeCosts ? (
-            <HeadsPicker
-              travelers={state.travelers}
-              value={form.heads}
-              onChange={(heads) => setField("heads", heads)}
-              disabled={saving || deleting || !canSetCosts}
-            />
-          ) : null}
-
           {durationSyncNote && (
             <div style={{ font: "500 11px var(--font-sans)", color: "var(--warn, #a15c1a)" }}>{durationSyncNote}</div>
           )}
@@ -621,6 +603,8 @@ export default function EditVisit() {
             </div>
             <span style={{ font: "400 11.5px var(--font-sans)", color: "var(--accent)" }}>{commentLabel}</span>
           </div>
+
+          <PinHearts title={pin.title} heart={heart} contributors={state.contributors} currentUserId={state.currentUserId} />
 
           {saveError && (
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{saveError}</div>

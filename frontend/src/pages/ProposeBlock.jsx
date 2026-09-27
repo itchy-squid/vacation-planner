@@ -5,7 +5,6 @@ import StopList from "../components/planner/StopList";
 import BudgetStrip from "../components/planner/BudgetStrip";
 import ComparisonColumns, { summariseStops } from "../components/planner/ComparisonColumns";
 import AvatarStack from "../components/planner/AvatarStack";
-import HeadsPicker from "../components/planner/HeadsPicker";
 import Stepper from "../components/forms/Stepper";
 import { usePlannerState, usePlannerDispatch, useCan, useIdeaAccess, useMyTraveler } from "../state/PlannerContext";
 import { branchName, branchesById, splitsOnDay } from "../lib/splits";
@@ -18,6 +17,8 @@ import { stopMoney } from "../data/expenses";
 import CostField from "../components/forms/CostField";
 import { bandsForMinuteRange, clockLabel, isoForDayMinute } from "../lib/planTime";
 import { reasonsFor, worksInAnyBand } from "../lib/availability";
+import { heartCount, heartsSuffix, inPinOrder, usePinOrder } from "../lib/popularity";
+import PinOrderToggle from "../components/planner/PinOrderToggle";
 import {
   MIN_SELECTION_MIN,
   contestWindowsFrom,
@@ -156,7 +157,6 @@ export default function ProposeBlock() {
             offsetMinutes: item.offsetMinutes,
             costCents: item.costCents,
             costBasis: item.costBasis,
-            heads: item.heads,
           }))
         )
       : []
@@ -371,7 +371,7 @@ export default function ProposeBlock() {
         durationMinutes: item.durationMinutes,
         costCents: item.costCents,
         costBasis: item.costBasis,
-        heads: item.heads,
+        hearts: item.pinId ? heartCount(pins[item.pinId]) : 0,
         ...availability(item.pinId),
       });
     });
@@ -395,8 +395,8 @@ export default function ProposeBlock() {
           durationMinutes: pin.dur,
           costCents: pin.costCents,
           costBasis: pin.costBasis,
-          heads: pin.heads,
           who: pin.who,
+          hearts: heartCount(pin),
           ...availability(pin.id),
         })
       );
@@ -411,7 +411,6 @@ export default function ProposeBlock() {
           durationMinutes: t.dur,
           costCents: t.costCents,
           costBasis: t.costBasis,
-          heads: t.heads,
           who: t.who,
           works: true,
           reasons: [],
@@ -434,11 +433,17 @@ export default function ProposeBlock() {
   // reason the region sort above hides nothing either. Availability is a
   // strong hint, not a lock: overrides exist precisely so the group can
   // decide a rule is wrong.
+  //
+  // "Most hearted" (lib/popularity.js) re-sorts inside each group, never
+  // across them: a popular pin that's ruled out for these hours is still
+  // ruled out.
+  const [pinOrder, setPinOrder] = usePinOrder();
   const pullInGroups = useMemo(() => {
-    const works = pullInOptions.filter((o) => o.works);
-    const ruledOut = pullInOptions.filter((o) => !o.works);
+    const byHearts = (options) => inPinOrder(options, pinOrder, (o) => o.hearts ?? 0);
+    const works = byHearts(pullInOptions.filter((o) => o.works));
+    const ruledOut = byHearts(pullInOptions.filter((o) => !o.works));
     return { works, ruledOut, ruledOutReasons: [...new Set(ruledOut.flatMap((o) => o.reasons))] };
-  }, [pullInOptions]);
+  }, [pullInOptions, pinOrder]);
 
   function addStop(option, gapBefore = 0) {
     setError("");
@@ -450,7 +455,7 @@ export default function ProposeBlock() {
 
   function openNewStop() {
     setError("");
-    setStopForm({ option: null, title: "", dur: 60, cost: 0, costBasis: "per_head", heads: [], gap: 0, costEditable: ideaAccess.canSetCost(null) });
+    setStopForm({ option: null, title: "", dur: 60, cost: 0, costBasis: "per_head", gap: 0, costEditable: ideaAccess.canSetCost(null) });
   }
 
   function openPullIn(option) {
@@ -461,7 +466,6 @@ export default function ProposeBlock() {
       dur: option.durationMinutes,
       cost: (option.costCents ?? 0) / 100,
       costBasis: option.costBasis ?? "per_head",
-      heads: option.heads ?? [],
       gap: 0,
       costEditable: ideaAccess.canSetCost(option),
     });
@@ -565,9 +569,6 @@ export default function ProposeBlock() {
         },
       });
       createdHereRef.current.add(created.id);
-      if (stopForm.costEditable && stopForm.heads.length) {
-        await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: stopForm.heads } });
-      }
       addStop(
         {
           kind: "travel",
@@ -577,7 +578,6 @@ export default function ProposeBlock() {
           durationMinutes: created.dur,
           costCents: created.costCents ?? costCents,
           costBasis: created.costBasis ?? stopForm.costBasis,
-          heads: stopForm.heads,
         },
         gap
       );
@@ -825,6 +825,8 @@ export default function ProposeBlock() {
             return { ...s, ...stopMoney(s, audienceIds) };
           })}
           pullInGroups={pullInGroups}
+          pinOrder={pinOrder}
+          onPinOrder={setPinOrder}
           title={editing ? "Edit this set" : "Your block"}
           backLabel={contestId ? "Cancel" : "‹ Hours"}
           onBack={() => (contestId ? cancel() : setStep(2))}
@@ -839,7 +841,6 @@ export default function ProposeBlock() {
           onSubmitStop={submitStopForm}
           onCancelStop={() => setStopForm(null)}
           nextStartMin={selection.startMin + spanMinutes}
-          travelers={travelers}
           busy={busy}
           error={error}
           canReview={canReview}
@@ -973,7 +974,6 @@ function stopsFromOption(option) {
           offsetMinutes: it.offset_minutes,
           costCents: source?.cost_cents ?? 0,
           costBasis: source?.cost_basis ?? "per_head",
-          heads: source?.heads ?? [],
         };
       })
   );
@@ -1266,6 +1266,7 @@ function PullInChip({ option, onPullIn, muted = false }) {
       }}
     >
       {option.title} · {fmtMin(option.baseDurationMinutes)}
+      {heartsSuffix(option.hearts ?? 0)}
     </button>
   );
 }
@@ -1276,6 +1277,8 @@ function StepThree({
   plannedMinutes,
   stops,
   pullInGroups,
+  pinOrder,
+  onPinOrder,
   title,
   backLabel,
   onBack,
@@ -1290,7 +1293,6 @@ function StepThree({
   onSubmitStop,
   onCancelStop,
   nextStartMin,
-  travelers,
   busy,
   error,
   canReview,
@@ -1333,7 +1335,6 @@ function StepThree({
             onCancel={onCancelStop}
             startMin={nextStartMin}
             windowEndMin={selection.endMin}
-            travelers={travelers}
             busy={busy}
           />
         )}
@@ -1343,7 +1344,10 @@ function StepThree({
               come first, under their own label; the rest stay visible
               below it rather than being filtered away. See the
               pullInGroups comment above for why nothing is hidden. */}
-          <div className="mono-caption">Pull in · works these hours</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div className="mono-caption">Pull in · works these hours</div>
+            <PinOrderToggle value={pinOrder} onChange={onPinOrder} />
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
             {pullInGroups.works.map((option) => (
               <PullInChip key={`${option.kind}-${option.refId}`} option={option} onPullIn={onPullIn} />
@@ -1443,7 +1447,7 @@ const fieldStyle = {
 // does on a stop already in the list (components/planner/StopList.jsx): it
 // edits the free time in front of the stop, so it can never be set earlier
 // than where the last stop ends and two stops still can't overlap.
-function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, travelers, busy }) {
+function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, busy }) {
   const ref = useRef(null);
   const pulling = Boolean(form.option);
   const formKey = pulling ? `${form.option.kind}:${form.option.refId}` : "new";
@@ -1531,10 +1535,6 @@ function StopForm({ form, setForm, onSubmit, onCancel, startMin, windowEndMin, t
         <div style={{ marginTop: -6, font: "400 11px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
           Changing the cost changes it for this {form.option.kind === "pin" ? "pin" : "event"} everywhere it&rsquo;s used.
         </div>
-      )}
-
-      {!pulling && form.costEditable && (
-        <HeadsPicker travelers={travelers} value={form.heads} onChange={set("heads")} />
       )}
 
       <div style={{ display: "flex", gap: 8 }}>
