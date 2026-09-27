@@ -6,6 +6,7 @@ export default function Chip({ label, selected = false, onClick, tone = "ink" })
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={selected}
       style={{
         flex: "none",
         padding: "6px 12px",
