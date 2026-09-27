@@ -128,9 +128,6 @@ function normalizePin(p, contributorsById) {
     // "per_head" (what one person pays) or "group" (one price for everyone
     // sharing it) — see backend/app/derive.py item_money.
     costBasis: p.cost_basis ?? "per_head",
-    // Traveler ids sharing this cost; [] means whoever is on the plan it's
-    // scheduled in.
-    heads: p.heads ?? [],
     who: addedBy?.id ?? null,
     whoName: addedBy?.name ?? "Someone",
     addedAgo: relativeTime(p.added_at),
@@ -160,7 +157,6 @@ function normalizeTravelItem(t, contributorsById) {
     cost: dollarsOrNull(t.cost_cents),
     costCents: t.cost_cents ?? null,
     costBasis: t.cost_basis ?? "per_head",
-    heads: t.heads ?? [],
     notes: t.notes,
     link: t.link,
     who: addedBy?.id ?? null,
@@ -189,7 +185,6 @@ function normalizePlanItem(it) {
     startMinuteOfDay: it.start_minute_of_day ?? null,
     costCents: source ? source.cost_cents ?? null : 0,
     costBasis: source?.cost_basis ?? "per_head",
-    heads: source?.heads ?? [],
     // Worked out on the server, because they depend on who's on the plan:
     // the travelers sharing this stop, what each pays, and the whole bill.
     // null when the viewer can't see this cost.
@@ -1209,7 +1204,6 @@ export function PlannerProvider({ children }) {
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;
-          if ("heads" in f) backendFields.heads = f.heads;
           // A pasted replacement URL, or a cleared field going back to
           // "no photo" — either way sent as photo_url, same as create
           // (pages/NewPin.jsx); routers/pins.py re-mirrors it into blob

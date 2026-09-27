@@ -25,6 +25,11 @@ is no more `traveller_count`).
 - **`heads`, `Plan.party` and `Contest.party` hold traveler ids.**
   - `heads: []` now means "whoever is on the plan it's scheduled in", not
     "everyone".
+  - *Revised 2026-09-27:* `heads` is gone (migration `3b6e9f0c2d14`). An
+    idea marked for one traveler and placed on a plan for everyone charged
+    that traveler alone while the calendar said everyone was going. A cost
+    is now always shared by the plan's travelers, and who pays each share
+    is the `paid_by_id` rule.
 - **`party_mode`** on plans and contests is either `"only"` (exactly these
   travelers) or `"except"` (everyone but these, including anyone added
   later).
@@ -35,8 +40,8 @@ is no more `traveller_count`).
 - **`cost_basis`** on pins and travel items is `"per_head"` (the default for
   new items: what one person pays) or `"group"` (one bill).
   - `derive.item_money` gives each stop its `sharer_ids`, `each_cents` and
-    `total_cents`, where the sharers are the item's heads, or else the
-    plan's members.
+    `total_cents`, where the sharers are the plan's members (everyone, or
+    its group on a split day).
   - `PlanOut.total_cost_cents` is the sum of the totals.
   - Plans also carry `party_mode`, `party_members` and `for_everyone`, so
     the client never has to apply the party rule itself.
@@ -132,8 +137,8 @@ is no more `traveller_count`).
 - **Cost fields**: `components/forms/CostField.jsx` adds a Per person / For
   the group switch to the visit editor, the custom event form and the
   propose screen's stop form.
-  - `HeadsPicker` now offers travelers, and its default is "Whoever's on
-    the plan".
+  - The "Who it's for" picker (`HeadsPicker`) was removed on 2026-09-27
+    along with `heads`.
 - **Expenses**:
   - A "Showing" picker offers What I'm paying (the default), Just me,
     Everyone, or any single traveler. The choice is remembered on the

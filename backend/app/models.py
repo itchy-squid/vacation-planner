@@ -144,7 +144,7 @@ class Traveler(Base):
       someone else can't pay for others (routers/travelers.py enforces it),
       so "what I'm paying" is always me plus the people pointing at me.
 
-    SplitBranch.traveler_ids and Pin/TravelItem.heads hold traveler ids."""
+    SplitBranch.traveler_ids holds traveler ids."""
 
     __tablename__ = "travelers"
     __table_args__ = (UniqueConstraint("trip_id", "contributor_id", name="uq_traveler_trip_contributor"),)
@@ -215,10 +215,6 @@ class Pin(Base):
     # it, like a van or a villa. Items from before per-person prices are
     # "group", so their totals didn't move. See app/derive.py item_money.
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")
-    # Which travelers share this cost. [] means whoever is on the plan it's
-    # scheduled in: everyone, or the plan's group when the group has split
-    # up (Split below).
-    heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -287,9 +283,6 @@ class TravelItem(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     cost_cents: Mapped[int] = mapped_column(Integer, default=0)
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")  # as Pin.cost_basis
-    # Same meaning as Pin.heads above: the travelers sharing this cost,
-    # empty meaning whoever is on the plan.
-    heads: Mapped[list[int]] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)

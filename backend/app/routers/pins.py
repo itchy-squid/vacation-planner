@@ -22,11 +22,11 @@ router = APIRouter(tags=["pins"])
 logger = logging.getLogger(__name__)
 
 
-_COST_FIELDS = ("cost_cents", "cost_basis", "heads")
+_COST_FIELDS = ("cost_cents", "cost_basis")
 
 
 def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:
-    """Setting a price or a cost split is costs:write (or costs:own on
+    """Setting a price or how it's charged is costs:write (or costs:own on
     something the caller added), on top of whatever the edit itself needs.
     Shared with routers/travel_items.py."""
     if any(f in fields for f in _COST_FIELDS):

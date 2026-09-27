@@ -11,7 +11,6 @@ import {
   faRoute,
 } from "@fortawesome/free-solid-svg-icons";
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
-import HeadsPicker from "./HeadsPicker";
 import CostField from "../forms/CostField";
 import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
 import { textFieldStyle } from "../forms/TextField";
@@ -51,7 +50,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
   const navigate = useNavigate();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
-  const { trip, travelers } = state;
+  const { trip } = state;
 
   const [mode, setMode] = useState("menu");
   const [error, setError] = useState("");
@@ -112,7 +111,6 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
         {mode === "custom" && (
           <CustomEventForm
             dayIndex={dayIndex}
-            travelers={travelers}
             onBack={() => setMode("menu")}
             onCreated={(item) => {
               // Hand over the item itself: the store hasn't re-rendered
@@ -455,8 +453,8 @@ function PickerRow({ title, meta, photoUrl, icon, armed, onArm, onDelete }) {
 
 // ---- custom event ---------------------------------------------------------
 
-function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, dispatch }) {
-  const [draft, setDraft] = useState({ title: "", kind: "other", dur: 60, cost: 0, costBasis: "per_head", heads: [] });
+function CustomEventForm({ dayIndex, onBack, onCreated, onError, dispatch }) {
+  const [draft, setDraft] = useState({ title: "", kind: "other", dur: 60, cost: 0, costBasis: "per_head" });
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
@@ -465,7 +463,7 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
     setBusy(true);
     onError("");
     try {
-      let created = await dispatch({
+      const created = await dispatch({
         type: "CREATE_TRAVEL_ITEM",
         payload: {
           title: draft.title.trim(),
@@ -475,12 +473,6 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
           cost_basis: draft.costBasis,
         },
       });
-      if (draft.heads.length) {
-        // TravelItemCreate doesn't take heads (backend/app/schemas.py), so
-        // a non-default split is a follow-up patch rather than part of
-        // the create.
-        created = await dispatch({ type: "PATCH_TRAVEL_ITEM", id: created.id, fields: { heads: draft.heads } });
-      }
       onCreated(created);
     } catch {
       onError("Couldn't add that — try again.");
@@ -533,12 +525,6 @@ function CustomEventForm({ dayIndex, travelers, onBack, onCreated, onError, disp
           onChange={(cost) => setDraft((d) => ({ ...d, cost }))}
           basis={draft.costBasis}
           onBasis={(costBasis) => setDraft((d) => ({ ...d, costBasis }))}
-        />
-
-        <HeadsPicker
-          travelers={travelers}
-          value={draft.heads}
-          onChange={(heads) => setDraft((d) => ({ ...d, heads }))}
         />
 
         {/* "Add and place", not the tray's old "Add to tray": this sheet

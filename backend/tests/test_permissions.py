@@ -8,7 +8,7 @@ import pytest
 from fastapi.routing import APIRoute
 
 from app.main import app
-from app.models import Comment, Contributor, Plan, PlanStatus, TripInvite, Vote
+from app.models import Comment, Contributor, Plan, PlanStatus, Traveler, TripInvite, Vote
 from app.permissions import ROLE_SCOPES, Role
 
 from conftest import as_user, at
@@ -150,7 +150,7 @@ def test_reader_sees_ideas_and_plans_without_costs(client, trip, reader):
     trip.place(start=600, end=675, travel_item="ferry")
 
     pins = client.get(f"/api/trips/{trip.id}/pins", headers=RAE).json()
-    assert pins and all(p["cost_cents"] is None and p["heads"] is None for p in pins)
+    assert pins and all(p["cost_cents"] is None for p in pins)
 
     items = client.get(f"/api/trips/{trip.id}/travel-items", headers=RAE).json()
     assert items and all(t["cost_cents"] is None for t in items)
@@ -280,15 +280,15 @@ def test_companion_adds_an_idea_with_a_cost_and_sees_only_that_cost(client, trip
     assert mine["added_by_id"] == companion.id
     assert mine["cost_cents"] == 1200
 
-    res = client.patch(f"/api/pins/{mine['id']}", json={"cost_cents": 1500, "heads": [companion.id]}, headers=KAI)
+    res = client.patch(f"/api/pins/{mine['id']}", json={"cost_cents": 1500, "cost_basis": "group"}, headers=KAI)
     assert res.status_code == 200, res.text
     assert res.json()["cost_cents"] == 1500
 
     pins = {p["id"]: p for p in client.get(f"/api/trips/{trip.id}/pins", headers=KAI).json()}
     assert pins[mine["id"]]["cost_cents"] == 1500
-    assert pins[mine["id"]]["heads"] == [companion.id]
+    assert pins[mine["id"]]["cost_basis"] == "group"
     others = [p for pid, p in pins.items() if pid != mine["id"]]
-    assert others and all(p["cost_cents"] is None and p["heads"] is None for p in others)
+    assert others and all(p["cost_cents"] is None for p in others)
     # Everyone else still sees it.
     assert client.get(f"/api/pins/{mine['id']}", headers=JAE).json()["cost_cents"] == 1500
 
@@ -481,7 +481,6 @@ def test_a_member_of_another_trip_cannot_be_edited_through_this_one(client, trip
 
 def test_removing_someone_keeps_what_they_added(client, trip, db):
     trip.pins["vase"].added_by_id = trip.jae.id
-    trip.pins["ice"].heads = [trip.travelers["jae"].id, trip.travelers["ana"].id]
     db.commit()
     placed = trip.place(start=840, end=900, pin="tide", created_by="jae")
     draft = trip.place(day=2, start=600, end=660, pin="cave", created_by="jae", status=PlanStatus.draft)
@@ -489,7 +488,7 @@ def test_removing_someone_keeps_what_they_added(client, trip, db):
     db.commit()
     draft_id = draft.id
     jae_id = trip.jae.id
-    jae_traveler, ana_traveler = trip.travelers["jae"].id, trip.travelers["ana"].id
+    jae_traveler = trip.travelers["jae"].id
 
     assert client.delete(f"/api/trips/{trip.id}/contributors/{jae_id}", headers=MEI).status_code == 204
 
@@ -498,8 +497,9 @@ def test_removing_someone_keeps_what_they_added(client, trip, db):
     assert db.get(Plan, placed.id).created_by_id is None
     assert db.get(Plan, draft_id) is None
     assert trip.pins["vase"].added_by_id is None
-    # Jae is off the app but still going: the traveler stays on the split.
-    assert trip.pins["ice"].heads == [jae_traveler, ana_traveler]
+    # Jae is off the app but still going: the traveler stays on the roster.
+    db.expire_all()
+    assert db.get(Traveler, jae_traveler).contributor_id is None
     assert db.query(Comment).count() == 0
     assert client.get(f"/api/trips/{trip.id}", headers=JAE).status_code == 403
 

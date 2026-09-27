@@ -91,14 +91,12 @@ def test_removing_a_traveler_clears_them_everywhere(client, trip, db):
     kai = add(client, trip, "Kai", paid_by_id=tid(trip, "mei"))
     hua = add(client, trip, "Hua")
     client.patch(f"/api/travelers/{kai['id']}", json={"paid_by_id": hua["id"]}, headers=MEI)
-    trip.pins["ice"].heads = [kai["id"], tid(trip, "ana")]
-    db.commit()
     assert client.delete(f"/api/travelers/{hua['id']}", headers=MEI).status_code == 204
     db.expire_all()
     assert db.get(Traveler, kai["id"]).paid_by_id is None
     assert client.delete(f"/api/travelers/{kai['id']}", headers=MEI).status_code == 204
     db.expire_all()
-    assert trip.pins["ice"].heads == [tid(trip, "ana")]
+    assert db.get(Traveler, kai["id"]) is None
 
 
 # ---- money ----
@@ -128,14 +126,14 @@ def test_costs_follow_the_group_on_a_split_day(client, trip, db):
     assert item["total_cents"] == 16000
 
 
-def test_heads_still_win_over_the_group(client, trip, db):
+def test_a_cost_is_shared_by_everyone_on_the_plan(client, trip):
+    """An idea has no say in who shares its cost: placed on a plan for
+    everyone, everyone is charged, whoever added it."""
     set_price(trip, "tide", 500, "per_head")
-    trip.pins["tide"].heads = [tid(trip, "jae")]
-    db.commit()
-    plan = trip.place(start=540, end=620, pin="tide")
+    plan = trip.place(start=540, end=620, pin="tide", created_by="mei")
     item = plan_json(client, trip, plan.id)["items"][0]
-    assert item["sharer_ids"] == [tid(trip, "jae")]
-    assert item["total_cents"] == 500
+    assert item["sharer_ids"] == sorted(tid(trip, k) for k in ("mei", "jae", "ana", "lin"))
+    assert item["each_cents"] == 500 and item["total_cents"] == 2000
 
 
 def test_a_new_pin_defaults_to_per_person(client, trip):

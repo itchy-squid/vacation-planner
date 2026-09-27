@@ -4,7 +4,6 @@ import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import TextField, { TextArea, textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
-import HeadsPicker from "../components/planner/HeadsPicker";
 import CostField from "../components/forms/CostField";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
 import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
@@ -71,11 +70,6 @@ function baselineFrom(pin) {
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
-    // Traveler ids sharing this pin's cost; [] means whoever is on the
-    // plan it's scheduled in. Kept in
-    // the draft like every other field so Save writes it in the same PATCH
-    // and the discard guard covers it.
-    heads: pin.heads ?? [],
   };
 }
 
@@ -176,14 +170,6 @@ export default function EditVisit() {
     if (!form || !baseline) return {};
     const changed = {};
     Object.keys(baseline).forEach((key) => {
-      // `heads` is an array, so identity comparison would call every save
-      // dirty. Order is meaningless in it, hence the sort before compare.
-      if (key === "heads") {
-        const a = [...(form.heads ?? [])].sort();
-        const b = [...(baseline.heads ?? [])].sort();
-        if (a.length !== b.length || a.some((id, i) => id !== b[i])) changed.heads = form.heads;
-        return;
-      }
       if (form[key] !== baseline[key]) changed[key] = form[key];
     });
     return changed;
@@ -584,18 +570,6 @@ export default function EditVisit() {
               onChange={(v) => setField("cost", Math.max(0, Number(v) || 0))}
               basis={form.costBasis}
               onBasis={(b) => setField("costBasis", b)}
-              disabled={saving || deleting || !canSetCosts}
-            />
-          ) : null}
-
-          {/* Sits directly under the cost because it's who pays it — see
-              the Expenses screen, where the two are shown together as
-              "$85 each · 4 people". */}
-          {canSeeCosts ? (
-            <HeadsPicker
-              travelers={state.travelers}
-              value={form.heads}
-              onChange={(heads) => setField("heads", heads)}
               disabled={saving || deleting || !canSetCosts}
             />
           ) : null}

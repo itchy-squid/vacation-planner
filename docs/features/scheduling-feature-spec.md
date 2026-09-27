@@ -229,7 +229,7 @@ rather than three.
   placement. In a list, tapping a row arms placement *and* closes the
   sheet, so there is no armed state left to hang it on; it becomes a
   persistent second target instead, separable by thumb from the row body.
-- *Custom event* — title, kind, duration, cost and the `heads` split,
+- *Custom event* — title, kind, duration and cost,
   creating a `TravelItem`. It is the only way to create one, so it
   carries the whole `kind` set, not just `other`. On success the new item
   is armed for placement, since the sheet was opened from a day.

@@ -101,8 +101,7 @@ def test_the_longest_standing_member_takes_over_when_there_is_no_planner(client,
 
 def test_deleting_hands_over_owned_trips_and_keeps_what_you_added(client, trip, db, deleted_photos):
     trip.pins["vase"].added_by_id = trip.mei.id
-    mei_traveler, jae_traveler = trip.travelers["mei"].id, trip.travelers["jae"].id
-    trip.pins["ice"].heads = [mei_traveler, jae_traveler]
+    mei_traveler = trip.travelers["mei"].id
     db.add(Comment(pin_id=trip.pins["vase"].id, contributor_id=trip.mei.id, body="must see"))
     db.commit()
     placed = trip.place(start=840, end=900, pin="tide", created_by="mei")
@@ -117,8 +116,7 @@ def test_deleting_hands_over_owned_trips_and_keeps_what_you_added(client, trip, 
     assert db.get(Trip, trip.id) is not None
     assert trip.pins["vase"].added_by_id is None
     # Mei's account is gone, but she's still going: her traveler stays on
-    # the cost split, just without an account behind it.
-    assert trip.pins["ice"].heads == [mei_traveler, jae_traveler]
+    # the roster (and so on every cost split), just without an account.
     assert db.get(Traveler, mei_traveler).contributor_id is None
     assert db.get(Plan, placed_id).created_by_id is None
     assert db.get(Plan, draft_id) is None

@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from ..custom_events import forget_orphaned_travel_items, publish_forgotten
 from ..db import get_db
 from ..events import bus
-from ..models import Contributor, Pin, TravelItem, Traveler, TripInvite
+from ..models import Contributor, Traveler, TripInvite
 from ..splits import add_newcomer, remove_from_splits
 from ..permissions import MEMBERS_MANAGE, TRAVELERS_MANAGE, TRIP_READ, Access, require
 from ..schemas import InviteOut, TravelerBrief, TravelerCreate, TravelerInviteCreate, TravelerOut, TravelerUpdate
@@ -125,18 +125,12 @@ def _check_link(db: Session, traveler: Traveler, contributor_id: int | None) -> 
 
 
 def remove_traveler(db: Session, traveler: Traveler) -> set[int]:
-    """Take someone off the trip's roster, and so off every group and cost
-    split. A group nobody is left in goes with its plans, and a split left
+    """Take someone off the trip's roster, and so off every group. A group nobody is left in goes with its plans, and a split left
     with one group becomes plans for everyone (app/splits.py). Anyone they
     were paying for pays for themselves again. Returns travel item ids that
     may now be orphaned, for the caller's custom-event cleanup."""
     trip_id = traveler.trip_id
     tid = traveler.id
-
-    for model in (Pin, TravelItem):
-        for row in db.scalars(select(model).where(model.trip_id == trip_id)).all():
-            if row.heads and tid in row.heads:
-                row.heads = [h for h in row.heads if h != tid]
 
     orphan_candidates = remove_from_splits(db, trip_id, tid)
 

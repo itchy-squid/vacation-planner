@@ -25,22 +25,29 @@ test.describe("custom events", () => {
     expect(plans[0].items[0].travel_item.title).toBe("Scooter hire");
   });
 
-  test("with a cost split picked, can still be placed straight away", async ({ page, api, seed }) => {
+  // The people sharing a cost are whoever the plan is for, never a list
+  // kept on the event: one used to charge only the traveler picked on the
+  // form while the calendar said everyone was going.
+  test("a priced event is charged to everyone on the plan it's placed in", async ({ page, api, seed }) => {
     const trip = await seed({ travelers: ["Ana"] });
     await page.goto(dayUrl(trip));
 
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("button", { name: /^Custom event/ }).click();
+    await expect(page.getByText("Who it\u2019s for")).toHaveCount(0);
     await page.getByRole("textbox", { name: "Title" }).fill("Ferry tickets");
-    await page.getByRole("button", { name: "A", exact: true }).click();
+    await page.getByRole("spinbutton", { name: "Cost per person, in dollars" }).fill("12");
     await page.getByRole("button", { name: "Add to day 1 and place" }).click();
 
     await expect(page.getByText("Placing Ferry tickets — tap the calendar")).toBeVisible();
     await tapCalendar(page, "14:00");
 
     await expect(page.getByText("Ferry tickets")).toBeVisible();
-    const [item] = await travelItemsOf(api, trip);
-    expect(item.heads).toEqual([trip.travelers.Ana]);
+    const [plan] = await plansOf(api, trip);
+    const [item] = plan.items;
+    expect(item.sharer_ids).toEqual([trip.me, trip.travelers.Ana].sort((a, b) => a - b));
+    expect(item.each_cents).toBe(1200);
+    expect(item.total_cents).toBe(2400);
   });
 
   test("deleting a placed event removes it from the calendar and the trip", async ({ page, api, seed }) => {

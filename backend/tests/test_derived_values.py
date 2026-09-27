@@ -7,6 +7,7 @@ docstring for why there used to be three.
 from app.derive import (
     item_cost_cents,
     item_duration_minutes,
+    item_money,
     item_start_minutes,
     plan_range_minutes,
     plan_totals,
@@ -64,33 +65,27 @@ def test_an_explicit_offset_wins_over_packing(trip, db):
     assert totals(plan)["total_duration_minutes"] == 80
 
 
-def test_cost_is_never_divided_by_heads(trip, db):
-    """Per-head is a display division and never a stored number, so who a
-    cost is shared between can't change what the trip costs."""
+def test_a_plans_cost_is_the_sum_of_its_stops(trip):
     plan = trip.place(start=780, end=1080, items=[("tide", None), ("ice", None)])
-    before = totals(plan)["total_cost_cents"]
-
-    trip.pins["tide"].heads = [trip.ana.id, trip.mei.id]
-    trip.pins["ice"].heads = [trip.jae.id]
-    db.commit()
-    db.refresh(plan)
 
     assert item_cost_cents(plan.items[0]) == 500
-    assert totals(plan)["total_cost_cents"] == before == 900
+    assert totals(plan)["total_cost_cents"] == 900
 
 
 def test_per_head_rounding_never_moves_the_trip_total(trip, db):
-    """The Expenses screen divides for display. Three people splitting
-    $10.00 each see $3.33, and 3 x 333 is 999 — which is why the row total
-    and the trip total both come from cost_cents, not from the division."""
-    trip.pins["tide"].cost_cents = 1000
-    trip.pins["tide"].heads = [trip.mei.id, trip.jae.id, trip.ana.id]
+    """The Expenses screen divides for display. Four people splitting a
+    $10.01 group price each see $2.50, and 4 x 250 is 1000 — which is why
+    the row total and the trip total both come from cost_cents, not from
+    the division."""
+    trip.pins["tide"].cost_cents = 1001
+    trip.pins["tide"].cost_basis = "group"
     db.commit()
     plan = trip.place(start=780, end=1080, items=[("tide", None)])
 
-    per_head = round(item_cost_cents(plan.items[0]) / len(trip.pins["tide"].heads))
-    assert per_head * 3 != item_cost_cents(plan.items[0])
-    assert totals(plan)["total_cost_cents"] == 1000
+    sharers, each, total = item_money(plan, plan.items[0])
+    assert len(sharers) == 4
+    assert each * len(sharers) != total == 1001
+    assert totals(plan)["total_cost_cents"] == 1001
 
 
 def test_start_minute_of_day_is_served_precomputed(client, trip):

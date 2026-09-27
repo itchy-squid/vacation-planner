@@ -17,10 +17,10 @@ import { tripDayLabel } from "./trip";
 export const SCHEDULED_STATUSES = ["placed", "pencilled", "locked"];
 
 // Money for a stop that isn't saved yet (the propose screen's stop list):
-// the same rule the server applies. `memberIds` is who the block is for.
+// the same rule the server applies. `memberIds` is who the block is for,
+// and they share every stop in it.
 export function stopMoney(stop, memberIds) {
-  const heads = stop.heads ?? [];
-  const sharers = heads.length ? heads : memberIds ?? [];
+  const sharers = memberIds ?? [];
   const count = Math.max(1, sharers.length);
   const price = stop.costCents ?? 0;
   if ((stop.costBasis ?? "per_head") === "group") {
@@ -85,7 +85,7 @@ export function buildExpenses(plans, { trip, travelers, shownIds }) {
           sharers,
           // Only a subset is spelled out; "everyone" doesn't need seven
           // initials to say so.
-          headsLabel: isSubset ? sharers.map((id) => initials.get(id)).filter(Boolean).join(", ") : "",
+          sharersLabel: isSubset ? sharers.map((id) => initials.get(id)).filter(Boolean).join(", ") : "",
           shownCount: mine.length,
           shownCents: (item.eachCents ?? 0) * mine.length,
         });

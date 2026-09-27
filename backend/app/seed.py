@@ -234,15 +234,6 @@ def seed_taiwan(db: Session) -> None:
     for local_id, (days, bands, reasons) in availability.items():
         db.add(AvailabilityRule(pin_id=pins_by_local_id[local_id].id, days=days, bands=bands, reasons=reasons))
 
-    # Two pins whose cost is shared by a subset rather than the whole trip.
-    # This is what puts the "· A, M" initials suffix and the magenta accent
-    # bar on the Expenses screen (feature spec §4) into the seeded data,
-    # instead of every row taking the "everyone, × traveller_count" path.
-    # Din Tai Fung is the one that matters for that: it's scheduled below,
-    # so it shows up on Expenses immediately. Shaved ice is still in the
-    # tray, and demonstrates the same thing the moment it's placed.
-    pins_by_local_id["p13"].heads = [travelers["jae"].id, travelers["mei"].id]
-    pins_by_local_id["p3"].heads = [travelers["ana"].id, travelers["mei"].id]
     db.flush()
 
     # ---- Day 5's contest: "the core screen" (handoff README screen 5) —

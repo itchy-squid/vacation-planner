@@ -298,10 +298,6 @@ class PinUpdate(BaseModel):
     duration_minutes: int | None = None
     cost_cents: int | None = None
     cost_basis: CostBasis | None = None
-    # Traveler ids sharing this pin's cost; [] means whoever is on the plan
-    # it's scheduled in. Edited as a row of initial chips on
-    # pages/EditVisit.jsx.
-    heads: list[int] | None = None
     notes: str | None = None
     link: WebLink | None = None
     tags: list[str] | None = None
@@ -323,7 +319,6 @@ class PinOut(BaseModel):
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None
     cost_basis: str = "per_head"
-    heads: list[int] | None
     notes: str
     link: str
     tags: list[str]
@@ -358,7 +353,7 @@ class PinOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "PinOut":
-        _redact_costs(self, "cost_cents", "heads", added_by_id=self.added_by_id)
+        _redact_costs(self, "cost_cents", added_by_id=self.added_by_id)
         return self
 
 
@@ -395,7 +390,6 @@ class TravelItemUpdate(BaseModel):
     duration_minutes: int | None = None
     cost_cents: int | None = None
     cost_basis: CostBasis | None = None
-    heads: list[int] | None = None
     notes: str | None = None
     link: WebLink | None = None
 
@@ -409,7 +403,6 @@ class TravelItemOut(BaseModel):
     duration_minutes: int
     cost_cents: int | None
     cost_basis: str = "per_head"
-    heads: list[int] | None
     notes: str
     link: str
     added_by_id: int | None
@@ -417,7 +410,7 @@ class TravelItemOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "TravelItemOut":
-        _redact_costs(self, "cost_cents", "heads", added_by_id=self.added_by_id)
+        _redact_costs(self, "cost_cents", added_by_id=self.added_by_id)
         return self
 
 
