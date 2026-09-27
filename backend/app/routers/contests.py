@@ -25,12 +25,11 @@ from ..schemas import (
 )
 from .plans import (
     _add_items,
-    ensure_unique_stops,
     find_overlapping_plan,
     find_overlapping_plans,
     occupied_detail,
     plan_schema_kwargs,
-    validate_stop_layout,
+    validate_block,
 )
 
 router = APIRouter(prefix="/api", tags=["contests"])
@@ -237,16 +236,12 @@ def open_block_contest(
     travelers vote (app/splits.py). A proposal for everyone can't reach
     into split hours at all, so one "on the board" option never has to hold
     two groups' days at once."""
-    if ends_at <= starts_at:
-        raise HTTPException(status_code=400, detail="A block has to end after it starts")
     if not items:
         raise HTTPException(status_code=400, detail="A block needs at least one stop")
-
-    ensure_unique_stops(items)
-    # Stops now carry their own start times, so "do they fit" is no longer
-    # a sum against the window — it is a layout, and it is checked the same
-    # way here, on a published draft, and on an edited set.
-    validate_stop_layout(db, items, minutes_between(ends_at, starts_at))
+    # Stops carry their own start times, so "do they fit" is a layout,
+    # checked the same way here, on a published draft, on an edited set
+    # and on direct placement.
+    validate_block(db, trip_id, starts_at, ends_at, items)
 
     branch = resolve_branch(db, trip_id, branch_id, starts_at, ends_at)
     branch_id = branch.id if branch else None
@@ -475,8 +470,7 @@ def update_proposal(
             detail="Only the person who proposed this set, or the trip owner, can edit it",
         )
 
-    ensure_unique_stops(payload.items)
-    validate_stop_layout(db, payload.items, minutes_between(plan.ends_at, plan.starts_at))
+    validate_block(db, plan.trip_id, plan.starts_at, plan.ends_at, payload.items)
 
     plan.label = payload.label
     plan.rationale = payload.rationale
@@ -521,6 +515,9 @@ def toggle_vote(
     contest = db.get(Contest, contest_id)
     if not contest:
         raise HTTPException(status_code=404, detail="Contest not found")
+    voted_for = db.get(Plan, payload.plan_id)
+    if voted_for is None or voted_for.contest_id != contest_id:
+        raise HTTPException(status_code=404, detail="That plan is not part of this contest")
     contributor = access.member
     allowed = contest_voter_ids(db, contest)
     if allowed is not None and contributor.id not in allowed:

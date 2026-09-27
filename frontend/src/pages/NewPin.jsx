@@ -6,6 +6,7 @@ import HomeButton from "../components/core/HomeButton";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import { BOARD_PHOTO_HEIGHT_PRIMARY } from "../components/planner/PinCard";
 import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
+import { externalHref } from "../lib/externalHref";
 
 // Best-effort "give this pin a name" when someone pastes a link and
 // doesn't bother typing a title — mirrors how bookmarking tools fall back
@@ -13,13 +14,10 @@ import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
 // just falls back to the raw text.
 function deriveTitleFromLink(link) {
   if (!link) return null;
-  try {
-    const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(link) ? link : `https://${link}`;
-    const host = new window.URL(withProtocol).hostname.replace(/^www\./, "");
-    return host || link;
-  } catch {
-    return link;
-  }
+  const href = externalHref(link);
+  if (!href) return link;
+  const host = new window.URL(href).hostname.replace(/^www\./, "");
+  return host || link;
 }
 
 // Not one of the handoff README's numbered screens. Screen 2 (PinBoard)

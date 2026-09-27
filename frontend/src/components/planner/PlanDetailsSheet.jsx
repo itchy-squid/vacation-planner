@@ -7,6 +7,7 @@ import { getTripDays } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
 import { planDurationMinutes } from "../../lib/dayGrid";
+import { externalHref } from "../../lib/externalHref";
 import Stepper from "../forms/Stepper";
 import WhoIsGoing from "./WhoIsGoing";
 
@@ -27,14 +28,6 @@ import WhoIsGoing from "./WhoIsGoing";
 const SNAP_MIN = 15;
 const DAY_END_MIN = 1440;
 const CONFIRM_WINDOW_MS = 3000;
-
-// Pin links are stored as typed/pasted (often "maps.app/…" with no scheme);
-// window.open would resolve those relative to this app, so add https://
-// when no scheme is present — same test as pages/NewPin.jsx.
-function externalHref(link) {
-  if (!link) return null;
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(link) ? link : `https://${link}`;
-}
 
 // The server names who is double-booked when part of the group is
 // involved ("Jae is already on Liyu Lake bike loop then."); its plain

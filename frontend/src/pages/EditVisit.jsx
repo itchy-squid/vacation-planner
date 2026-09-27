@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
 import { getTripDays } from "../data/trip";
 import { dayIndexAndBandForPlan, isoForDayMinute } from "../lib/planTime";
+import { externalHref } from "../lib/externalHref";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 
@@ -433,6 +434,7 @@ export default function EditVisit() {
   const footnote = inContestedPlan
     ? `Saving recomputes this plan's totals. All ${state.contributors.length} contributors see the edit.`
     : `All ${state.contributors.length} contributors see the edit once you save.`;
+  const linkHref = externalHref(form.link);
 
   return (
     <div className="screen">
@@ -522,8 +524,8 @@ export default function EditVisit() {
               <button
                 type="button"
                 aria-label="Open link in new tab"
-                disabled={!form.link}
-                onClick={() => window.open(form.link, "_blank", "noopener,noreferrer")}
+                disabled={!linkHref}
+                onClick={() => window.open(linkHref, "_blank", "noopener,noreferrer")}
                 style={{
                   flex: "none",
                   width: 44,

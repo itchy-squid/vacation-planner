@@ -19,6 +19,7 @@ from ..schemas import (
     TravelItemOut,
 )
 from ..splits import audience, join_names, resolve_branch, traveler_rows
+from ..tripclock import as_trip_time, minutes_between
 
 router = APIRouter(prefix="/api", tags=["plans"])
 
@@ -174,7 +175,21 @@ def ensure_unique_stops(items: list[PlanItemCreate]) -> None:
         seen.add(key)
 
 
-def stop_layout(db: Session, items: list[PlanItemCreate]) -> list[tuple[int, int, str]]:
+def stop_source(db: Session, trip_id: int, item: PlanItemCreate) -> Pin | TravelItem:
+    """The pin or travel item a submitted stop points at, on this trip.
+
+    Ids come from the request body, so they are the caller's word only:
+    a stop naming another trip's pin would copy that pin into this trip's
+    plan (and hand its details back in every response that renders the
+    plan). Anything not on `trip_id` is a 404, the same as an id that
+    doesn't exist, so the answer doesn't confirm it exists elsewhere."""
+    source = db.get(Pin, item.pin_id) if item.pin_id is not None else db.get(TravelItem, item.travel_item_id)
+    if source is None or source.trip_id != trip_id:
+        raise HTTPException(status_code=404, detail="One of those stops isn't on this trip")
+    return source
+
+
+def stop_layout(db: Session, trip_id: int, items: list[PlanItemCreate]) -> list[tuple[int, int, str]]:
     """(offset, duration, title) for each submitted stop, in the order
     given, with both nullable fields resolved exactly the way app/derive.py
     resolves the stored columns: a stop's own trim or the item's duration,
@@ -184,11 +199,7 @@ def stop_layout(db: Session, items: list[PlanItemCreate]) -> list[tuple[int, int
     layout: list[tuple[int, int, str]] = []
     packed = 0
     for item in items:
-        source = (
-            db.get(Pin, item.pin_id) if item.pin_id is not None else db.get(TravelItem, item.travel_item_id)
-        )
-        if source is None:
-            raise HTTPException(status_code=404, detail="One of those stops no longer exists")
+        source = stop_source(db, trip_id, item)
         duration = item.duration_minutes if item.duration_minutes is not None else source.duration_minutes
         offset = item.offset_minutes if item.offset_minutes is not None else packed
         layout.append((offset, duration, source.title))
@@ -199,7 +210,7 @@ def stop_layout(db: Session, items: list[PlanItemCreate]) -> list[tuple[int, int
     return layout
 
 
-def validate_stop_layout(db: Session, items: list[PlanItemCreate], window_minutes: int) -> None:
+def validate_stop_layout(db: Session, trip_id: int, items: list[PlanItemCreate], window_minutes: int) -> None:
     """Refuse a set of stops that can't happen: two at once, or one running
     past the end of the block.
 
@@ -216,7 +227,7 @@ def validate_stop_layout(db: Session, items: list[PlanItemCreate], window_minute
     happens."""
     previous_end = 0
     previous_title = ""
-    for offset, duration, title in stop_layout(db, items):
+    for offset, duration, title in stop_layout(db, trip_id, items):
         if offset < previous_end:
             raise HTTPException(
                 status_code=400,
@@ -235,6 +246,32 @@ def validate_stop_layout(db: Session, items: list[PlanItemCreate], window_minute
             )
         previous_end = offset + duration
         previous_title = title
+
+
+def ensure_forward_window(starts_at, ends_at) -> None:
+    if as_trip_time(ends_at) <= as_trip_time(starts_at):
+        raise HTTPException(status_code=400, detail="A block has to end after it starts")
+
+
+def validate_placement(db: Session, trip_id: int, starts_at, ends_at, items: list[PlanItemCreate]) -> None:
+    """What any stored block has to satisfy: hours that run forwards, each
+    stop at most once, and every stop on this trip.
+
+    Direct placement stops here. A plan placed straight onto the calendar
+    is sized by its hours, not by its pin (a 70-minute pin dropped into an
+    hour is an hour), so it has no stop layout to check."""
+    ensure_forward_window(starts_at, ends_at)
+    ensure_unique_stops(items)
+    for item in items:
+        stop_source(db, trip_id, item)
+
+
+def validate_block(db: Session, trip_id: int, starts_at, ends_at, items: list[PlanItemCreate]) -> None:
+    """validate_placement, plus a stop layout that fits the hours — for
+    every path that builds a set of stops with times of their own (a fresh
+    proposal, a published draft, an edited set)."""
+    validate_placement(db, trip_id, starts_at, ends_at, items)
+    validate_stop_layout(db, trip_id, items, minutes_between(ends_at, starts_at))
 
 
 @router.get("/trips/{trip_id}/plans", response_model=list[PlanOut])
@@ -272,14 +309,16 @@ def create_plan(
     this endpoint, or, when the 409 carries an occupying_contest_id, offer
     to add a set to the vote that's already open there."""
     is_draft = payload.status == "draft"
+    if not is_draft:
+        # A draft is the start of a proposal (plans:propose); putting
+        # something straight onto the calendar is plans:write.
+        access.ensure(PLANS_WRITE, "Propose a block instead — you can't place things on the calendar directly")
+    validate_placement(db, trip_id, payload.starts_at, payload.ends_at, payload.items)
     # Checked for drafts too: a draft for the wrong hours of a group would
     # only fail later, when it's published.
     branch = resolve_branch(db, trip_id, payload.branch_id, payload.starts_at, payload.ends_at)
     branch_id = branch.id if branch else None
     if not is_draft:
-        # A draft is the start of a proposal (plans:propose); putting
-        # something straight onto the calendar is plans:write.
-        access.ensure(PLANS_WRITE, "Propose a block instead — you can't place things on the calendar directly")
         # A draft skips this entirely: it claims no time, so there is
         # nothing for it to conflict with (feature spec §6.4).
         occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at, branch_id=branch_id)
@@ -323,6 +362,7 @@ def move_plan(
 
     new_starts = payload.starts_at if payload.starts_at is not None else plan.starts_at
     new_ends = payload.ends_at if payload.ends_at is not None else plan.ends_at
+    ensure_forward_window(new_starts, new_ends)
     # A group's plan stays inside its split; a plan for everyone stays out
     # of every split (app/splits.py).
     resolve_branch(db, plan.trip_id, plan.branch_id, new_starts, new_ends)
