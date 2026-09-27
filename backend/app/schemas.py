@@ -331,6 +331,9 @@ class PinOut(BaseModel):
     # app/routers/pins.py for how these are written.
     availability_rule: "AvailabilityRuleOut | None" = None
     availability_overrides: list[AvailabilityOverrideOut] = Field(default_factory=list)
+    # Contributor ids of everyone who has hearted this pin, earliest first
+    # (app/models.py PinHeart). Its length is the pin's popularity.
+    hearted_by: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _sign_photo_url(self) -> "PinOut":

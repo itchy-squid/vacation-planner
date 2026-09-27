@@ -6,7 +6,8 @@ import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import CostField from "../components/forms/CostField";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
-import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useIdeaAccess, usePinHeart } from "../state/PlannerContext";
+import PinHearts from "../components/planner/PinHearts";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
@@ -200,6 +201,11 @@ export default function EditVisit() {
   // and the bottom tab bar. Not armed mid-save — the draft is on its way to
   // the server at that point, and Save navigates by itself when it lands.
   useNavGuard(Boolean(pin) && dirty && !saving && !deleting, DISCARD_PROMPT);
+
+  // Not part of the draft: a heart is yours rather than an edit to the
+  // pin, so it lands the moment it's tapped, for readers of this screen
+  // who can't edit anything else here too.
+  const heart = usePinHeart(pin);
 
   if (!pin) {
     return (
@@ -597,6 +603,8 @@ export default function EditVisit() {
             </div>
             <span style={{ font: "400 11.5px var(--font-sans)", color: "var(--accent)" }}>{commentLabel}</span>
           </div>
+
+          <PinHearts title={pin.title} heart={heart} contributors={state.contributors} currentUserId={state.currentUserId} />
 
           {saveError && (
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{saveError}</div>

@@ -17,6 +17,8 @@ import { stopMoney } from "../data/expenses";
 import CostField from "../components/forms/CostField";
 import { bandsForMinuteRange, clockLabel, isoForDayMinute } from "../lib/planTime";
 import { reasonsFor, worksInAnyBand } from "../lib/availability";
+import { heartCount, heartsSuffix, inPinOrder, usePinOrder } from "../lib/popularity";
+import PinOrderToggle from "../components/planner/PinOrderToggle";
 import {
   MIN_SELECTION_MIN,
   contestWindowsFrom,
@@ -369,6 +371,7 @@ export default function ProposeBlock() {
         durationMinutes: item.durationMinutes,
         costCents: item.costCents,
         costBasis: item.costBasis,
+        hearts: item.pinId ? heartCount(pins[item.pinId]) : 0,
         ...availability(item.pinId),
       });
     });
@@ -393,6 +396,7 @@ export default function ProposeBlock() {
           costCents: pin.costCents,
           costBasis: pin.costBasis,
           who: pin.who,
+          hearts: heartCount(pin),
           ...availability(pin.id),
         })
       );
@@ -429,11 +433,17 @@ export default function ProposeBlock() {
   // reason the region sort above hides nothing either. Availability is a
   // strong hint, not a lock: overrides exist precisely so the group can
   // decide a rule is wrong.
+  //
+  // "Most hearted" (lib/popularity.js) re-sorts inside each group, never
+  // across them: a popular pin that's ruled out for these hours is still
+  // ruled out.
+  const [pinOrder, setPinOrder] = usePinOrder();
   const pullInGroups = useMemo(() => {
-    const works = pullInOptions.filter((o) => o.works);
-    const ruledOut = pullInOptions.filter((o) => !o.works);
+    const byHearts = (options) => inPinOrder(options, pinOrder, (o) => o.hearts ?? 0);
+    const works = byHearts(pullInOptions.filter((o) => o.works));
+    const ruledOut = byHearts(pullInOptions.filter((o) => !o.works));
     return { works, ruledOut, ruledOutReasons: [...new Set(ruledOut.flatMap((o) => o.reasons))] };
-  }, [pullInOptions]);
+  }, [pullInOptions, pinOrder]);
 
   function addStop(option, gapBefore = 0) {
     setError("");
@@ -815,6 +825,8 @@ export default function ProposeBlock() {
             return { ...s, ...stopMoney(s, audienceIds) };
           })}
           pullInGroups={pullInGroups}
+          pinOrder={pinOrder}
+          onPinOrder={setPinOrder}
           title={editing ? "Edit this set" : "Your block"}
           backLabel={contestId ? "Cancel" : "‹ Hours"}
           onBack={() => (contestId ? cancel() : setStep(2))}
@@ -1254,6 +1266,7 @@ function PullInChip({ option, onPullIn, muted = false }) {
       }}
     >
       {option.title} · {fmtMin(option.baseDurationMinutes)}
+      {heartsSuffix(option.hearts ?? 0)}
     </button>
   );
 }
@@ -1264,6 +1277,8 @@ function StepThree({
   plannedMinutes,
   stops,
   pullInGroups,
+  pinOrder,
+  onPinOrder,
   title,
   backLabel,
   onBack,
@@ -1329,7 +1344,10 @@ function StepThree({
               come first, under their own label; the rest stay visible
               below it rather than being filtered away. See the
               pullInGroups comment above for why nothing is hidden. */}
-          <div className="mono-caption">Pull in · works these hours</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div className="mono-caption">Pull in · works these hours</div>
+            <PinOrderToggle value={pinOrder} onChange={onPinOrder} />
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
             {pullInGroups.works.map((option) => (
               <PullInChip key={`${option.kind}-${option.refId}`} option={option} onPullIn={onPullIn} />

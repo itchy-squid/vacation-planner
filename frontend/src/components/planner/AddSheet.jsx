@@ -14,6 +14,8 @@ import PhotoPlaceholder from "../core/PhotoPlaceholder";
 import CostField from "../forms/CostField";
 import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
 import { textFieldStyle } from "../forms/TextField";
+import PinOrderToggle from "./PinOrderToggle";
+import { heartCount, heartsSuffix, inPinOrder, usePinOrder } from "../../lib/popularity";
 
 // Everything you can add to a day, behind the one "+ Add" button that
 // replaced pages/DaySchedule.jsx's tray (see docs/features/scheduling-
@@ -250,10 +252,14 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
     [filter, dayRegions]
   );
 
+  const [order, setOrder] = usePinOrder();
   const shownPins = useMemo(() => {
     const set = filter.length ? new Set(filter) : null;
-    return pins.filter((p) => !set || set.has(p.region));
-  }, [pins, filter]);
+    return inPinOrder(
+      pins.filter((p) => !set || set.has(p.region)),
+      order
+    );
+  }, [pins, filter, order]);
 
   // One armed slot across the whole list, since only one row can
   // plausibly be mid-confirm at a time — the rule the tray used, kept.
@@ -351,13 +357,16 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
           </>
         )}
 
-        <div className="mono-caption" style={{ marginTop: travelItems.length ? 16 : 10 }}>Pins</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: travelItems.length ? 12 : 6 }}>
+          <div className="mono-caption">Pins</div>
+          {shownPins.length > 1 ? <PinOrderToggle value={order} onChange={setOrder} /> : null}
+        </div>
         {shownPins.length ? (
           shownPins.map((pin) => (
             <PickerRow
               key={pin.id}
               title={pin.title}
-              meta={`${pin.region} · ${pin.dur}m`}
+              meta={`${pin.region} · ${pin.dur}m${heartsSuffix(heartCount(pin))}`}
               photoUrl={pin.photoUrl}
               armed={armedKey === `pin:${pin.id}`}
               onArm={() => onArm("pin", pin.id)}

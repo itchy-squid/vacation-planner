@@ -232,6 +232,36 @@ class Pin(Base):
     added_by: Mapped[Contributor | None] = relationship()
     availability_rule: Mapped["AvailabilityRule | None"] = relationship(back_populates="pin", uselist=False, cascade="all, delete-orphan")
     availability_overrides: Mapped[list["AvailabilityOverride"]] = relationship(back_populates="pin", cascade="all, delete-orphan")
+    # Loaded with the pin (selectin), since every pin response carries who
+    # hearted it — the board's count and the place/propose sort read it.
+    hearts: Mapped[list["PinHeart"]] = relationship(
+        back_populates="pin", cascade="all, delete-orphan", lazy="selectin", order_by="PinHeart.created_at"
+    )
+
+    @property
+    def hearted_by(self) -> list[int]:
+        """Contributor ids, earliest heart first."""
+        return [heart.contributor_id for heart in self.hearts]
+
+
+class PinHeart(Base):
+    """One person saying "I'd like to do this" about an idea on the board.
+    A toggle, at most one per person per pin. The count is how popular the
+    idea is, which is what "Most hearted" sorts by when placing a pin or
+    pulling one into a proposal. Unlike a Vote it decides nothing: it's a
+    signal for whoever does the planning, so anyone who may vote may heart.
+    Goes with its person when they leave the trip or become a reader, the
+    same as their votes (routers/sharing.py)."""
+
+    __tablename__ = "pin_hearts"
+    __table_args__ = (UniqueConstraint("pin_id", "contributor_id", name="uq_pin_heart_pin_contributor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pin_id: Mapped[int] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"))
+    contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    pin: Mapped[Pin] = relationship(back_populates="hearts")
 
 
 class AvailabilityRule(Base):

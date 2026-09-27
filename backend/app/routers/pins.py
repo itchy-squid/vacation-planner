@@ -2,13 +2,14 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import photo_storage
 from ..db import SessionLocal, get_db
 from ..events import bus
-from ..models import AvailabilityOverride, AvailabilityRule, Pin, PlanItem
-from ..permissions import IDEAS_ADD, IDEAS_READ, Access, require
+from ..models import AvailabilityOverride, AvailabilityRule, Pin, PinHeart, PlanItem
+from ..permissions import IDEAS_ADD, IDEAS_READ, VOTES_WRITE, Access, require
 from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import (
     AvailabilityOverrideToggle,
@@ -150,6 +151,46 @@ def delete_pin(pin_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Se
     db.commit()
     bus.publish(trip_id, "pin.removed", {"pin_id": pin_id})
     return None
+
+
+def _pin_or_404(db: Session, pin_id: int) -> Pin:
+    pin = db.get(Pin, pin_id)
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    return pin
+
+
+@router.put("/api/pins/{pin_id}/heart", response_model=PinOut)
+def heart_pin(pin_id: int, access: Access = Depends(require(VOTES_WRITE)), db: Session = Depends(get_db)):
+    """Heart an idea (app/models.py PinHeart). PUT rather than a toggle so a
+    double tap or a retried request can't flip it back: hearting something
+    you've already hearted changes nothing. Returns the pin, so the caller
+    gets the new count and everyone else's hearts in one go."""
+    pin = _pin_or_404(db, pin_id)
+    if access.member.id not in pin.hearted_by:
+        db.add(PinHeart(pin_id=pin_id, contributor_id=access.member.id))
+        try:
+            db.commit()
+        except IntegrityError:
+            # The same person's other request got there first; the heart
+            # they wanted is there either way.
+            db.rollback()
+        db.refresh(pin)
+        bus.publish(pin.trip_id, "pin.hearted", {"pin_id": pin_id, "count": len(pin.hearted_by)})
+    return pin
+
+
+@router.delete("/api/pins/{pin_id}/heart", response_model=PinOut)
+def unheart_pin(pin_id: int, access: Access = Depends(require(VOTES_WRITE)), db: Session = Depends(get_db)):
+    """Take your heart back. Like heart_pin, repeating it changes nothing."""
+    pin = _pin_or_404(db, pin_id)
+    heart = next((h for h in pin.hearts if h.contributor_id == access.member.id), None)
+    if heart is not None:
+        pin.hearts.remove(heart)
+        db.commit()
+        db.refresh(pin)
+        bus.publish(pin.trip_id, "pin.hearted", {"pin_id": pin_id, "count": len(pin.hearted_by)})
+    return pin
 
 
 @router.put("/api/pins/{pin_id}/availability-rule")

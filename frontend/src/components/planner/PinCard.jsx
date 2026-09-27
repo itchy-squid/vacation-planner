@@ -1,4 +1,6 @@
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
+import HeartButton from "../core/HeartButton";
+import { usePinHeart } from "../../state/PlannerContext";
 
 // The two photo heights the masonry rhythm alternates between (handoff
 // README screen 2). Exported so anything elsewhere that wants to preview
@@ -13,7 +15,13 @@ export const BOARD_PHOTO_HEIGHT_SECONDARY = 150;
 // Pin board masonry card. Left column photo height 112, right column 150 —
 // that alternation is what produces the masonry rhythm (handoff README
 // screen 2). Place-row dot is plum in the left column, teal in the right.
-export default function PinCard({ pin, column, contributorInitial, onOpen }) {
+// The heart sits on the photo's top corner, where it costs the text rows
+// nothing on a card this narrow; who hearted it is on the pin's own screen
+// (pages/EditVisit.jsx), which has the room. `example` is for the faded
+// sample cards on the empty board (EmptyBoard.jsx), which aren't real pins
+// and so can't be hearted.
+export default function PinCard({ pin, column, contributorInitial, onOpen, example = false }) {
+  const heart = usePinHeart(pin);
   const photoHeight = column === 0 ? BOARD_PHOTO_HEIGHT_PRIMARY : BOARD_PHOTO_HEIGHT_SECONDARY;
   const dotColor = column === 0 ? "var(--accent)" : "var(--geo)";
   return (
@@ -29,7 +37,19 @@ export default function PinCard({ pin, column, contributorInitial, onOpen }) {
         cursor: "pointer",
       }}
     >
-      <PhotoPlaceholder height={photoHeight} label="photo" src={pin.photoUrl} alt={pin.title} />
+      <PhotoPlaceholder height={photoHeight} label="photo" src={pin.photoUrl} alt={pin.title}>
+        <div style={{ position: "absolute", top: 8, right: 8 }}>
+          <HeartButton
+            overlay
+            title={pin.title}
+            count={heart.count}
+            hearted={heart.hearted}
+            canHeart={heart.canHeart && !example}
+            onToggle={heart.toggle}
+            busy={heart.busy}
+          />
+        </div>
+      </PhotoPlaceholder>
       <div style={{ padding: "10px 11px 11px" }}>
         <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)" }}>{pin.title}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>

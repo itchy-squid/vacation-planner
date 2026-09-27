@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { coordsForPin } from "../lib/mapLayout";
 import { formatDateRange, relativeTime } from "../lib/format";
@@ -143,6 +143,9 @@ function normalizePin(p, contributorsById) {
     availabilityRule: p.availability_rule
       ? { days: p.availability_rule.days, bands: p.availability_rule.bands, why: p.availability_rule.reasons }
       : { days: null, bands: null, why: [] },
+    // Contributor ids, earliest first (backend/app/models.py PinHeart).
+    // Its length is the pin's popularity — see lib/popularity.js.
+    heartedBy: p.hearted_by ?? [],
   };
 }
 
@@ -1227,6 +1230,28 @@ export function PlannerProvider({ children }) {
           }
         }
 
+        // The viewer's heart on a pin, on or off. Applied straight away
+        // and put back if the server refuses, so tapping the heart feels
+        // instant; what the server returns then replaces the guess, which
+        // also brings in anyone else's hearts since the board loaded.
+        case "HEART_PIN": {
+          const before = state.pins[action.id];
+          if (!before || state.currentUserId == null) return { ok: false };
+          const others = before.heartedBy.filter((id) => id !== state.currentUserId);
+          const guess = action.hearted ? [...others, state.currentUserId] : others;
+          dispatch({ type: "APPLY_PIN", pin: { ...before, heartedBy: guess } });
+          try {
+            const updated = action.hearted ? await api.heartPin(action.id) : await api.unheartPin(action.id);
+            const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
+            dispatch({ type: "APPLY_PIN", pin: normalizePin(updated, contributorsById) });
+            return { ok: true };
+          } catch (err) {
+            console.error("heart failed", err);
+            dispatch({ type: "APPLY_PIN", pin: before });
+            return { ok: false, error: err.message };
+          }
+        }
+
         // Flips one availability cell for one pin. The endpoint is a
         // toggle, not a set, so a caller holding a draft of the grid
         // (pages/EditVisit.jsx) sends one of these per cell that actually
@@ -1253,7 +1278,7 @@ export function PlannerProvider({ children }) {
           return;
       }
     },
-    [state.pins, state.travelItems, state.plans, state.placing, state.proposeSheet, state.contributors, state.trip]
+    [state.pins, state.travelItems, state.plans, state.placing, state.proposeSheet, state.contributors, state.trip, state.currentUserId]
   );
   // Stable function identity across renders (children never need to
   // re-subscribe just because a background fetch resolved).
@@ -1329,6 +1354,31 @@ export function useCan() {
     const set = new Set(scopes ?? []);
     return (scope) => set.has(scope);
   }, [scopes]);
+}
+
+// The viewer's heart on one pin: how many people have hearted it, whether
+// the viewer has, and a toggle. Anyone who may vote may heart
+// (votes:write), so readers get the count and no toggle.
+export function usePinHeart(pin) {
+  const dispatch = usePlannerDispatch();
+  const can = useCan();
+  const { currentUserId } = usePlannerState();
+  const [busy, setBusy] = useState(false);
+  const heartedBy = pin?.heartedBy ?? [];
+  const hearted = currentUserId != null && heartedBy.includes(currentUserId);
+  const pinId = pin?.id;
+
+  const toggle = useCallback(async () => {
+    if (pinId == null) return;
+    setBusy(true);
+    try {
+      await dispatch({ type: "HEART_PIN", id: pinId, hearted: !hearted });
+    } finally {
+      setBusy(false);
+    }
+  }, [dispatch, pinId, hearted]);
+
+  return { count: heartedBy.length, hearted, heartedBy, canHeart: can("votes:write"), toggle, busy };
 }
 
 // Per-item access for pins and travel items, on top of useCan(): a

@@ -38,7 +38,7 @@ export default function PrivacyPolicy() {
             </p>
             <p>
               <strong>What you add to a trip.</strong> This includes trips, the places you pin (with their notes, links,
-              tags and costs), schedules and proposals, votes, comments, and expenses. If you add a photo by pasting an
+              tags and costs), schedules and proposals, votes, hearts, comments, and expenses. If you add a photo by pasting an
               image link, we save a copy of that image in private storage so the trip doesn’t depend on the original
               website.
             </p>
@@ -136,7 +136,7 @@ export default function PrivacyPolicy() {
               <li>Trips you own that nobody else is on are deleted, along with their photos.</li>
               <li>
                 Places, travel items and plans you added to trips that carry on stay for the group, without your name.
-                Your votes, comments and drafts are deleted.
+                Your votes, hearts, comments and drafts are deleted.
               </li>
             </ul>
             <p>

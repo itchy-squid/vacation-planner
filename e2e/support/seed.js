@@ -20,7 +20,7 @@ export function at(day, clock) {
  * as for any new trip), plus whatever the test asks for.
  *
  *   travelers: ["Ana", "Lin"]            extra travelers, no accounts
- *   pins:      [{ title, region, minutes }]
+ *   pins:      [{ title, region, minutes, hearted }]   hearted: the test account hearts it
  *   events:    [{ title, minutes }]      custom events (travel items)
  *
  * Returns ids by name: { id, name, me, travelers: { Ana: 12 }, pins: {...}, events: {...} }.
@@ -51,6 +51,7 @@ export async function seedTrip(api, { title = "trip", travelers = [], pins = [],
       `add pin ${pin.title}`
     );
     seeded.pins[pin.title] = row.id;
+    if (pin.hearted) await ok(api.put(`/api/pins/${row.id}/heart`), `heart pin ${pin.title}`);
   }
   for (const event of events) {
     const row = await ok(
@@ -103,6 +104,10 @@ export async function contestsOf(api, trip) {
   const plans = await plansOf(api, trip);
   const ids = [...new Set(plans.filter((p) => p.contest_id != null).map((p) => p.contest_id))];
   return Promise.all(ids.map((id) => ok(api.get(`/api/contests/${id}`), "get contest")));
+}
+
+export async function pinsOf(api, trip) {
+  return ok(api.get(`/api/trips/${trip.id}/pins`), "list pins");
 }
 
 export async function plansOf(api, trip) {

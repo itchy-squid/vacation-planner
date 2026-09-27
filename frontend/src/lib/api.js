@@ -377,6 +377,10 @@ export const api = {
   getPin: (pinId) => request(`/api/pins/${pinId}`),
   patchPin: (pinId, fields) => request(`/api/pins/${pinId}`, { method: "PATCH", body: fields }),
   deletePin: (pinId) => request(`/api/pins/${pinId}`, { method: "DELETE" }),
+  // Idempotent both ways (backend/app/routers/pins.py heart_pin); each
+  // returns the pin, with everyone who has hearted it.
+  heartPin: (pinId) => request(`/api/pins/${pinId}/heart`, { method: "PUT" }),
+  unheartPin: (pinId) => request(`/api/pins/${pinId}/heart`, { method: "DELETE" }),
   toggleAvailabilityOverride: (pinId, day, band) =>
     request(`/api/pins/${pinId}/availability-overrides/toggle`, { method: "POST", body: { day, band } }),
 
