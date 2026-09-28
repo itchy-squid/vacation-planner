@@ -4,7 +4,7 @@ import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/Pla
 import { isMapsConfigured } from "../lib/googleMaps";
 import PlaceSearchStep from "../components/newpin/PlaceSearchStep";
 import PlaceDetailsForm from "../components/newpin/PlaceDetailsForm";
-import LinkPinForm from "../components/newpin/LinkPinForm";
+import ByHandForm from "../components/newpin/ByHandForm";
 import { usePlaceSearch } from "../components/newpin/usePlaceSearch";
 
 // Adding a pin. Two ways in, as the project's "add a pin by search"
@@ -15,9 +15,10 @@ import { usePlaceSearch } from "../components/newpin/usePlaceSearch";
 //            opens the new-pin form already filled in (PlaceDetailsForm),
 //            and adding it goes back to the board with the new card
 //            outlined.
-//   link     Adding by hand, for a pasted link or a place Google doesn't
-//            know (LinkPinForm). Hands off to the idea's own screen for
-//            duration and cost, as before. It's the only way without a
+//   link     Adding by hand (ByHandForm), for what Google Maps doesn't
+//            list: a Viator tour, a friend's tip, an article. It goes on
+//            the map in its region, or at an exact spot if one is pinned,
+//            and also ends back on the board. It's the only way without a
 //            Maps key.
 //
 // The step lives in component state rather than the URL, like the
@@ -107,14 +108,22 @@ export default function NewPin() {
   }
 
   return (
-    <LinkPinForm
+    <ByHandForm
+      trip={trip}
       knownRegions={knownRegions}
+      canSetCost={ideaAccess.canSetCost(null)}
       focusTitle={searchParams.get("focus") === "title"}
       submitting={submitting}
       error={error}
       onCancel={() => navigate(board)}
       onSearch={isMapsConfigured ? () => goTo("search") : null}
-      onSubmit={(payload) => create(payload, (pin) => navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`))}
+      onSubmit={async ({ payload, newRegion }) => {
+        // A region the trip hasn't placed yet is stored first, so the new
+        // idea shows in it straight away. If that fails the idea is still
+        // added; the Map tab looks the region up again.
+        if (newRegion) await dispatch({ type: "SAVE_REGION", region: newRegion });
+        create(payload, (pin) => navigate(board, { state: { addedPinId: pin.id } }));
+      }}
     />
   );
 }

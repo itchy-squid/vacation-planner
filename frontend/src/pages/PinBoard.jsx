@@ -8,6 +8,7 @@ import HeaderIconButton from "../components/core/HeaderIconButton";
 import EmptyBoard from "../components/planner/EmptyBoard";
 import InviteSheet from "../components/sharing/InviteSheet";
 import RegionFilter, { ALL_REGIONS } from "../components/planner/RegionFilter";
+import { regionKey } from "../lib/regions";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
 // Board/Map segment switch is gone: the map is its own tab now
@@ -21,7 +22,7 @@ import RegionFilter, { ALL_REGIONS } from "../components/planner/RegionFilter";
 // twice.
 export default function PinBoard() {
   const navigate = useNavigate();
-  const { trip: TRIP, pins, contributors: CONTRIBUTORS } = usePlannerState();
+  const { trip: TRIP, pins, contributors: CONTRIBUTORS, regions: REGION_LOCATIONS } = usePlannerState();
   // Companions and planners both add pins (ideas:add); what each may do
   // to an existing one is decided on its own screen (pages/EditVisit.jsx).
   const can = useCan();
@@ -79,6 +80,12 @@ export default function PinBoard() {
   filtered.forEach((pin, i) => columns[i % 2].push(pin));
 
   const initialFor = (pin) => CONTRIBUTORS.find((c) => c.id === pin.who)?.initial ?? "?";
+  // Where each card will be on the Map tab: at its own spot, or in its
+  // region once the trip knows where that region is.
+  const locationLabelFor = (pin) => {
+    if (pin.lat != null) return "On the map";
+    return pin.region && REGION_LOCATIONS[regionKey(pin.region)] ? `Shown in ${pin.region}` : null;
+  };
   // "+" and "Type a place" go to place search (pages/NewPin.jsx; without a
   // Maps key that's the by-hand form, starting in the title). "Paste a
   // link" goes straight to the by-hand form.
@@ -149,6 +156,7 @@ export default function PinBoard() {
                   column={ci}
                   contributorInitial={initialFor(pin)}
                   highlighted={pin.id === justAddedId}
+                  locationLabel={locationLabelFor(pin)}
                   onOpen={() => navigate(`/trips/${TRIP.id}/edit/${pin.id}?from=board`)}
                 />
               ))}

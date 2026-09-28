@@ -23,10 +23,10 @@ test("adding the first idea from the empty board replaces it with the idea", asy
   await expect(page.getByLabel("Link", { exact: true })).toBeFocused();
   await page.getByLabel("Title").fill("Longshan Temple");
   await page.getByRole("button", { name: "Add to board" }).click();
-  await expect(page).toHaveURL(/\/edit\/\d+/);
 
-  await page.goto(boardUrl(trip));
-  await expect(page.getByText("Longshan Temple")).toBeVisible();
+  // Back on the board, which now shows the idea.
+  await expect(page).toHaveURL(new RegExp(`/trips/${trip.id}/board$`));
+  await expect(page.getByText("Longshan Temple", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "What might you do on this trip?" })).toHaveCount(0);
 });
 

@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { importMapsLibrary } from "../../lib/googleMaps";
 import { findTripArea } from "../../lib/mapArea";
 
 /**
@@ -15,8 +14,7 @@ export function useFitToArea(map, area, padding) {
     if (!map || !area) return undefined;
     let cancelled = false;
 
-    Promise.all([importMapsLibrary("maps"), importMapsLibrary("geocoding")])
-      .then(([{ LatLngBounds }, { Geocoder }]) => findTripArea({ geocoder: new Geocoder(), LatLngBounds }, area))
+    findTripArea(area)
       .then((bounds) => {
         if (!cancelled && bounds) map.fitBounds(bounds, padding);
       })

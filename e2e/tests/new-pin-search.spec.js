@@ -92,7 +92,8 @@ test("a place search can't find can still be added by hand", async ({ page, seed
   await expect(page.getByLabel("Link", { exact: true })).toBeVisible();
   await page.getByLabel("Title").fill("Auntie's dumplings");
   await page.getByRole("button", { name: "Add to board" }).click();
-  await expect(page).toHaveURL(/\/edit\/\d+/);
+  await expect(page).toHaveURL(new RegExp(`/trips/${trip.id}/board$`));
+  await expect(page.getByRole("status")).toContainText("Auntie's dumplings added to ideas");
 });
 
 test("Type a place on the empty board opens search", async ({ page, seed }) => {

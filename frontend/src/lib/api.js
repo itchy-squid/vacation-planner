@@ -373,6 +373,9 @@ export const api = {
     request(`/api/travelers/${travelerId}/invite`, { method: "POST", body: { role } }),
 
   listPins: (tripId) => request(`/api/trips/${tripId}/pins`),
+  // Where the trip's regions are on the map (backend routers/regions.py).
+  listRegions: (tripId) => request(`/api/trips/${tripId}/regions`),
+  putRegion: (tripId, region) => request(`/api/trips/${tripId}/regions`, { method: "PUT", body: region }),
   createPin: (tripId, payload) => request(`/api/trips/${tripId}/pins`, { method: "POST", body: payload }),
   getPin: (pinId) => request(`/api/pins/${pinId}`),
   patchPin: (pinId, fields) => request(`/api/pins/${pinId}`, { method: "PATCH", body: fields }),

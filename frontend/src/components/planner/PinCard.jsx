@@ -21,8 +21,9 @@ export const BOARD_PHOTO_HEIGHT_SECONDARY = 150;
 // sample cards on the empty board (EmptyBoard.jsx), which aren't real pins
 // and so can't be hearted.
 // `highlighted` outlines the card in plum: the pin that was just added
-// (pages/PinBoard.jsx).
-export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false }) {
+// (pages/PinBoard.jsx). `locationLabel` says where it is on the Map tab
+// ("On the map" or "Shown in Cozumel"), teal for an exact spot.
+export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false, locationLabel = null }) {
   const heart = usePinHeart(pin);
   const photoHeight = column === 0 ? BOARD_PHOTO_HEIGHT_PRIMARY : BOARD_PHOTO_HEIGHT_SECONDARY;
   const dotColor = column === 0 ? "var(--accent)" : "var(--geo)";
@@ -80,6 +81,11 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
             {contributorInitial}
           </span>
         </div>
+        {locationLabel ? (
+          <div className="mono-data-sm" style={{ marginTop: 6, fontSize: 8.5, letterSpacing: ".06em", textTransform: "uppercase", color: pin.lat != null ? "var(--geo)" : "var(--text-secondary)" }}>
+            {locationLabel}
+          </div>
+        ) : null}
       </div>
     </div>
   );

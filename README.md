@@ -52,11 +52,12 @@ timeline (only drop targets are drawn), a real comment-thread view
 invite/permissions/login screens.
 
 The **Map** tab (`frontend/src/pages/TripMap.jsx`, `/trips/:tripId/map`)
-replaced the old Lasso Map prototype. It shows a real Google map opened on
-the trip's area, found by geocoding the trip's pin regions (or its location
-line, then its name). Pins aren't drawn yet, because none has coordinates.
-Without a Maps key the tab says the map isn't switched on. See "Google
-Maps" below.
+replaced the old Lasso Map prototype. Ideas with an exact spot (added by
+place search, or pinned from the tab) are dots. Ideas without one, like a
+tour booked on Viator, are counted in a badge in their region's area. Each
+region's location is looked up on Google once and stored for the trip
+(`trip_regions`, `backend/app/routers/regions.py`). Without a Maps key the
+tab says the map isn't switched on. See "Google Maps" below.
 
 ### Google Maps
 

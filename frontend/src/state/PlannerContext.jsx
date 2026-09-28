@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { api } from "../lib/api";
 import { coordsForPin } from "../lib/mapLayout";
 import { formatDateRange, relativeTime } from "../lib/format";
+import { regionKey } from "../lib/regions";
 import { parseApiDateTime } from "../lib/planTime";
 import { roleLabel } from "../lib/roles";
 
@@ -108,6 +109,12 @@ function normalizeTraveler(t) {
     position: t.position,
     invited: Boolean(t.invited),
   };
+}
+
+// Where one of the trip's regions is (backend TripRegion), keyed in state
+// by regionKey(name) so pins find theirs whatever the case.
+function normalizeRegion(r) {
+  return { key: regionKey(r.name), id: r.id, name: r.name, lat: r.lat, lng: r.lng, south: r.south, west: r.west, north: r.north, east: r.east };
 }
 
 function normalizePin(p, contributorsById) {
@@ -326,6 +333,7 @@ function emptyTripView() {
     splits: [],
     travelItems: {},
     travelers: [],
+    regions: {},
     currentUserId: null,
   };
 }
@@ -339,13 +347,14 @@ async function loadTripView(tripId, trips) {
   rememberLastTripId(trip.id);
   const otherTripRows = trips.filter((t) => t.id !== trip.id);
 
-  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw, splitsRaw] = await Promise.all([
+  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw, splitsRaw, regionsRaw] = await Promise.all([
     api.listContributors(trip.id),
     api.listPins(trip.id),
     api.listPlans(trip.id),
     api.listTravelItems(trip.id),
     api.listTravelers(trip.id),
     api.listSplits(trip.id),
+    api.listRegions(trip.id),
   ]);
   const travelers = travelersRaw.map(normalizeTraveler);
 
@@ -458,6 +467,7 @@ async function loadTripView(tripId, trips) {
     splits: splitsRaw.map(normalizeSplit),
     travelItems,
     travelers,
+    regions: Object.fromEntries(regionsRaw.map((r) => [regionKey(r.name), normalizeRegion(r)])),
     currentUserId,
   };
 }
@@ -475,6 +485,7 @@ const initialState = {
   splits: [], // Split[] — where the group has split up (lib/splits.js)
   travelItems: {}, // travelItemId -> TravelItem
   travelers: [], // Traveler[], roster order — who is going (see normalizeTraveler)
+  regions: {}, // regionKey(name) -> where that region is (see normalizeRegion)
   currentUserId: null,
   switchingTripId: null, // id of an "also planning" trip currently being opened, or null
 
@@ -522,6 +533,9 @@ function reducer(state, action) {
 
     case "APPLY_PIN":
       return { ...state, pins: { ...state.pins, [action.pin.id]: action.pin } };
+
+    case "APPLY_REGION":
+      return { ...state, regions: { ...state.regions, [action.region.key]: action.region } };
 
     case "APPLY_TRAVEL_ITEM":
       return { ...state, travelItems: { ...state.travelItems, [action.item.id]: action.item } };
@@ -1203,6 +1217,22 @@ export function PlannerProvider({ children }) {
           return pin;
         }
 
+        // Where a region is, stored for the whole trip (components/map/
+        // useRegionLocations.js, components/newpin/ByHandForm.jsx). Returns
+        // a result for the same reason PATCH_PIN does.
+        case "SAVE_REGION": {
+          const { name, lat, lng, south, west, north, east } = action.region;
+          try {
+            const saved = await api.putRegion(state.trip.id, { name, lat, lng, south, west, north, east });
+            const region = normalizeRegion(saved);
+            dispatch({ type: "APPLY_REGION", region });
+            return { ok: true, region };
+          } catch (err) {
+            console.error("region save failed", err);
+            return { ok: false, error: err.message };
+          }
+        }
+
         case "PATCH_PIN": {
           const backendFields = {};
           const f = action.fields;
@@ -1219,6 +1249,13 @@ export function PlannerProvider({ children }) {
           // (pages/NewPin.jsx); routers/pins.py re-mirrors it into blob
           // storage whenever this lands a new external link.
           if ("photoUrl" in f) backendFields.photo_url = f.photoUrl.trim() || null;
+          // An exact spot: { lat, lng, placeId } or null to remove it.
+          // Always sent whole; the API refuses half a location.
+          if ("location" in f) {
+            backendFields.lat = f.location?.lat ?? null;
+            backendFields.lng = f.location?.lng ?? null;
+            backendFields.google_place_id = f.location?.placeId ?? null;
+          }
           // Returns a result rather than swallowing the failure: an
           // explicit Save (pages/EditVisit.jsx) has to be able to keep the
           // user on the form and say so when the write didn't land, instead

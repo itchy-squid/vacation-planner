@@ -115,6 +115,9 @@ def update_pin(
     access.ensure_may_edit_idea(pin.added_by_id)
     fields = payload.model_dump(exclude_unset=True)
     ensure_may_set_costs(access, fields, pin.added_by_id)
+    # A spot placed by hand is no longer that Google place.
+    if "lat" in fields and "google_place_id" not in fields:
+        fields["google_place_id"] = None
     for field, value in fields.items():
         setattr(pin, field, value)
     db.commit()

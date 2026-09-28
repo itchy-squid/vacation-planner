@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { importMapsLibrary } from "../../lib/googleMaps";
+import { useCallback, useEffect, useMemo } from "react";
 import { useMap } from "./mapContext";
+import { markerElement, useMarkers } from "./useMarkers";
 
 // Close enough to see the street a single result is on.
 const SINGLE_RESULT_ZOOM = 15;
@@ -10,54 +10,19 @@ const SINGLE_RESULT_ZOOM = 15;
  * matching the letters in the results list. A place that's already an
  * idea shows a teal check. Tapping a marker selects it.
  *
- *   results   [{ placeId, name, lat, lng, letter, existing }]
+ *   results     [{ placeId, name, lat, lng, letter, existing }]
  *   selectedId  the highlighted one
  *   fitPadding  room to keep clear when the map fits the results
  */
 export default function ResultMarkers({ results, selectedId, onSelect, fitPadding }) {
   const map = useMap();
-  const [library, setLibrary] = useState(null);
-  const onSelectRef = useRef(onSelect);
 
-  useEffect(() => {
-    onSelectRef.current = onSelect;
-  }, [onSelect]);
-
-  useEffect(() => {
-    if (!map) return undefined;
-    let cancelled = false;
-    importMapsLibrary("marker")
-      .then((lib) => {
-        if (!cancelled) setLibrary(lib);
-      })
-      // Without markers the list still works on its own.
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [map]);
-
-  // Redrawn whenever the results or the selection change: five markers at
-  // most, so rebuilding is simpler than patching each one.
-  useEffect(() => {
-    if (!map || !library) return undefined;
-    const markers = results.map((result) => {
-      const selected = result.placeId === selectedId;
-      const marker = new library.AdvancedMarkerElement({
-        map,
-        position: { lat: result.lat, lng: result.lng },
-        title: result.name,
-        content: markerElement(result, selected),
-        zIndex: selected ? 2 : 1,
-        gmpClickable: true,
-      });
-      marker.addEventListener("gmp-click", () => onSelectRef.current(result.placeId));
-      return marker;
-    });
-    return () => markers.forEach((marker) => {
-      marker.map = null;
-    });
-  }, [map, library, results, selectedId]);
+  const items = useMemo(
+    () => results.map((r) => ({ ...r, key: r.placeId, title: r.name, selected: r.placeId === selectedId, zIndex: r.placeId === selectedId ? 2 : 1 })),
+    [results, selectedId]
+  );
+  const onTap = useCallback((item) => onSelect(item.placeId), [onSelect]);
+  useMarkers(items, resultElement, onTap);
 
   // New results: show them all.
   useEffect(() => {
@@ -83,14 +48,12 @@ export default function ResultMarkers({ results, selectedId, onSelect, fitPaddin
   return null;
 }
 
-// Drawn as a plain element so it can use the app's tokens: plum for a new
-// place, teal (the geography colour) for one that's already an idea.
-function markerElement({ letter, existing }, selected) {
+// Plum for a new place, teal (the geography colour) for one that's already
+// an idea.
+function resultElement({ letter, existing, selected }) {
   const color = existing ? "var(--geo)" : "var(--accent)";
   const size = selected ? 30 : 22;
-  const el = document.createElement("div");
-  el.textContent = existing ? "✓" : letter;
-  el.style.cssText = [
+  return markerElement(existing ? "✓" : letter, [
     `width:${size}px`,
     `height:${size}px`,
     "border-radius:50%",
@@ -102,6 +65,5 @@ function markerElement({ letter, existing }, selected) {
     selected
       ? `background:${color};color:#fff;border:2.5px solid #fff;box-shadow:var(--shadow-pin)`
       : `background:#fff;color:${color};border:2px solid ${color};box-shadow:var(--shadow-pin-quiet)`,
-  ].join(";");
-  return el;
+  ]);
 }

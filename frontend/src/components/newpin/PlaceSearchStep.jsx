@@ -9,6 +9,9 @@ import { areaLine, distanceKm, formatDistance, googleMapsPlaceUrl } from "../../
 import { areaQueriesForTrip } from "../../lib/mapArea";
 
 const LETTERS = "ABCDEFGHIJ";
+// A search for one of these is probably for something bookable, which
+// Google Maps usually doesn't list.
+const TOUR_WORDS = /\b(tours?|viator|getyourguide|excursions?|experiences?)\b/i;
 // While the search box has focus the keyboard covers the lower part of the
 // screen, where the results are, so the map shrinks to a strip.
 const MAP_HEIGHT = "45%";
@@ -104,9 +107,14 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
         <button
           type="button"
           onClick={onManual}
-          style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 16px", font: "500 12.5px var(--font-sans)", color: "var(--accent)", background: "var(--surface-inset)" }}
+          style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 16px", font: "500 12.5px/1.45 var(--font-sans)", color: "var(--accent)", background: "var(--surface-inset)" }}
         >
-          {status === "done" ? "Can't find it? Add it by hand ›" : "Add it by hand instead (a link, or just a name) ›"}
+          {query.trim().length >= MIN_QUERY_LENGTH ? "Not on Google Maps? Add it by hand ›" : "Add it by hand instead ›"}
+          <span style={{ display: "block", font: "400 11.5px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
+            {TOUR_WORDS.test(query)
+              ? "Tours booked on Viator or GetYourGuide usually aren’t on Google Maps. Paste the link and pick a region: it’ll show there on the map."
+              : "For a link, a tour, or anywhere Google doesn’t list. It still shows on the map in its region."}
+          </span>
         </button>
       </div>
     </div>

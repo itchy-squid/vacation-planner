@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import Button from "../core/Button";
 import { useGoogleMap } from "./useGoogleMap";
 import { useFitToArea } from "./useFitToArea";
@@ -9,16 +9,30 @@ import { MapContext } from "./mapContext";
 // screen by screen: so far the Map tab (pages/TripMap.jsx) and place
 // search on the new-pin screen (components/newpin/PlaceSearchStep.jsx).
 //
-// `options` are starting map options (read once). `children` are drawn on
-// the map (ResultMarkers.jsx) and find it through MapContext.
+// `options` are starting map options (read once). `onClick` gets { lat, lng }
+// where the map was tapped. `children` are drawn on the map (markers,
+// region areas) and find it through MapContext.
 //
 // The striped map pattern sits behind the map, so the space reads as "a
 // map goes here" while it loads and behind the notices below when it
 // can't. `data-map-state` mirrors the hook's status for tests.
-export default function MapCanvas({ area, fitPadding, options, label = "Map", style, children }) {
+export default function MapCanvas({ area, fitPadding, options, onClick, label = "Map", style, children }) {
   const containerRef = useRef(null);
   const { map, status, retry } = useGoogleMap(containerRef, options);
   useFitToArea(map, area, fitPadding);
+
+  const onClickRef = useRef(onClick);
+  useEffect(() => {
+    onClickRef.current = onClick;
+  }, [onClick]);
+  const listensForClicks = Boolean(onClick);
+  useEffect(() => {
+    if (!map || !listensForClicks) return undefined;
+    const listener = map.addListener("click", (event) => {
+      if (event.latLng) onClickRef.current?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
+    });
+    return () => listener.remove();
+  }, [map, listensForClicks]);
 
   return (
     <div
