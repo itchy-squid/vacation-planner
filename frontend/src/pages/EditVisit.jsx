@@ -375,7 +375,8 @@ export default function EditVisit() {
     if (saving) return;
     setSaveError("");
     setDurationSyncNote("");
-    // Nothing to write — Save on an untouched form is just a way out.
+    // Save is disabled on an untouched form; this just guards against a
+    // stray call with nothing to write.
     if (!dirty) {
       navigate(destination());
       return;
@@ -430,7 +431,12 @@ export default function EditVisit() {
 
   return (
     <div className="screen">
-      <div className="screen-scroll" style={{ paddingBottom: 24 }}>
+      {/* Fixed above the scrolling form, so Save is always in reach on a
+          screen this long: Cancel on the left, Save on the right, as on the
+          new-pin screens. Save only lights up once something has changed,
+          which doubles as the "unsaved changes" signal. Problems saving
+          show right under it, where the tap was. */}
+      <div style={{ flex: "none", background: "var(--surface-page)", borderBottom: "1px solid var(--hairline)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "20px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <HomeButton size={28} />
@@ -438,13 +444,37 @@ export default function EditVisit() {
               {canEdit ? "‹ Cancel" : "‹ Back"}
             </button>
           </div>
-          {/* Single Save action now lives at the bottom of the form
-              ("Save changes") — this header used to carry a second Save
-              that did the identical thing, so the empty cell here just
-              keeps the label centered. */}
           <span className="mono-caption">{canEdit ? "Edit visit" : "Visit"}</span>
-          <div />
+          <div style={{ justifySelf: "end" }}>
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!dirty || saving || deleting}
+                aria-label={saving ? "Saving" : "Save changes"}
+                style={{
+                  height: 32,
+                  padding: "0 14px",
+                  borderRadius: "var(--radius-pill)",
+                  font: "600 13px var(--font-sans)",
+                  background: dirty && !deleting ? "var(--surface-inverse)" : "transparent",
+                  color: dirty && !deleting ? "#fff" : "var(--text-muted)",
+                  transition: "background var(--dur-fast, .12s) var(--ease-standard, ease)",
+                }}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            ) : null}
+          </div>
         </div>
+        {saveError || durationSyncNote ? (
+          <div role="alert" style={{ padding: "0 16px 10px", font: "500 12px/1.4 var(--font-sans)", color: saveError ? "#b3423a" : "var(--warn, #a15c1a)" }}>
+            {saveError || durationSyncNote}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="screen-scroll" style={{ paddingBottom: 24 }}>
 
         <PhotoPlaceholder height={150} label="photo placeholder" src={form.photoUrl} alt={pin.title}>
           {canEdit ? (
@@ -482,7 +512,7 @@ export default function EditVisit() {
         <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <div className="mono-caption">Title</div>
-            <input value={form.title} readOnly={!canEdit} onChange={(e) => setField("title", e.target.value)} style={{ marginTop: 6, ...textFieldStyle({ weight: 600, size: 15 }) }} />
+            <input aria-label="Title" value={form.title} readOnly={!canEdit} onChange={(e) => setField("title", e.target.value)} style={{ marginTop: 6, ...textFieldStyle({ weight: 600, size: 15 }) }} />
           </div>
 
           <div>
@@ -580,10 +610,6 @@ export default function EditVisit() {
             />
           ) : null}
 
-          {durationSyncNote && (
-            <div style={{ font: "500 11px var(--font-sans)", color: "var(--warn, #a15c1a)" }}>{durationSyncNote}</div>
-          )}
-
           <TextArea
             label="Notes for the group"
             value={form.notes}
@@ -606,21 +632,10 @@ export default function EditVisit() {
 
           <PinHearts title={pin.title} heart={heart} contributors={state.contributors} currentUserId={state.currentUserId} />
 
-          {saveError && (
-            <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{saveError}</div>
-          )}
-
           {canEdit ? (
             <>
-              <button
-                onClick={handleSave}
-                disabled={saving || deleting}
-                style={{ height: 48, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", font: "600 14px var(--font-sans)", opacity: saving || deleting ? 0.45 : 1 }}
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </button>
-              <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingBottom: 8 }}>
-                {dirty && !saving ? "Unsaved changes · " : ""}{footnote}
+              <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 4 }}>
+                {footnote}
               </div>
 
               {/* Destructive zone, deliberately separated from Save above by
