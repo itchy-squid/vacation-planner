@@ -24,7 +24,7 @@ import HeaderIconButton from "./HeaderIconButton";
 //
 // Two variants. The default sits at the top of a normal screen. `floating`
 // is for the two screens whose map runs full-bleed to the top edge
-// (pages/LassoMap.jsx, pages/CompareSets.jsx): the same row, wrapped in the
+// (pages/TripMap.jsx, pages/CompareSets.jsx): the same row, wrapped in the
 // translucent card those screens already use for their floating controls,
 // because a chromeless glyph over an arbitrary map tile is a coin toss for
 // legibility. The buttons themselves stay chromeless in both.

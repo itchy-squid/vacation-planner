@@ -10,9 +10,8 @@ import InviteSheet from "../components/sharing/InviteSheet";
 import RegionFilter, { ALL_REGIONS } from "../components/planner/RegionFilter";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
-// Board/Map segment switch is gone: the lasso map (pages/LassoMap.jsx) is
-// out of the main flow, still routed but no longer linked from here or
-// from the bottom nav. Filtering is local UI state only in this pass.
+// Board/Map segment switch is gone: the map is its own tab now
+// (pages/TripMap.jsx). Filtering is local UI state only in this pass.
 // The "+" opens pages/NewPin.jsx to add a pin from a link. With no pins
 // yet the board is components/planner/EmptyBoard.jsx instead, which says
 // what the board is for and carries the ways to start (and the invite

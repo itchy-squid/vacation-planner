@@ -31,4 +31,6 @@
   --row-h: 46px;
   --btn-h: 46px;
   --btn-h-sm: 40px;
+
+  --bottom-nav-height: 34px; /* components/core/BottomNav.jsx; screens that must stay clear of it use this */
 }

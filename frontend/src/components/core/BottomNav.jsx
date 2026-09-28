@@ -21,11 +21,12 @@ import { useGuardedNavigate, useIsNavGuarded } from "../../state/NavGuard";
 // components/core/TripHeader.jsx, which all of them wear — and another tab
 // spends scarce width restating it.
 //
-// With a contest open the bar runs to five items (Board / Schedule /
-// Compare / Final / Expenses), which is one more than the handoff drew.
-// Dropping Compare to keep it at four would strand the very screen the
-// "N blocks open" pill on the schedule points at; at 393pt the five labels
-// still fit.
+// With a contest open the bar runs to six items (Ideas / Map / Plan /
+// Compare / Expenses / Itinerary), two more than the handoff drew.
+// Dropping Compare would strand the very screen the "N blocks open" pill
+// on the schedule points at, so instead the tabs tighten up when there are
+// six; that fits a 375pt phone. Whether Compare should fold into Plan is
+// an open question in the project's trip-map-and-place-search mockups.
 //
 // Trip-scoped screens live under /trips/:tripId/... (see App.jsx), so these
 // links point at whichever trip is currently loaded. There's no fixed
@@ -33,10 +34,8 @@ import { useGuardedNavigate, useIsNavGuarded } from "../../state/NavGuard";
 // docs/features/scheduling-feature-spec.md), so Compare jumps to whichever
 // one is open first and is hidden when none are.
 //
-// The Lasso Map (pages/LassoMap.jsx, /trips/:tripId/map) is deliberately
-// not listed: it's still routed and reachable by URL, but nothing links to
-// it while it's out of the main flow. It does get the bar, though — it's a
-// main trip screen, not a modal-style one.
+// Map (pages/TripMap.jsx) sits next to Ideas: both are about the places
+// being considered, one as cards and one on a map.
 
 // Where the bar belongs: the trip's main screens. Everything else is
 // either trip-agnostic (Trips Home, new trip) or one of the modal-style
@@ -76,6 +75,7 @@ export default function BottomNav() {
   // most often looking at.
   const LINKS = [
     { to: `${base}/board`, label: "Ideas", match: ["/trips/:tripId/board"] },
+    { to: `${base}/map`, label: "Map", match: ["/trips/:tripId/map"] },
     { to: `${base}/schedule/1`, label: "Plan", match: ["/trips/:tripId/schedule", "/trips/:tripId/schedule/:day"] },
     firstOpenContestId
       ? { to: `${base}/contests/${firstOpenContestId}`, label: "Compare", match: ["/trips/:tripId/contests/:contestId"] }
@@ -93,7 +93,11 @@ export default function BottomNav() {
         right: 0,
         bottom: 0,
         zIndex: 999,
+        // Fixed, so screens that must end above the bar (the Map tab keeps
+        // Google's attribution visible) can use the same token.
+        height: "var(--bottom-nav-height)",
         display: "flex",
+        alignItems: "center",
         justifyContent: "center",
         gap: 1,
         background: "#111",
@@ -121,9 +125,10 @@ export default function BottomNav() {
               guardedNavigate(l.to);
             }}
             style={{
-              // 12px of side padding fits four labels but not five, and a
-              // contest opening is exactly when the bar gains its fifth.
-              padding: "6px 9px",
+              // 9px of side padding fits five labels on a 375pt phone but
+              // not six, and a contest opening is exactly when the bar
+              // gains its sixth.
+              padding: LINKS.length > 5 ? "6px 6px" : "6px 9px",
               fontSize: 14,
               color: active ? "#8f4478" : "rgba(255,255,255,.6)",
               textDecoration: "none",

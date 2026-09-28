@@ -6,7 +6,7 @@ import NewTrip from "./pages/NewTrip";
 import NewPin from "./pages/NewPin";
 import TripSettings from "./pages/TripSettings";
 import PinBoard from "./pages/PinBoard";
-import LassoMap from "./pages/LassoMap";
+import TripMap from "./pages/TripMap";
 import DaySchedule from "./pages/DaySchedule";
 import CompareSets from "./pages/CompareSets";
 import EditVisit from "./pages/EditVisit";
@@ -77,7 +77,7 @@ function AppRoutes() {
         }
       />
       <Route path="/trips/:tripId/trip-settings" element={<TripSettings />} />
-      <Route path="/trips/:tripId/map" element={<LassoMap />} />
+      <Route path="/trips/:tripId/map" element={<TripMap />} />
       <Route path="/trips/:tripId/schedule" element={<ScheduleIndexRedirect />} />
       <Route path="/trips/:tripId/schedule/:day" element={<DaySchedule />} />
       {/* Steps 2-4 of the proposal flow, as one route: the step lives in
