@@ -84,13 +84,16 @@ The frontend needs a **browser key** baked in at build time:
 4. Locally, set `GOOGLE_MAPS_API_KEY` (and `GOOGLE_MAPS_MAP_ID`) in
    `frontend/.env.local`. They keep their plain names rather than Vite's
    `VITE_` prefix; `frontend/vite.config.js` passes exactly these two
-   through to the browser. For deploys, set them as the GitHub Environment
-   **variables** `GOOGLE_MAPS_API_KEY` and `GOOGLE_MAPS_MAP_ID`:
+   through to the browser. For deploys, set them on each GitHub
+   Environment (`dev`, `prod`): the key as a **secret**, the Map ID as a
+   **variable**:
    ```sh
-   gh variable set GOOGLE_MAPS_API_KEY --env dev --body <key>
+   gh secret set GOOGLE_MAPS_API_KEY --env dev --body <key>
+   gh variable set GOOGLE_MAPS_MAP_ID --env dev --body <map id>
    ```
-   A referrer-restricted browser key isn't a secret, but a separate key per
-   environment keeps each one's referrer list short.
+   Keeping the key a secret masks it in logs, though it still ships in the
+   built JS like any Maps browser key; the referrer restrictions are what
+   protect it.
 
 ### Added beyond the design handoff
 
