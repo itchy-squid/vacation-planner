@@ -18,6 +18,9 @@ import { isMapsConfigured } from "../lib/googleMaps";
 import RegionPicker from "../components/forms/RegionPicker";
 import WhereOnMap from "../components/map/WhereOnMap";
 import { useRegionPreview } from "../components/map/useRegionPreview";
+import { useKnownRegions } from "../components/map/useKnownRegions";
+import FindOnGoogle from "../components/newpin/FindOnGoogle";
+import { googleMapsPlaceUrl, otherTripRegion } from "../lib/places";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 
@@ -111,10 +114,7 @@ export default function EditVisit() {
   const canEdit = ideaAccess.canEditIdea(pin ?? {});
   const canSeeCosts = ideaAccess.canSeeCost(pin ?? {});
   const canSetCosts = canEdit && ideaAccess.canSetCost(pin ?? {});
-  const knownRegions = useMemo(
-    () => [...new Set([...Object.values(state.pins).map((p) => p.region), ...Object.values(state.regions).map((r) => r.name)].filter(Boolean))],
-    [state.pins, state.regions]
-  );
+  const knownRegions = useKnownRegions();
 
   const [commentCount, setCommentCount] = useState(null);
   // null means "untouched" — the form then reads straight from the pin, so
@@ -132,6 +132,15 @@ export default function EditVisit() {
   // from the draft itself, since showing the field is view state, not
   // something Save or the discard-guard need to know about.
   const [editingPhoto, setEditingPhoto] = useState(false);
+  // "Find it on Google Maps" (components/newpin/FindOnGoogle.jsx) takes
+  // over the screen while it's open; the draft waits underneath. `pinNext`
+  // is set when it's left with "Tap the map instead", so the map opens
+  // ready for a tap.
+  const [finding, setFinding] = useState(false);
+  const [pinNext, setPinNext] = useState(false);
+  // The place just linked, for the offers under the map (Google's name,
+  // its region) until the draft is saved or the link is undone.
+  const [linked, setLinked] = useState(null); // { placeId, name, previousTitle, elsewhere, previousRegion, filledLink }
 
   // Delete pin — double-tap-to-confirm, mirroring components/planner/
   // PlanDetailsSheet.jsx's "Delete permanently": the first tap only arms
@@ -169,6 +178,9 @@ export default function EditVisit() {
     setSaveError("");
     setDurationSyncNote("");
     setEditingPhoto(false);
+    setFinding(false);
+    setPinNext(false);
+    setLinked(null);
     setDeleteArmed(false);
     setDeleting(false);
     setDeleteError("");
@@ -239,6 +251,44 @@ export default function EditVisit() {
           <button onClick={() => navigate("/")} style={{ font: "500 13px var(--font-sans)", color: "var(--accent)" }}>Trips home</button>
         </div>
       </div>
+    );
+  }
+
+  // Linking an idea to the place Google knows it as: its spot and place ID
+  // go into the draft (nothing is saved until Save). The title and link
+  // are left alone, except that an empty link becomes the place's Google
+  // Maps page; Google's name and region are offered, not applied.
+  function linkPlace(place) {
+    const fillLink = !form.link.trim();
+    setSaveError("");
+    setDraft((current) => ({
+      ...(current ?? baseline),
+      location: { lat: place.lat, lng: place.lng, placeId: place.placeId },
+      ...(fillLink ? { link: googleMapsPlaceUrl(place) } : {}),
+    }));
+    setLinked({
+      placeId: place.placeId,
+      name: place.name,
+      previousTitle: form.title,
+      previousRegion: form.region,
+      elsewhere: otherTripRegion(place, form.region, knownRegions),
+      filledLink: fillLink,
+    });
+    setFinding(false);
+    setPinNext(false);
+  }
+
+  if (finding) {
+    return (
+      <FindOnGoogle
+        pin={{ id: pin.id, title: form.title.trim() || pin.title, region: form.region }}
+        onLink={linkPlace}
+        onTapInstead={() => {
+          setFinding(false);
+          setPinNext(true);
+        }}
+        onBack={() => setFinding(false)}
+      />
     );
   }
 
@@ -567,8 +617,14 @@ export default function EditVisit() {
               // A spot moved or placed by hand isn't the Google place any more.
               onSpot={(next) => setField("location", next ? { lat: next.lat, lng: next.lng, placeId: null } : null)}
               fromGoogle={Boolean(form.location?.placeId)}
+              onFindOnGoogle={canEdit ? () => setFinding(true) : null}
+              startPinning={pinNext}
               readOnly={!canEdit}
-            />
+            >
+              {linked && form.location?.placeId === linked.placeId ? (
+                <LinkedOffers linked={linked} form={form} onField={setField} />
+              ) : null}
+            </WhereOnMap>
           ) : null}
 
           <div>
@@ -713,6 +769,57 @@ export default function EditVisit() {
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+// After linking a place: offer Google's name and the place's region rather
+// than applying them, and say when the empty link was filled in.
+function LinkedOffers({ linked, form, onField }) {
+  const usingGoogleName = form.title === linked.name;
+  const moved = linked.elsewhere && form.region === linked.elsewhere;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {linked.name !== linked.previousTitle ? (
+        <Offer
+          text={usingGoogleName ? "Using Google’s name." : <>Google calls it <b style={{ color: "var(--text-primary)" }}>“{linked.name}”</b>.</>}
+          action={usingGoogleName ? "Keep mine" : "Use that name"}
+          onClick={() => onField("title", usingGoogleName ? linked.previousTitle : linked.name)}
+        />
+      ) : null}
+      {linked.elsewhere ? (
+        <Offer
+          text={moved ? `Moved to ${linked.elsewhere}.` : `It’s in ${linked.elsewhere}, not ${linked.previousRegion}.`}
+          action={moved ? "Undo" : "Move it there"}
+          onClick={() => onField("region", moved ? linked.previousRegion : linked.elsewhere)}
+        />
+      ) : null}
+      {linked.filledLink ? <Offer text="The link was empty, so it’s now the Google Maps page." /> : null}
+    </div>
+  );
+}
+
+function Offer({ text, action, onClick }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 10px",
+        borderRadius: "var(--radius-md)",
+        border: `1px ${action ? "dashed" : "solid"} var(--border-strong)`,
+        background: action ? "transparent" : "var(--surface-inset)",
+        font: "400 11.5px/1.4 var(--font-sans)",
+        color: "var(--text-secondary)",
+      }}
+    >
+      <span style={{ flex: 1 }}>{text}</span>
+      {action ? (
+        <button type="button" onClick={onClick} style={{ flex: "none", font: "600 11.5px var(--font-sans)", color: "var(--accent)" }}>
+          {action}
+        </button>
+      ) : null}
     </div>
   );
 }

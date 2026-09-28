@@ -98,7 +98,7 @@ test("removing a searched place's spot puts it back in its region", async ({ pag
   test.skip(!(await hasMap(page)), "This environment has no Maps key.");
 
   await expect(page.getByText("At its spot on Google Maps.")).toBeVisible();
-  await page.getByRole("button", { name: "Remove it" }).click();
+  await page.getByRole("button", { name: "Unlink" }).click();
   await expect(page.getByText("Shown in Cozumel").first()).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Save changes" }).click();
 

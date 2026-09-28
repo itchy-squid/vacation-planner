@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import MapCanvas from "../components/map/MapCanvas";
 import PinDots from "../components/map/PinDots";
 import RegionAreas from "../components/map/RegionAreas";
 import { useMap } from "../components/map/mapContext";
 import { useRegionLocations } from "../components/map/useRegionLocations";
+import { useKnownRegions } from "../components/map/useKnownRegions";
+import FindOnGoogle from "../components/newpin/FindOnGoogle";
 import TripHeader from "../components/core/TripHeader";
 import Button from "../components/core/Button";
 import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
 import { areaQueriesForTrip } from "../lib/mapArea";
 import { regionKey } from "../lib/regions";
+import { otherTripRegion } from "../lib/places";
 
 // Clearance for the floating header (16px inset + its 44px row + a margin),
 // so an area fitted to the screen doesn't start underneath it.
@@ -19,7 +22,9 @@ const FIT_PADDING = { top: 76, right: 28, bottom: 28, left: 28 };
 // (found by search, or pinned) is a dot. One without is counted in a badge
 // in its region's area ("2 Cozumel"), because scattering those around the
 // region would suggest a precision nobody has. Tapping a badge lists them,
-// each with "Pin a spot", which turns the next tap on the map into that
+// each with "Find on Google" (for an idea Google knows, added without its
+// place: components/newpin/FindOnGoogle.jsx, saved straight away) and
+// "Pin a spot", which turns the next tap on the map into that
 // idea's exact spot.
 //
 // Regions the trip hasn't stored a location for are looked up here and
@@ -33,7 +38,7 @@ export default function TripMap() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
   const ideaAccess = useIdeaAccess();
-  const { trip, pins } = usePlannerState();
+  const { trip, pins, regions } = usePlannerState();
   const pinList = useMemo(() => Object.values(pins), [pins]);
 
   const regionNames = useMemo(() => pinList.filter((p) => p.lat == null).map((p) => p.region), [pinList]);
@@ -56,7 +61,21 @@ export default function TripMap() {
   // What the sheet shows: a summary, one region's ideas, or one idea.
   const [selected, setSelected] = useState(null); // { kind: "region", key } | { kind: "pin", id }
   const [placing, setPlacing] = useState(null); // the pin whose spot the next tap sets
-  const [notice, setNotice] = useState("");
+  // A line for the sheet. Can arrive from the "On Google Maps?" review
+  // (pages/LinkReview.jsx) in navigation state, which is then cleared so a
+  // reload doesn't repeat it.
+  const location = useLocation();
+  const [notice, setNotice] = useState(() => location.state?.notice ?? "");
+  useEffect(() => {
+    if (location.state?.notice) navigate(location.pathname, { replace: true, state: null });
+    // Once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [finding, setFinding] = useState(null); // the pin being looked up on Google Maps
+  const [moveOffer, setMoveOffer] = useState(null); // { pinId, region }: a linked place is in another region
+  const knownRegions = useKnownRegions();
+  // Ideas the review can look up: no spot, a placed region, and editable.
+  const reviewable = pinList.filter((p) => p.lat == null && regions[regionKey(p.region)] && ideaAccess.canEditIdea(p)).length;
 
   // A trip with nothing placeable yet opens on its area, found by name.
   const { locationsLine, name } = trip;
@@ -71,6 +90,27 @@ export default function TripMap() {
     if (result?.ok) setSelected({ kind: "pin", id: pin.id });
   }
 
+  async function linkPlace(place) {
+    const pin = finding;
+    setFinding(null);
+    const result = await dispatch({ type: "PATCH_PIN", id: pin.id, fields: { location: { lat: place.lat, lng: place.lng, placeId: place.placeId } } });
+    if (!result?.ok) {
+      setNotice(`Couldn’t link ${pin.title}. Try again.`);
+      return;
+    }
+    setNotice(`Linked to ${place.name} on Google Maps.`);
+    setSelected({ kind: "pin", id: pin.id });
+    const elsewhere = otherTripRegion(place, pin.region, knownRegions);
+    setMoveOffer(elsewhere ? { pinId: pin.id, region: elsewhere } : null);
+  }
+
+  async function moveRegion() {
+    const { pinId, region } = moveOffer;
+    setMoveOffer(null);
+    const result = await dispatch({ type: "PATCH_PIN", id: pinId, fields: { region } });
+    setNotice(result?.ok ? `Moved to ${region}.` : `Couldn’t move it to ${region}. Try again.`);
+  }
+
   const tapRegion = useCallback((region) => {
     setNotice("");
     setSelected((current) => (current?.kind === "region" && current.key === region.key ? null : { kind: "region", key: region.key }));
@@ -83,6 +123,20 @@ export default function TripMap() {
   const openIdea = (pin) => navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`);
   const selectedRegion = selected?.kind === "region" ? byRegion[selected.key] : null;
   const selectedPin = selected?.kind === "pin" ? pins[selected.id] : null;
+
+  if (finding) {
+    return (
+      <FindOnGoogle
+        pin={finding}
+        onLink={linkPlace}
+        onTapInstead={() => {
+          setPlacing(finding);
+          setFinding(null);
+        }}
+        onBack={() => setFinding(null)}
+      />
+    );
+  }
 
   return (
     <div className="screen">
@@ -126,16 +180,29 @@ export default function TripMap() {
                       {pin.title}
                     </button>
                     {ideaAccess.canEditIdea(pin) ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNotice("");
-                          setPlacing(pin);
-                        }}
-                        style={{ flex: "none", font: "500 12px var(--font-sans)", color: "var(--accent)" }}
-                      >
-                        Pin a spot
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotice("");
+                            setMoveOffer(null);
+                            setFinding(pin);
+                          }}
+                          style={{ flex: "none", font: "500 12px var(--font-sans)", color: "var(--accent)" }}
+                        >
+                          Find on Google
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotice("");
+                            setPlacing(pin);
+                          }}
+                          style={{ flex: "none", font: "500 12px var(--font-sans)", color: "var(--accent)" }}
+                        >
+                          Pin a spot
+                        </button>
+                      </>
                     ) : null}
                   </li>
                 ))}
@@ -147,6 +214,16 @@ export default function TripMap() {
               <SheetText>
                 {notice || (selectedPin.region ? `${selectedPin.region} · exact spot` : "Exact spot")}
               </SheetText>
+              {moveOffer?.pinId === selectedPin.id ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: "var(--radius-md)", border: "1px dashed var(--border-strong)", font: "400 12px/1.4 var(--font-sans)", color: "var(--text-secondary)" }}>
+                  <span style={{ flex: 1 }}>
+                    It’s in {moveOffer.region}, not {selectedPin.region}.
+                  </span>
+                  <button type="button" onClick={moveRegion} style={{ flex: "none", font: "600 12px var(--font-sans)", color: "var(--accent)" }}>
+                    Move it there
+                  </button>
+                </div>
+              ) : null}
               <Button variant="secondary" size="sm" onClick={() => openIdea(selectedPin)}>
                 Open idea
               </Button>
@@ -162,6 +239,11 @@ export default function TripMap() {
                     ? summary(exact.length, areas.length ? pinList.length - unplaced - exact.length : 0, unplaced)
                     : "Ideas you add show up here, at their spot or in their region.")}
               </SheetText>
+              {reviewable ? (
+                <Button variant="secondary" size="sm" onClick={() => navigate(`/trips/${trip.id}/map/review`)}>
+                  {reviewable === 1 ? "1 idea might be on Google Maps · Review" : `${reviewable} ideas might be on Google Maps · Review`}
+                </Button>
+              ) : null}
             </>
           )}
         </Sheet>

@@ -23,11 +23,31 @@ const SPOT_ZOOM = 15;
  *   location, lookingUp  from useRegionPreview
  *   newRegion   the region isn't one the trip uses yet (say it was found)
  *   spot        { lat, lng } or null; onSpot(next) changes it
- *   fromGoogle  the spot came from a place search (it's that place)
+ *   fromGoogle  the spot came from a place search (it's that place);
+ *               removing it then reads "Unlink"
+ *   onFindOnGoogle  offers "Find it on Google Maps" while there's no spot
+ *               (components/newpin/FindOnGoogle.jsx)
+ *   startPinning  open ready for a tap (back from "Tap the map instead")
  *   readOnly    shows where it is without offering changes
+ *   children    shown under the caption (offers after linking a place)
  */
-export default function WhereOnMap({ trip, regionName, location, lookingUp, newRegion = false, spot, onSpot, fromGoogle = false, readOnly = false }) {
-  const [pinning, setPinning] = useState(false);
+export default function WhereOnMap({
+  trip,
+  regionName,
+  location,
+  lookingUp,
+  newRegion = false,
+  spot,
+  onSpot,
+  fromGoogle = false,
+  onFindOnGoogle = null,
+  startPinning = false,
+  readOnly = false,
+  children = null,
+}) {
+  const [pinning, setPinning] = useState(startPinning && !readOnly);
+  const canFind = Boolean(onFindOnGoogle) && !readOnly && !spot && !pinning && !lookingUp;
+  const pinLabel = canFind ? "Tap the map instead" : null;
   const { locationsLine, name } = trip;
   // Read once, when the map is made: an idea that already has a spot opens
   // on it, anything else on the trip's area until a region is picked.
@@ -58,7 +78,7 @@ export default function WhereOnMap({ trip, regionName, location, lookingUp, newR
       actions = (
         <>
           <LinkButton onClick={() => setPinning(true)}>Move it</LinkButton>
-          <LinkButton onClick={() => onSpot(null)}>Remove it</LinkButton>
+          <LinkButton onClick={() => onSpot(null)}>{fromGoogle ? "Unlink" : "Remove it"}</LinkButton>
         </>
       );
     }
@@ -72,7 +92,7 @@ export default function WhereOnMap({ trip, regionName, location, lookingUp, newR
       actions = (
         <>
           <span />
-          <LinkButton onClick={() => setPinning(true)}>Pin an exact spot instead</LinkButton>
+          <LinkButton onClick={() => setPinning(true)}>{pinLabel ?? "Pin an exact spot instead"}</LinkButton>
         </>
       );
     }
@@ -85,8 +105,8 @@ export default function WhereOnMap({ trip, regionName, location, lookingUp, newR
     if (!readOnly) {
       actions = (
         <>
-          <span className="mono-caption">Optional</span>
-          <LinkButton onClick={() => setPinning(true)}>Pin an exact spot ›</LinkButton>
+          <span className="mono-caption">{canFind ? "Not on Google Maps?" : "Optional"}</span>
+          <LinkButton onClick={() => setPinning(true)}>{pinLabel ?? "Pin an exact spot ›"}</LinkButton>
         </>
       );
     }
@@ -108,7 +128,9 @@ export default function WhereOnMap({ trip, regionName, location, lookingUp, newR
         </MapCanvas>
         <div role="status" style={{ padding: "9px 11px", display: "grid", gap: 7, font: "400 12px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
           <span>{caption}</span>
+          {canFind ? <FindButton regionName={regionName} onClick={onFindOnGoogle} /> : null}
           {actions ? <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>{actions}</div> : null}
+          {children}
         </div>
       </div>
     </div>
@@ -127,6 +149,37 @@ function FitTo({ region, spot }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, key]);
   return null;
+}
+
+// For an idea Google knows but that was added without its place.
+function FindButton({ regionName, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        width: "100%",
+        padding: "9px 10px",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--border-strong)",
+        background: "var(--surface-card)",
+        textAlign: "left",
+      }}
+    >
+      <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: 6, background: "var(--geo-quiet)", color: "var(--geo)", display: "flex", alignItems: "center", justifyContent: "center", font: "700 11px var(--font-sans)", flex: "none" }}>
+        G
+      </span>
+      <span>
+        <span style={{ display: "block", font: "600 12.5px var(--font-sans)", color: "var(--text-primary)" }}>Find it on Google Maps</span>
+        <span style={{ display: "block", font: "400 11px var(--font-sans)", color: "var(--text-secondary)" }}>
+          {regionName ? `Look it up in ${regionName}` : "Look it up by its name"}
+        </span>
+      </span>
+    </button>
+  );
 }
 
 function LinkButton({ onClick, children }) {

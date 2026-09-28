@@ -11,15 +11,16 @@ export const MAX_RESULTS = 5;
 const FIELDS = ["id", "displayName", "formattedAddress", "location", "addressComponents"];
 
 /**
- * Up to MAX_RESULTS places for `query`, preferring ones inside `bias` (a
- * google.maps.LatLngBounds, normally the visible map).
+ * Up to `max` (default MAX_RESULTS) places for `query`, preferring ones
+ * inside `bias` (a google.maps.LatLngBounds or { south, west, north, east },
+ * normally the visible map or the idea's region).
  *
  * Each result: { placeId, name, address, lat, lng, components } where
  * components are { long, short, types } (Google's address parts).
  */
-export async function searchPlaces(query, { bias } = {}) {
+export async function searchPlaces(query, { bias, max = MAX_RESULTS } = {}) {
   const { Place } = await importMapsLibrary("places");
-  const request = { textQuery: query, fields: FIELDS, maxResultCount: MAX_RESULTS };
+  const request = { textQuery: query, fields: FIELDS, maxResultCount: max };
   if (bias) request.locationBias = bias;
   const { places } = await Place.searchByText(request);
   return places.filter((place) => place.location).map(toResult);
@@ -86,6 +87,17 @@ export function regionFor(result, knownRegions) {
   return { name: town, existing: false };
 }
 
+/**
+ * The trip region a place is in, when that's one of `knownRegions` other
+ * than `region` (the idea's own), or null. "Quinta Avenida" found for an
+ * idea filed under Cozumel is in Playa del Carmen.
+ */
+export function otherTripRegion(result, region, knownRegions) {
+  if (!region) return null;
+  const found = regionFor(result, knownRegions);
+  return found.existing && found.name.trim().toLowerCase() !== region.trim().toLowerCase() ? found.name : null;
+}
+
 /** Straight-line distance in km between two { lat, lng }. */
 export function distanceKm(a, b) {
   const rad = (deg) => (deg * Math.PI) / 180;
@@ -99,6 +111,73 @@ export function distanceKm(a, b) {
 export function formatDistance(km) {
   if (km < 1) return `${Math.round(km * 100) * 10} m`;
   return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+}
+
+// Words that say what kind of place something is rather than which one,
+// so "Punta Sur Eco Park" and "Parque Punta Sur" still match.
+const GENERIC_WORDS = new Set([
+  "the", "a", "an", "of", "and", "de", "del", "la", "el", "los", "las",
+  "park", "parque", "eco", "beach", "playa", "restaurant", "restaurante", "cafe", "bar",
+  "museum", "museo", "temple", "tour", "tours", "market", "mercado", "stroll", "visit",
+]);
+
+function nameWords(text) {
+  return new Set(
+    text
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length > 1 && !GENERIC_WORDS.has(w))
+  );
+}
+
+/**
+ * How alike an idea's title and a place's name are, 0 to 1, by their
+ * distinctive words (not "park", "the"…): twice the words in common over
+ * the words in both (a Dice coefficient), so one shared word between two
+ * otherwise different names ("Snorkel and Beach Break", "Cozumel Snorkel
+ * Center") stays low.
+ */
+export function nameSimilarity(a, b) {
+  const wa = nameWords(a);
+  const wb = nameWords(b);
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let shared = 0;
+  wa.forEach((w) => {
+    if (wb.has(w)) shared += 1;
+  });
+  return (2 * shared) / (wa.size + wb.size);
+}
+
+/** Whether a { lat, lng } lies in { south, west, north, east }, with a margin (a share of its size). */
+export function isInside(point, bounds, margin = 0.25) {
+  const padLat = (bounds.north - bounds.south) * margin;
+  const spanLng = bounds.east >= bounds.west ? bounds.east - bounds.west : bounds.east + 360 - bounds.west;
+  const padLng = spanLng * margin;
+  const inLat = point.lat >= bounds.south - padLat && point.lat <= bounds.north + padLat;
+  const west = bounds.west - padLng;
+  const east = bounds.east + padLng;
+  const inLng = bounds.east >= bounds.west ? point.lng >= west && point.lng <= east : point.lng >= west || point.lng <= east;
+  return inLat && inLng;
+}
+
+const CONFIDENT_SIMILARITY = 0.6;
+
+/**
+ * What a search for an idea found, for the "On Google Maps?" review:
+ *   { kind: "one", match }     the top result has the idea's name and is
+ *                              in its region
+ *   { kind: "many", choices }  results, but none clearly it
+ *   { kind: "none" }           nothing
+ */
+export function classifyMatches(title, results, regionBounds) {
+  if (results.length === 0) return { kind: "none" };
+  const [top] = results;
+  // Inside the region's own area, no margin: a region's area often runs
+  // right up to its neighbour's.
+  const confident = nameSimilarity(title, top.name) >= CONFIDENT_SIMILARITY && (!regionBounds || isInside(top, regionBounds, 0));
+  return confident ? { kind: "one", match: top } : { kind: "many", choices: results };
 }
 
 /** Google Maps' own page for the place (a documented Maps URL). */

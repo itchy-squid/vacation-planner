@@ -5,7 +5,7 @@ import { useMap } from "../map/mapContext";
 import Button from "../core/Button";
 import { NewPinHeader } from "./NewPinChrome";
 import { MIN_QUERY_LENGTH } from "./usePlaceSearch";
-import { areaLine, distanceKm, formatDistance, googleMapsPlaceUrl } from "../../lib/places";
+import { areaLine, distanceKm, formatDistance, googleMapsPlaceUrl, otherTripRegion } from "../../lib/places";
 import { areaQueriesForTrip } from "../../lib/mapArea";
 
 const LETTERS = "ABCDEFGHIJ";
@@ -19,16 +19,25 @@ const MAP_HEIGHT_TYPING = 150;
 const FIT_PADDING = { top: 30, right: 30, bottom: 30, left: 30 };
 
 /**
- * Step 1 of adding a pin by search: the map on the top half, opened on the
- * trip's area, and results below, lettered to match their markers.
- * `search` is the usePlaceSearch() state kept by pages/NewPin.jsx.
+ * Searching Google Maps: the map on the top half and results below,
+ * lettered to match their markers. `search` is usePlaceSearch() state kept
+ * by whoever shows this, so going on and coming back keeps the results.
+ *
+ * Two uses:
+ *   adding a pin (pages/NewPin.jsx): opens on the trip's area; a result is
+ *     added with "Add this place", or opened if it's already an idea.
+ *   `link` = { ideaTitle, region, knownRegions }: finding an existing
+ *     idea's place (components/newpin/FindOnGoogle.jsx). Opens on the
+ *     idea's region; "Link to this place" is offered even for a place
+ *     that's already an idea (it may be another visit), with a note, and a
+ *     result in another of the trip's regions says so.
  *
  *   existingByPlaceId  place ID -> an idea already on the board from it
- *   onPick(result)     "Add this place"
+ *   onPick(result)     "Add this place" / "Link to this place"
  *   onOpenIdea(pin)    "Open idea", for a place that's already one
- *   onManual()         "Add it by hand" (the paste-a-link form)
+ *   onManual()         "Add it by hand" / "Tap the map instead"
  */
-export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCancel, onPick, onOpenIdea, onManual }) {
+export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCancel, onPick, onOpenIdea, onManual, link = null }) {
   const { query, setQuery, results, origin, status, selectedId, setSelectedId, viewRef } = search;
   const [typing, setTyping] = useState(false);
   const inputRef = useRef(null);
@@ -36,7 +45,11 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
   useEffect(() => () => clearTimeout(blurTimerRef.current), []);
 
   const { locationsLine, name } = trip;
-  const area = useMemo(() => areaQueriesForTrip({ locationsLine, name }), [locationsLine, name]);
+  const linkRegion = link?.region ?? "";
+  const area = useMemo(
+    () => (linkRegion ? { areas: [linkRegion], fallback: null } : areaQueriesForTrip({ locationsLine, name })),
+    [linkRegion, locationsLine, name]
+  );
   const markers = useMemo(
     () => results.map((r, i) => ({ ...r, letter: LETTERS[i], existing: Boolean(existingByPlaceId[r.placeId]) })),
     [results, existingByPlaceId]
@@ -49,7 +62,17 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
 
   return (
     <div className="screen">
-      <NewPinHeader backLabel="Cancel" onBack={onCancel} />
+      {link ? (
+        <>
+          <NewPinHeader backLabel="Back" onBack={onCancel} title="Find on Google Maps" />
+          <div style={{ padding: "0 16px 10px", font: "400 12px/1.4 var(--font-sans)", color: "var(--text-secondary)" }}>
+            For <b style={{ color: "var(--text-primary)" }}>{link.ideaTitle}</b>
+            {link.region ? ` · results in ${link.region} first` : ""}
+          </div>
+        </>
+      ) : (
+        <NewPinHeader backLabel="Cancel" onBack={onCancel} />
+      )}
 
       <div style={{ padding: "0 16px 10px", flex: "none" }}>
         <SearchBox
@@ -99,6 +122,7 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
           onSelect={select}
           onPick={onPick}
           onOpenIdea={onOpenIdea}
+          link={link}
           onTry={(q) => {
             setQuery(q);
             inputRef.current?.blur();
@@ -109,9 +133,11 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
           onClick={onManual}
           style={{ display: "block", width: "100%", textAlign: "left", padding: "13px 16px", font: "500 12.5px/1.45 var(--font-sans)", color: "var(--accent)", background: "var(--surface-inset)" }}
         >
-          {query.trim().length >= MIN_QUERY_LENGTH ? "Not on Google Maps? Add it by hand ›" : "Add it by hand instead ›"}
+          {link ? "None of these? Tap the map instead ›" : query.trim().length >= MIN_QUERY_LENGTH ? "Not on Google Maps? Add it by hand ›" : "Add it by hand instead ›"}
           <span style={{ display: "block", font: "400 11.5px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
-            {TOUR_WORDS.test(query)
+            {link
+              ? "For somewhere Google lists under another name, or not at all."
+              : TOUR_WORDS.test(query)
               ? "Tours booked on Viator or GetYourGuide usually aren’t on Google Maps. Paste the link and pick a region: it’ll show there on the map."
               : "For a link, a tour, or anywhere Google doesn’t list. It still shows on the map in its region."}
           </span>
@@ -195,7 +221,8 @@ function SearchBox({ inputRef, value, onChange, onFocus, onBlur }) {
 
 const SUGGESTIONS = ["seafood", "tide pools", "temple", "night market"];
 
-function Results({ query, status, markers, origin, selectedId, existingByPlaceId, onSelect, onPick, onOpenIdea, onTry }) {
+function Results({ query, status, markers, origin, selectedId, existingByPlaceId, onSelect, onPick, onOpenIdea, onTry, link }) {
+  if (link && query.trim().length < MIN_QUERY_LENGTH) return <Hint>Type the place’s name as Google Maps might know it.</Hint>;
   if (query.trim().length < MIN_QUERY_LENGTH) {
     return (
       <Hint>
@@ -215,7 +242,7 @@ function Results({ query, status, markers, origin, selectedId, existingByPlaceId
       </Hint>
     );
   }
-  if (status === "error") return <Hint>Search isn’t working right now. You can still add it by hand.</Hint>;
+  if (status === "error") return <Hint>{link ? "Search isn’t working right now. You can still tap the map." : "Search isn’t working right now. You can still add it by hand."}</Hint>;
   if (status === "searching" && markers.length === 0) return <Hint>Searching…</Hint>;
   if (status === "done" && markers.length === 0) return <Hint>No places match “{query.trim()}” near here. Try another name, or add it by hand.</Hint>;
 
@@ -231,13 +258,15 @@ function Results({ query, status, markers, origin, selectedId, existingByPlaceId
           onSelect={() => onSelect(result.placeId)}
           onPick={() => onPick(result)}
           onOpenIdea={() => onOpenIdea(existingByPlaceId[result.placeId])}
+          link={link}
         />
       ))}
     </ul>
   );
 }
 
-function ResultRow({ result, distance, selected, existingPin, onSelect, onPick, onOpenIdea }) {
+function ResultRow({ result, distance, selected, existingPin, onSelect, onPick, onOpenIdea, link }) {
+  const elsewhere = selected && link ? otherTripRegion(result, link.region, link.knownRegions) : null;
   const color = existingPin ? "var(--geo)" : "var(--accent)";
   return (
     <li style={{ borderBottom: "1px solid var(--hairline)", background: selected ? (existingPin ? "var(--geo-quiet)" : "var(--accent-quiet)") : "transparent" }}>
@@ -283,9 +312,19 @@ function ResultRow({ result, distance, selected, existingPin, onSelect, onPick, 
           <span />
         )}
       </button>
+      {selected && link && (existingPin || elsewhere) ? (
+        <div role="note" style={{ padding: "0 16px 8px 50px", display: "grid", gap: 4, font: "400 11.5px/1.4 var(--font-sans)", color: "var(--warn)" }}>
+          {existingPin ? <span>Already an idea: {existingPin.title}. Linking this one too is fine if it’s another visit.</span> : null}
+          {elsewhere ? <span>In {elsewhere}, not {link.region}. You can move the idea there after linking.</span> : null}
+        </div>
+      ) : null}
       {selected ? (
         <div style={{ display: "flex", gap: 8, padding: "0 16px 12px 50px" }}>
-          {existingPin ? (
+          {link ? (
+            <Button variant="accent" size="sm" onClick={onPick}>
+              Link to this place
+            </Button>
+          ) : existingPin ? (
             <Button variant="secondary" size="sm" onClick={onOpenIdea}>
               Open idea
             </Button>

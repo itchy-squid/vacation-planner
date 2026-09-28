@@ -1,9 +1,9 @@
 import HomeButton from "../core/HomeButton";
 
 // The header every step of the new-pin screen shares (pages/NewPin.jsx):
-// a way back on the left, "New pin" in the middle, and the step's own
-// action, if it has one, on the right.
-export function NewPinHeader({ backLabel, onBack, action = null }) {
+// a way back on the left, "New pin" (or `title`) in the middle, and the
+// step's own action, if it has one, on the right.
+export function NewPinHeader({ backLabel, onBack, action = null, title = "New pin" }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "20px 16px 12px", flex: "none" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -12,7 +12,7 @@ export function NewPinHeader({ backLabel, onBack, action = null }) {
           ‹ {backLabel}
         </button>
       </div>
-      <span className="mono-caption">New pin</span>
+      <span className="mono-caption">{title}</span>
       <div style={{ justifySelf: "end" }}>{action}</div>
     </div>
   );

@@ -6,6 +6,7 @@ import PlaceSearchStep from "../components/newpin/PlaceSearchStep";
 import PlaceDetailsForm from "../components/newpin/PlaceDetailsForm";
 import ByHandForm from "../components/newpin/ByHandForm";
 import { usePlaceSearch } from "../components/newpin/usePlaceSearch";
+import { useKnownRegions } from "../components/map/useKnownRegions";
 
 // Adding a pin. Two ways in, as the project's "add a pin by search"
 // mockup lays out:
@@ -42,10 +43,7 @@ export default function NewPin() {
   const search = usePlaceSearch();
 
   const pinList = useMemo(() => Object.values(pins), [pins]);
-  const knownRegions = useMemo(
-    () => [...new Set([...pinList.map((p) => p.region), ...(trip.regionLine ?? "").split("·").map((r) => r.trim())].filter(Boolean))],
-    [pinList, trip.regionLine]
-  );
+  const knownRegions = useKnownRegions();
   // Ideas added through search, by the place they came from, so searching
   // for one again offers it instead of a duplicate.
   const existingByPlaceId = useMemo(
