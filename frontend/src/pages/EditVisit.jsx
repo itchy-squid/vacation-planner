@@ -14,6 +14,10 @@ import { fmtMin } from "../data/derive";
 import { getTripDays } from "../data/trip";
 import { dayIndexAndBandForPlan, isoForDayMinute } from "../lib/planTime";
 import { externalHref } from "../lib/externalHref";
+import { isMapsConfigured } from "../lib/googleMaps";
+import RegionPicker from "../components/forms/RegionPicker";
+import WhereOnMap from "../components/map/WhereOnMap";
+import { useRegionPreview } from "../components/map/useRegionPreview";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 
@@ -71,7 +75,18 @@ function baselineFrom(pin) {
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
+    // Its exact spot, if it has one: { lat, lng, placeId } (placeId when it
+    // came from a place search). null means it shows in its region.
+    location: pin.lat != null ? { lat: pin.lat, lng: pin.lng, placeId: pin.googlePlaceId ?? null } : null,
   };
+}
+
+// Every field compares by value; a location is an object, so it's compared
+// by what's in it.
+function sameFieldValue(key, a, b) {
+  if (key !== "location") return a === b;
+  if (!a || !b) return !a && !b;
+  return a.lat === b.lat && a.lng === b.lng && (a.placeId ?? null) === (b.placeId ?? null);
 }
 
 export default function EditVisit() {
@@ -96,7 +111,10 @@ export default function EditVisit() {
   const canEdit = ideaAccess.canEditIdea(pin ?? {});
   const canSeeCosts = ideaAccess.canSeeCost(pin ?? {});
   const canSetCosts = canEdit && ideaAccess.canSetCost(pin ?? {});
-  const knownRegions = [...new Set(Object.values(state.pins).map((p) => p.region).filter(Boolean))];
+  const knownRegions = useMemo(
+    () => [...new Set([...Object.values(state.pins).map((p) => p.region), ...Object.values(state.regions).map((r) => r.name)].filter(Boolean))],
+    [state.pins, state.regions]
+  );
 
   const [commentCount, setCommentCount] = useState(null);
   // null means "untouched" — the form then reads straight from the pin, so
@@ -171,7 +189,7 @@ export default function EditVisit() {
     if (!form || !baseline) return {};
     const changed = {};
     Object.keys(baseline).forEach((key) => {
-      if (form[key] !== baseline[key]) changed[key] = form[key];
+      if (!sameFieldValue(key, form[key], baseline[key])) changed[key] = form[key];
     });
     return changed;
   }, [form, baseline]);
@@ -206,6 +224,11 @@ export default function EditVisit() {
   // pin, so it lands the moment it's tapped, for readers of this screen
   // who can't edit anything else here too.
   const heart = usePinHeart(pin);
+
+  // Where the region being picked is, for "On the map" and for storing a
+  // region the trip hasn't placed yet when this is saved (the same as
+  // adding by hand, components/newpin/ByHandForm.jsx).
+  const regionPreview = useRegionPreview(form?.region ?? "", knownRegions);
 
   if (!pin) {
     return (
@@ -386,6 +409,14 @@ export default function EditVisit() {
     const durationChanged = "dur" in changedFields;
     const nextDur = form.dur;
 
+    // A region the trip hasn't placed yet is stored first, so the idea shows
+    // in it straight away. If that fails the edit still saves; the Map tab
+    // looks the region up again.
+    const newRegion = regionPreview.location && !regionPreview.location.id ? regionPreview.location : null;
+    if ("region" in changedFields && newRegion) {
+      await dispatch({ type: "SAVE_REGION", region: { ...newRegion, name: form.region.trim() } });
+    }
+
     if (Object.keys(changedFields).length > 0) {
       const result = await dispatch({ type: "PATCH_PIN", id: pinId, fields: changedFields });
       if (!result?.ok) {
@@ -515,24 +546,30 @@ export default function EditVisit() {
             <input aria-label="Title" value={form.title} readOnly={!canEdit} onChange={(e) => setField("title", e.target.value)} style={{ marginTop: 6, ...textFieldStyle({ weight: 600, size: 15 }) }} />
           </div>
 
-          <div>
-            <div className="mono-caption">Region</div>
-            <input
-              value={form.region}
-              onChange={(e) => setField("region", e.target.value)}
+          {/* The same region picker and map preview as adding by hand.
+              Both are part of the draft: nothing changes until Save. */}
+          <RegionPicker
+            knownRegions={knownRegions}
+            value={form.region}
+            chosenChip={regionPreview.chosenChip}
+            onChange={(next) => setField("region", next)}
+            readOnly={!canEdit}
+          />
+
+          {isMapsConfigured ? (
+            <WhereOnMap
+              trip={state.trip}
+              regionName={form.region.trim()}
+              location={regionPreview.location}
+              lookingUp={regionPreview.lookingUp}
+              newRegion={!regionPreview.chosenChip}
+              spot={form.location}
+              // A spot moved or placed by hand isn't the Google place any more.
+              onSpot={(next) => setField("location", next ? { lat: next.lat, lng: next.lng, placeId: null } : null)}
+              fromGoogle={Boolean(form.location?.placeId)}
               readOnly={!canEdit}
-              placeholder="e.g. Xiaoliuqiu"
-              list="edit-visit-known-regions"
-              style={{ marginTop: 6, ...textFieldStyle({ size: 13.5 }) }}
             />
-            {knownRegions.length ? (
-              <datalist id="edit-visit-known-regions">
-                {knownRegions.map((r) => (
-                  <option key={r} value={r} />
-                ))}
-              </datalist>
-            ) : null}
-          </div>
+          ) : null}
 
           <div>
             <div className="mono-caption">Source link</div>

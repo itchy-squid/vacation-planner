@@ -20,7 +20,9 @@ export function at(day, clock) {
  * as for any new trip), plus whatever the test asks for.
  *
  *   travelers: ["Ana", "Lin"]            extra travelers, no accounts
- *   pins:      [{ title, region, minutes, hearted }]   hearted: the test account hearts it
+ *   pins:      [{ title, region, minutes, hearted, lat, lng, placeId }]
+ *              hearted: the test account hearts it; lat/lng (and placeId):
+ *              an exact spot, as if it had been found by place search
  *   events:    [{ title, minutes }]      custom events (travel items)
  *
  * Returns ids by name: { id, name, me, travelers: { Ana: 12 }, pins: {...}, events: {...} }.
@@ -46,6 +48,7 @@ export async function seedTrip(api, { title = "trip", travelers = [], pins = [],
           place: pin.place ?? pin.region ?? "Taipei",
           region: pin.region ?? "Taipei",
           duration_minutes: pin.minutes ?? 60,
+          ...(pin.lat != null ? { lat: pin.lat, lng: pin.lng, google_place_id: pin.placeId ?? null } : {}),
         },
       }),
       `add pin ${pin.title}`
