@@ -83,6 +83,7 @@ class Trip(Base):
     travelers: Mapped[list["Traveler"]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="Traveler.position, Traveler.id"
     )
+    regions: Mapped[list["TripRegion"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
 
 
 class Contributor(Base):
@@ -128,6 +129,37 @@ class Contributor(Base):
     @property
     def is_owner(self) -> bool:
         return self.role == "owner"
+
+
+class TripRegion(Base):
+    """Where one of the trip's regions is on the map.
+
+    Regions are the free-text `Pin.region` names ("Cozumel"). A pin with
+    no exact spot of its own is shown in its region on the Map tab, so the
+    region needs a place: the frontend looks the name up on Google the
+    first time the trip uses it (frontend lib/regions.js) and stores the
+    result here, once per trip, rather than on every page view.
+
+    `name_key` is the lowercased, trimmed name, which is what pins are
+    matched on, so "cozumel" and "Cozumel" are the same region."""
+
+    __tablename__ = "trip_regions"
+    __table_args__ = (UniqueConstraint("trip_id", "name_key", name="uq_trip_region_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    name_key: Mapped[str] = mapped_column(String(120))
+    # The centre, and the area Google gave for the name (its viewport).
+    lat: Mapped[float] = mapped_column()
+    lng: Mapped[float] = mapped_column()
+    south: Mapped[float] = mapped_column()
+    west: Mapped[float] = mapped_column()
+    north: Mapped[float] = mapped_column()
+    east: Mapped[float] = mapped_column()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    trip: Mapped[Trip] = relationship(back_populates="regions")
 
 
 class Traveler(Base):
@@ -198,10 +230,16 @@ class Pin(Base):
     place: Mapped[str] = mapped_column(String(200))
     region: Mapped[str] = mapped_column(String(120))
 
-    # Real geocoding is not wired up yet (see design_system readme "Map
-    # provider"); lat/lng are nullable until the pin has been geocoded.
+    # Where the pin is. Set when it's added by searching for a place
+    # (frontend pages/NewPin.jsx); null for pins added from a link or by
+    # name. Always both or neither (schemas.py _check_location).
     lat: Mapped[float | None] = mapped_column(nullable=True)
     lng: Mapped[float | None] = mapped_column(nullable=True)
+    # The Google place it was added from, or None. Place IDs are the one
+    # piece of Places data Google lets an app keep indefinitely, so this is
+    # what spots the same place being added twice, and what a later refresh
+    # of lat/lng would go by (Google limits how long those may be cached).
+    google_place_id: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     # The whole cost of visiting this pin, for everyone it's shared

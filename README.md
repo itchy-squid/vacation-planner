@@ -51,10 +51,52 @@ timeline (only drop targets are drawn), a real comment-thread view
 (comments are counts + one quoted line today), the photo-picker flow, and
 invite/permissions/login screens.
 
-The **Lasso Map** (`frontend/src/pages/LassoMap.jsx`) is out of the main
-flow: `/trips/:tripId/map` is still routed and works if you type the URL,
-but nothing links to it — it's in neither the bottom nav nor the Board
-header, whose Board/Map segmented switch was removed.
+The **Map** tab (`frontend/src/pages/TripMap.jsx`, `/trips/:tripId/map`)
+replaced the old Lasso Map prototype. Ideas with an exact spot (added by
+place search, or pinned from the tab) are dots. Ideas without one, like a
+tour booked on Viator, are counted in a badge in their region's area. Each
+region's location is looked up on Google once and stored for the trip
+(`trip_regions`, `backend/app/routers/regions.py`). Without a Maps key the
+tab says the map isn't switched on. See "Google Maps" below.
+
+### Google Maps
+
+The frontend needs a **browser key** baked in at build time:
+
+1. In Google Cloud, enable the **Maps JavaScript API**, the **Geocoding
+   API** and **Places API (New)** on a project with billing. Places is the
+   search behind adding a pin (`frontend/src/lib/places.js`); without it
+   the search says it isn't working, and adding by hand still works.
+2. Create an API key. Restrict it to those three APIs, and to HTTP referrers:
+   `http://localhost:5173/*` plus each environment's frontend URL (e.g.
+   `https://vacations.dev.amandasanti.com/*`). The key ships in the built
+   JS, as every Maps JS key does, so these restrictions are what protect it.
+3. Optionally create a **Map ID** so the map matches the app's quiet
+   palette. Without one, Google's default style is used. Create a map style
+   (Google Maps Platform → Map Styles) and set:
+   - land: `#f4f3f5` (the app's page background, `--stone-100`)
+   - water: `#aecfd8` (a light version of the app's teal, `--teal-600`)
+   - roads: white, and highways `#e6e4e9`
+   - labels: `#6f6d78` (`--text-secondary`)
+   - businesses and other points of interest: hidden, since the app's own
+     pins will go on top
+   Then create a Map ID (Map Management → Create map ID, type JavaScript),
+   link the style to it, and use that ID as `GOOGLE_MAPS_MAP_ID`. Later
+   style changes apply without a redeploy. Drawing the app's own pins will
+   need a Map ID anyway.
+4. Locally, set `GOOGLE_MAPS_API_KEY` (and `GOOGLE_MAPS_MAP_ID`) in
+   `frontend/.env.local`. They keep their plain names rather than Vite's
+   `VITE_` prefix; `frontend/vite.config.js` passes exactly these two
+   through to the browser. For deploys, set them on each GitHub
+   Environment (`dev`, `prod`): the key as a **secret**, the Map ID as a
+   **variable**:
+   ```sh
+   gh secret set GOOGLE_MAPS_API_KEY --env dev --body <key>
+   gh variable set GOOGLE_MAPS_MAP_ID --env dev --body <map id>
+   ```
+   Keeping the key a secret masks it in logs, though it still ships in the
+   built JS like any Maps browser key; the referrer restrictions are what
+   protect it.
 
 ### Added beyond the design handoff
 
@@ -134,11 +176,11 @@ backend + GitHub Actions. To change it: `.github/workflows/deploy.yml`'s
 1. **Live updates via SSE** — subscribe to `GET /api/trips/{id}/events`
    in `PlannerContext.jsx`.
 2. **Turn on Easy Auth** — `infra/README.md`'s two-pass deploy.
-3. **Google Maps** — replace
-   `frontend/src/components/planner/MapPlaceholder.jsx` and the
-   frontend-only `cx`/`cy` pixel coords (`frontend/src/lib/mapLayout.js`)
-   with real `lat`/`lng` + the Maps JS API — see the design handoff's
-   `design_system/readme.md` "Map provider" section for exact styling.
+3. **Google Maps** — the Map tab uses the real Maps JS API
+   (`frontend/src/components/map/MapCanvas.jsx`). Still to do: put pins on
+   it once they have `lat`/`lng` (place search and backfill), then swap
+   Compare's `MapPlaceholder.jsx` and the frontend-only `cx`/`cy` pixel
+   coords (`frontend/src/lib/mapLayout.js`) for `MapCanvas`.
 4. **Photo picker** — not designed yet; flag to design before building.
 5. **Harden infra for real user data** — `infra/README.md`'s "Known
    simplifications".

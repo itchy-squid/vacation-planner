@@ -269,13 +269,34 @@ class AvailabilityOverrideOut(BaseModel):
     band: str
 
 
+def _check_location(pin: BaseModel, fields_set: set[str] | None = None) -> None:
+    """A pin's location is all or nothing: lat and lng together (on an
+    update, both sent or neither; both null clears it), and a Google place
+    ID only with the coordinates it was found at. Anything else would leave
+    a pin the map can't draw, or a place ID pointing at somewhere the pin
+    isn't."""
+    if fields_set is not None and ("lat" in fields_set) != ("lng" in fields_set):
+        raise ValueError("lat and lng must be given together")
+    if (pin.lat is None) != (pin.lng is None):
+        raise ValueError("lat and lng must be given together")
+    if pin.google_place_id is not None and pin.lat is None:
+        raise ValueError("google_place_id needs the location it was found at (lat and lng)")
+
+
+Latitude = Annotated[float, Field(ge=-90, le=90)]
+Longitude = Annotated[float, Field(ge=-180, le=180)]
+GooglePlaceId = Annotated[str, Field(min_length=1, max_length=300)]
+
+
 class PinCreate(BaseModel):
     title: str
     short: str
     place: str
     region: str
-    lat: float | None = None
-    lng: float | None = None
+    # From a place search (pages/NewPin.jsx); left out otherwise.
+    lat: Latitude | None = None
+    lng: Longitude | None = None
+    google_place_id: GooglePlaceId | None = None
     duration_minutes: int = 60
     cost_cents: int = 0
     cost_basis: CostBasis = "per_head"
@@ -291,6 +312,11 @@ class PinCreate(BaseModel):
     photo_url: WebLink | None = None
     photo_source_url: WebLink | None = None
 
+    @model_validator(mode="after")
+    def _location_is_all_or_nothing(self) -> "PinCreate":
+        _check_location(self)
+        return self
+
 
 class PinUpdate(BaseModel):
     title: str | None = None
@@ -303,6 +329,49 @@ class PinUpdate(BaseModel):
     tags: list[str] | None = None
     photo_url: WebLink | None = None
     photo_source_url: WebLink | None = None
+    # An exact spot set after the pin was added (the Map tab's "Pin a spot").
+    # Send lat and lng together; both null removes it. Coordinates without
+    # google_place_id clear any place ID (routers/pins.py update_pin).
+    lat: Latitude | None = None
+    lng: Longitude | None = None
+    google_place_id: GooglePlaceId | None = None
+
+    @model_validator(mode="after")
+    def _location_is_all_or_nothing(self) -> "PinUpdate":
+        _check_location(self, self.model_fields_set)
+        return self
+
+
+class TripRegionIn(BaseModel):
+    """PUT /api/trips/{id}/regions: where a region is, by name. Setting a
+    name the trip already has (in any case) replaces its location."""
+
+    name: str = Field(min_length=1, max_length=120)
+    lat: Latitude
+    lng: Longitude
+    south: Latitude
+    west: Longitude
+    north: Latitude
+    east: Longitude
+
+    @model_validator(mode="after")
+    def _south_of_north(self) -> "TripRegionIn":
+        # West may be east of east: an area can cross the antimeridian.
+        if self.south > self.north:
+            raise ValueError("south must not be north of north")
+        return self
+
+
+class TripRegionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    lat: float
+    lng: float
+    south: float
+    west: float
+    north: float
+    east: float
 
 
 class PinOut(BaseModel):
@@ -315,6 +384,7 @@ class PinOut(BaseModel):
     region: str
     lat: float | None
     lng: float | None
+    google_place_id: str | None = None
     duration_minutes: int
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None

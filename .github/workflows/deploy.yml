@@ -302,6 +302,14 @@ jobs:
           # the frontend never links to a provider that isn't configured.
           EASY_AUTH_CLIENT_ID: ${{ vars.EASY_AUTH_CLIENT_ID }}
           EASY_AUTH_GOOGLE_CLIENT_ID: ${{ vars.EASY_AUTH_GOOGLE_CLIENT_ID }}
+          # The Map tab's browser key and optional Map ID (README "Google
+          # Maps"). Unset, the build still succeeds and the tab says the map
+          # isn't switched on. The key is a secret so it's masked in logs and
+          # hidden in repo settings; it still ends up in the public JS, which
+          # is normal for a Maps browser key, so its referrer restrictions
+          # are what actually protect it.
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          GOOGLE_MAPS_MAP_ID: ${{ vars.GOOGLE_MAPS_MAP_ID }}
         run: |
           providers=""
           if [ -n "$EASY_AUTH_CLIENT_ID" ]; then providers="aad"; fi

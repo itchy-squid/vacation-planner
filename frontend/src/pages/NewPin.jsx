@@ -1,185 +1,127 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import TextField from "../components/forms/TextField";
-import Button from "../components/core/Button";
-import HomeButton from "../components/core/HomeButton";
-import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
-import { BOARD_PHOTO_HEIGHT_PRIMARY } from "../components/planner/PinCard";
-import { usePlannerState, usePlannerDispatch } from "../state/PlannerContext";
-import { externalHref } from "../lib/externalHref";
+import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
+import { isMapsConfigured } from "../lib/googleMaps";
+import PlaceSearchStep from "../components/newpin/PlaceSearchStep";
+import PlaceDetailsForm from "../components/newpin/PlaceDetailsForm";
+import ByHandForm from "../components/newpin/ByHandForm";
+import { usePlaceSearch } from "../components/newpin/usePlaceSearch";
+import { useKnownRegions } from "../components/map/useKnownRegions";
 
-// Best-effort "give this pin a name" when someone pastes a link and
-// doesn't bother typing a title — mirrors how bookmarking tools fall back
-// to a link's hostname. Never throws: a link that doesn't parse as a URL
-// just falls back to the raw text.
-function deriveTitleFromLink(link) {
-  if (!link) return null;
-  const href = externalHref(link);
-  if (!href) return link;
-  const host = new window.URL(href).hostname.replace(/^www\./, "");
-  return host || link;
-}
-
-// Not one of the handoff README's numbered screens. Screen 2 (PinBoard)
-// only draws the masonry of already-collected pins.
+// Adding a pin. Two ways in, as the project's "add a pin by search"
+// mockup lays out:
 //
-// Earlier this form tried to read the pasted link's own page server-side
-// (title + a picker of candidate photos scraped from its markup). That
-// depended on the linked page actually shipping its content in the raw
-// HTML a plain server-side fetch receives — plenty of real pages (bot
-// walls, or content a site injects via JavaScript after load, like a
-// dining page whose photos load from a separate client-side call) simply
-// don't, so the scrape came back thin or wrong often enough that it
-// wasn't worth the round trip. This is the simpler replacement: the
-// person pastes the title, the page link, and (optionally) a direct link
-// to the photo itself, all by hand.
+//   search   The board's "+" lands here: a search box, the map on the top
+//            half and results below (PlaceSearchStep). Picking a place
+//            opens the new-pin form already filled in (PlaceDetailsForm),
+//            and adding it goes back to the board with the new card
+//            outlined.
+//   link     Adding by hand (ByHandForm), for what Google Maps doesn't
+//            list: a Viator tour, a friend's tip, an article. It goes on
+//            the map in its region, or at an exact spot if one is pinned,
+//            and also ends back on the board. It's the only way without a
+//            Maps key.
+//
+// The step lives in component state rather than the URL, like the
+// proposal flow (pages/ProposeBlock.jsx), so "‹ Search" from the form
+// returns to the same results rather than a fresh, re-billed search.
+//
+// ?mode=link opens the link form (the empty board's "Paste a link");
+// ?focus=title starts it in the title when there's no search to offer
+// (the empty board's "Type a place" without a Maps key).
 export default function NewPin() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
   const { pins, trip } = usePlannerState();
-  // Which field to start in. The empty board's "Type a place" row sends
-  // ?focus=title, since someone with a name and no link shouldn't land
-  // in the link field; everything else starts on the link, as before.
+  const ideaAccess = useIdeaAccess();
   const [searchParams] = useSearchParams();
-  const focusTitle = searchParams.get("focus") === "title";
 
-  const knownRegions = [...new Set(Object.values(pins).map((p) => p.region).filter(Boolean))];
-
-  const [link, setLink] = useState("");
-  const [imageLink, setImageLink] = useState("");
-  const [title, setTitle] = useState("");
-  const [place, setPlace] = useState("");
-  const [region, setRegion] = useState("");
+  const [step, setStep] = useState(() => (isMapsConfigured && searchParams.get("mode") !== "link" ? "search" : "link"));
+  const [picked, setPicked] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const search = usePlaceSearch();
 
-  const canSubmit = (link.trim().length > 0 || title.trim().length > 0) && !submitting;
+  const pinList = useMemo(() => Object.values(pins), [pins]);
+  const knownRegions = useKnownRegions();
+  // Ideas added through search, by the place they came from, so searching
+  // for one again offers it instead of a duplicate.
+  const existingByPlaceId = useMemo(
+    () => Object.fromEntries(pinList.filter((p) => p.googlePlaceId).map((p) => [p.googlePlaceId, p])),
+    [pinList]
+  );
 
-  async function handleCreate() {
-    if (!canSubmit) return;
+  const board = `/trips/${trip.id}/board`;
+  const goTo = (next) => {
+    setError(null);
+    setStep(next);
+  };
+
+  async function create(payload, whenCreated) {
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const finalTitle = title.trim() || deriveTitleFromLink(link.trim()) || "Untitled pin";
-      const trimmedImage = imageLink.trim();
-      const pin = await dispatch({
-        type: "CREATE_PIN",
-        payload: {
-          title: finalTitle,
-          short: finalTitle.length > 28 ? `${finalTitle.slice(0, 27)}…` : finalTitle,
-          place: place.trim() || finalTitle,
-          region: region.trim(),
-          link: link.trim(),
-          notes: "",
-          tags: [],
-          photo_url: trimmedImage || null,
-          // Kept alongside the photo so the pin can credit and link back
-          // to where it came from — the page link when there's one,
-          // otherwise just the image's own URL.
-          photo_source_url: trimmedImage ? link.trim() || trimmedImage : null,
-        },
-      });
-      navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`);
+      const pin = await dispatch({ type: "CREATE_PIN", payload });
+      whenCreated(pin);
     } catch (err) {
       setError(err.message || "Couldn't add that pin. Try again.");
       setSubmitting(false);
     }
   }
 
+  if (step === "search") {
+    return (
+      <PlaceSearchStep
+        trip={trip}
+        search={search}
+        existingByPlaceId={existingByPlaceId}
+        onCancel={() => navigate(board)}
+        onPick={(place) => {
+          setPicked(place);
+          goTo("details");
+        }}
+        onOpenIdea={(pin) => navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`)}
+        onManual={() => goTo("link")}
+      />
+    );
+  }
+
+  if (step === "details" && picked) {
+    return (
+      <PlaceDetailsForm
+        // A different place starts a fresh form rather than keeping edits
+        // made to the last one.
+        key={picked.placeId}
+        place={picked}
+        knownRegions={knownRegions}
+        canSetCost={ideaAccess.canSetCost(null)}
+        submitting={submitting}
+        error={error}
+        onBack={() => goTo("search")}
+        onLink={() => goTo("link")}
+        onSubmit={(payload) => create(payload, (pin) => navigate(board, { state: { addedPinId: pin.id } }))}
+      />
+    );
+  }
+
   return (
-    <div className="screen">
-      <div className="screen-scroll" style={{ paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 16px 12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <HomeButton size={28} />
-            <button onClick={() => navigate(`/trips/${trip.id}/board`)} style={{ font: "500 13px var(--font-sans)", color: "var(--accent)" }}>‹ Cancel</button>
-          </div>
-          <span className="mono-caption">New pin</span>
-          <button
-            onClick={handleCreate}
-            disabled={!canSubmit}
-            style={{ font: "600 13px var(--font-sans)", color: canSubmit ? "var(--text-primary)" : "var(--text-muted)" }}
-          >
-            {submitting ? "Adding…" : "Add"}
-          </button>
-        </div>
-
-        <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
-          <TextField
-            label="Link"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder="Paste a link — maps, Instagram, an article…"
-            mono
-            size={12.5}
-            autoFocus={!focusTitle}
-          />
-
-          <div>
-            <TextField
-              label="Image link"
-              value={imageLink}
-              onChange={(e) => setImageLink(e.target.value)}
-              placeholder="Paste a photo URL (optional)"
-              mono
-              size={12.5}
-            />
-            {/* Live preview only — nothing is fetched or validated until
-                the pin is saved. A link that doesn't actually point at an
-                image just falls back to the striped placeholder texture
-                (see PhotoPlaceholder's own onError handling), the same
-                way it would anywhere else a pin's photo is drawn. */}
-            {imageLink.trim() ? (
-              <div style={{ marginTop: 8 }}>
-                <PhotoPlaceholder height={BOARD_PHOTO_HEIGHT_PRIMARY} label="Couldn’t load that image" src={imageLink.trim()} alt={title || "Pin photo"} />
-              </div>
-            ) : null}
-          </div>
-
-          <TextField
-            label="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={deriveTitleFromLink(link.trim()) || "e.g. Vase Rock"}
-            weight={600}
-            size={15}
-            autoFocus={focusTitle}
-          />
-          <TextField
-            label="Place"
-            value={place}
-            onChange={(e) => setPlace(e.target.value)}
-            placeholder="e.g. Xiaoliuqiu, Pingtung"
-          />
-          <div>
-            <TextField
-              label="Region"
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              placeholder="e.g. Xiaoliuqiu"
-              list="known-regions"
-            />
-            {knownRegions.length ? (
-              <datalist id="known-regions">
-                {knownRegions.map((r) => (
-                  <option key={r} value={r} />
-                ))}
-              </datalist>
-            ) : null}
-          </div>
-
-          {error ? (
-            <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{error}</div>
-          ) : null}
-
-          <Button variant="primary" onClick={handleCreate} disabled={!canSubmit} style={{ marginTop: 4 }}>
-            {submitting ? "Adding…" : "Add to board"}
-          </Button>
-          <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingBottom: 8 }}>
-            You’ll set duration, cost, and notes next.
-          </div>
-        </div>
-      </div>
-    </div>
+    <ByHandForm
+      trip={trip}
+      knownRegions={knownRegions}
+      canSetCost={ideaAccess.canSetCost(null)}
+      focusTitle={searchParams.get("focus") === "title"}
+      submitting={submitting}
+      error={error}
+      onCancel={() => navigate(board)}
+      onSearch={isMapsConfigured ? () => goTo("search") : null}
+      onSubmit={async ({ payload, newRegion }) => {
+        // A region the trip hasn't placed yet is stored first, so the new
+        // idea shows in it straight away. If that fails the idea is still
+        // added; the Map tab looks the region up again.
+        if (newRegion) await dispatch({ type: "SAVE_REGION", region: newRegion });
+        create(payload, (pin) => navigate(board, { state: { addedPinId: pin.id } }));
+      }}
+    />
   );
 }
