@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { importMapsLibrary, isMapsConfigured, mapId, onMapsAuthFailure } from "../../lib/googleMaps";
 
 // Before anything better is known (see useFitToArea), the whole world.
@@ -22,6 +22,7 @@ const MAP_OPTIONS = {
 
 /**
  * Puts a Google map into `containerRef` and reports how that went.
+ * `options` (read once, when the map is made) override MAP_OPTIONS.
  *
  *   status: "unconfigured"  this build has no Maps key
  *           "loading"       fetching the Maps API or drawing the first tiles
@@ -29,10 +30,11 @@ const MAP_OPTIONS = {
  *           "error"         the Maps API couldn't be fetched; retry() tries again
  *           "rejected"      Google refused the key (see lib/googleMaps.js)
  */
-export function useGoogleMap(containerRef) {
+export function useGoogleMap(containerRef, options) {
   const [map, setMap] = useState(null);
   const [status, setStatus] = useState(isMapsConfigured ? "loading" : "unconfigured");
   const [attempt, setAttempt] = useState(0);
+  const optionsRef = useRef(options);
 
   useEffect(() => {
     if (!isMapsConfigured) return undefined;
@@ -47,7 +49,7 @@ export function useGoogleMap(containerRef) {
     importMapsLibrary("maps")
       .then(({ Map }) => {
         if (cancelled || !containerRef.current) return;
-        const created = new Map(containerRef.current, MAP_OPTIONS);
+        const created = new Map(containerRef.current, { ...MAP_OPTIONS, ...optionsRef.current });
         // "Ready" once something is actually on screen, not merely once the
         // object exists: a rejected key still constructs a map, it just
         // never draws tiles.

@@ -120,6 +120,12 @@ function normalizePin(p, contributorsById) {
     place: p.place,
     region: p.region,
     coords: p.lat != null && p.lng != null ? `${p.lat.toFixed(4)}° N, ${p.lng.toFixed(4)}° E` : "",
+    // Set when the pin was added by searching for a place (pages/NewPin
+    // .jsx): where it is, and the Google place it came from, which is how
+    // searching for it again finds it's already an idea.
+    lat: p.lat ?? null,
+    lng: p.lng ?? null,
+    googlePlaceId: p.google_place_id ?? null,
     cx,
     cy,
     dur: p.duration_minutes,
@@ -1185,7 +1191,8 @@ export function PlannerProvider({ children }) {
         }
 
         case "CREATE_PIN": {
-          // Board screen "add a pin from a link" (see pages/NewPin.jsx).
+          // Board screen "add a pin", by search or from a link (see
+          // pages/NewPin.jsx).
           // Reuses APPLY_PIN — same reducer case PATCH_PIN already lands
           // on — since inserting a brand-new id into the pins map and
           // overwriting an existing one are the same operation.

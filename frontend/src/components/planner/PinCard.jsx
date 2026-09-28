@@ -20,7 +20,9 @@ export const BOARD_PHOTO_HEIGHT_SECONDARY = 150;
 // (pages/EditVisit.jsx), which has the room. `example` is for the faded
 // sample cards on the empty board (EmptyBoard.jsx), which aren't real pins
 // and so can't be hearted.
-export default function PinCard({ pin, column, contributorInitial, onOpen, example = false }) {
+// `highlighted` outlines the card in plum: the pin that was just added
+// (pages/PinBoard.jsx).
+export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false }) {
   const heart = usePinHeart(pin);
   const photoHeight = column === 0 ? BOARD_PHOTO_HEIGHT_PRIMARY : BOARD_PHOTO_HEIGHT_SECONDARY;
   const dotColor = column === 0 ? "var(--accent)" : "var(--geo)";
@@ -32,7 +34,7 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
         background: "var(--surface-card)",
         borderRadius: "var(--radius-xl)",
         border: "1px solid var(--hairline)",
-        boxShadow: "var(--shadow-card)",
+        boxShadow: highlighted ? "0 0 0 2px var(--accent), var(--shadow-card)" : "var(--shadow-card)",
         overflow: "hidden",
         cursor: "pointer",
       }}

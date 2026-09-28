@@ -198,10 +198,16 @@ class Pin(Base):
     place: Mapped[str] = mapped_column(String(200))
     region: Mapped[str] = mapped_column(String(120))
 
-    # Real geocoding is not wired up yet (see design_system readme "Map
-    # provider"); lat/lng are nullable until the pin has been geocoded.
+    # Where the pin is. Set when it's added by searching for a place
+    # (frontend pages/NewPin.jsx); null for pins added from a link or by
+    # name. Always both or neither (schemas.py _check_location).
     lat: Mapped[float | None] = mapped_column(nullable=True)
     lng: Mapped[float | None] = mapped_column(nullable=True)
+    # The Google place it was added from, or None. Place IDs are the one
+    # piece of Places data Google lets an app keep indefinitely, so this is
+    # what spots the same place being added twice, and what a later refresh
+    # of lat/lng would go by (Google limits how long those may be cached).
+    google_place_id: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     # The whole cost of visiting this pin, for everyone it's shared

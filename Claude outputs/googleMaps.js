@@ -6,10 +6,9 @@
 // The key is a *browser* key: it ships in the built JS, like every Maps JS
 // key, and is protected by the HTTP-referrer and API restrictions set on it
 // in Google Cloud (see README "Google Maps"). Vite bakes both values in at
-// build time (vite.config.js PUBLIC_ENV), so changing them means rebuilding
-// the frontend.
-const API_KEY = (import.meta.env.GOOGLE_MAPS_API_KEY ?? "").trim();
-const MAP_ID = (import.meta.env.GOOGLE_MAPS_MAP_ID ?? "").trim();
+// build time, so changing them means rebuilding the frontend.
+const API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "").trim();
+const MAP_ID = (import.meta.env.VITE_GOOGLE_MAPS_MAP_ID ?? "").trim();
 
 const SCRIPT_ORIGIN = "https://maps.googleapis.com/maps/api/js";
 const READY_CALLBACK = "__vacationPlannerMapsReady";
@@ -17,8 +16,8 @@ const READY_CALLBACK = "__vacationPlannerMapsReady";
 export const isMapsConfigured = API_KEY.length > 0;
 
 // A Cloud-styled map (the pale basemap, README "Google Maps"). Markers
-// (components/map/ResultMarkers.jsx) only draw on a map that has a Map ID,
-// so without one this falls back to DEMO_MAP_ID, Google's stand-in for
+// (components/map/MapMarker.jsx) only draw on a map that has a Map ID, so
+// without one this falls back to DEMO_MAP_ID, Google's stand-in for
 // development: the default style, with markers working.
 export const mapId = MAP_ID || "DEMO_MAP_ID";
 

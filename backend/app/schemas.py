@@ -269,13 +269,31 @@ class AvailabilityOverrideOut(BaseModel):
     band: str
 
 
+def _check_location(pin: BaseModel) -> None:
+    """A pin's location is all or nothing: lat and lng together, and a
+    Google place ID only with the coordinates it was found at. Anything
+    else would leave a pin the map can't draw, or a place ID pointing at
+    somewhere the pin isn't."""
+    if (pin.lat is None) != (pin.lng is None):
+        raise ValueError("lat and lng must be given together")
+    if pin.google_place_id is not None and pin.lat is None:
+        raise ValueError("google_place_id needs the location it was found at (lat and lng)")
+
+
+Latitude = Annotated[float, Field(ge=-90, le=90)]
+Longitude = Annotated[float, Field(ge=-180, le=180)]
+GooglePlaceId = Annotated[str, Field(min_length=1, max_length=300)]
+
+
 class PinCreate(BaseModel):
     title: str
     short: str
     place: str
     region: str
-    lat: float | None = None
-    lng: float | None = None
+    # From a place search (pages/NewPin.jsx); left out otherwise.
+    lat: Latitude | None = None
+    lng: Longitude | None = None
+    google_place_id: GooglePlaceId | None = None
     duration_minutes: int = 60
     cost_cents: int = 0
     cost_basis: CostBasis = "per_head"
@@ -290,6 +308,11 @@ class PinCreate(BaseModel):
     # it came from, kept so the pin can credit and link back to it.
     photo_url: WebLink | None = None
     photo_source_url: WebLink | None = None
+
+    @model_validator(mode="after")
+    def _location_is_all_or_nothing(self) -> "PinCreate":
+        _check_location(self)
+        return self
 
 
 class PinUpdate(BaseModel):
@@ -315,6 +338,7 @@ class PinOut(BaseModel):
     region: str
     lat: float | None
     lng: float | None
+    google_place_id: str | None = None
     duration_minutes: int
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None

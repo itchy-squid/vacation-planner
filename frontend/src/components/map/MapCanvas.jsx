@@ -2,17 +2,22 @@ import { useRef } from "react";
 import Button from "../core/Button";
 import { useGoogleMap } from "./useGoogleMap";
 import { useFitToArea } from "./useFitToArea";
+import { MapContext } from "./mapContext";
 
 // A real Google map (see components/map/useGoogleMap.js), opened on `area`
 // when one is given. It replaces components/planner/MapPlaceholder.jsx
-// screen by screen: so far only the Map tab (pages/TripMap.jsx) uses it.
+// screen by screen: so far the Map tab (pages/TripMap.jsx) and place
+// search on the new-pin screen (components/newpin/PlaceSearchStep.jsx).
+//
+// `options` are starting map options (read once). `children` are drawn on
+// the map (ResultMarkers.jsx) and find it through MapContext.
 //
 // The striped map pattern sits behind the map, so the space reads as "a
 // map goes here" while it loads and behind the notices below when it
 // can't. `data-map-state` mirrors the hook's status for tests.
-export default function MapCanvas({ area, fitPadding, label = "Map", style }) {
+export default function MapCanvas({ area, fitPadding, options, label = "Map", style, children }) {
   const containerRef = useRef(null);
-  const { map, status, retry } = useGoogleMap(containerRef);
+  const { map, status, retry } = useGoogleMap(containerRef, options);
   useFitToArea(map, area, fitPadding);
 
   return (
@@ -30,6 +35,7 @@ export default function MapCanvas({ area, fitPadding, label = "Map", style }) {
         </span>
       ) : null}
       <MapNotice status={status} onRetry={retry} />
+      <MapContext.Provider value={map}>{children}</MapContext.Provider>
     </div>
   );
 }
