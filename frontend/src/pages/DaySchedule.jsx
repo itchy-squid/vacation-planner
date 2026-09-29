@@ -8,8 +8,8 @@ import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
 import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
 import DayPlacesSheet from "../components/places/DayPlacesSheet";
-import { DayPlacesLine, DayStripMarks, PlacesMismatch } from "../components/places/DayPlacesLine";
-import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDates, withVisit } from "../lib/dayPlaces";
+import { DayPlacesLine, DayTripDot, PlacesMismatch } from "../components/places/DayPlacesLine";
+import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, tripDates, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
@@ -619,9 +619,7 @@ export default function DaySchedule() {
                 >
                   <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow}</div>
                   <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
-                  {dates.length ? (
-                    <DayStripMarks run={stayRun(dayPlaces, dates, i)} hasDayTrip={placesOn(dayPlaces, dates[i]).visits.length > 0} selected={selected} />
-                  ) : null}
+                  {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
                 </button>
               );
             })}

@@ -18,6 +18,7 @@ import {
   placesOn,
   stayBefore,
   stayRun,
+  timelineAt,
   tripDates,
   withStay,
   withVisit,
@@ -160,6 +161,7 @@ export default function DayPlaces() {
                 title={tripDayTitle(i + 1, trip.startDate, trip.endDate)}
                 day={placesOn(dayPlaces, date)}
                 run={stayRun(dayPlaces, dates, i)}
+                timeline={timelineAt(dayPlaces, dates, i)}
                 previousStay={stayBefore(dayPlaces, dates, i)}
                 suggestion={suggestions[i]}
                 canEdit={canEdit}
@@ -223,7 +225,7 @@ export default function DayPlaces() {
   );
 }
 
-function DayRow({ number, label, title, day, run, previousStay, suggestion, canEdit, selecting, selected, onOpen, onUse }) {
+function DayRow({ number, label, title, day, run, timeline, previousStay, suggestion, canEdit, selecting, selected, onOpen, onUse }) {
   const set = isSet(day);
   const summary = set ? describeDay(day, previousStay) : "Not set";
   const offerUse = canEdit && !selecting && !set && suggestion.length > 0;
@@ -241,7 +243,7 @@ function DayRow({ number, label, title, day, run, previousStay, suggestion, canE
           <span className="mono-data-sm" style={{ color: "var(--text-faint)", letterSpacing: 0 }}>{label?.dow || "DAY"}</span>
           <span style={{ font: "600 15px var(--font-sans)", color: "var(--text-primary)" }}>{label?.n ?? number}</span>
         </span>
-        <Rail run={run} />
+        <Timeline {...timeline} />
         <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", alignContent: "center", gap: "4px 6px", padding: "8px 0", minWidth: 0 }}>
           {run.movedFrom ? (
             <span className="mono-caption" style={{ width: "100%", fontSize: 10 }}>
@@ -275,30 +277,14 @@ function DayRow({ number, label, title, day, run, previousStay, suggestion, canE
   );
 }
 
-// The line down the left: solid through a run of days staying in one
-// place, with a ring where each stay starts; dotted where nothing is set.
-function Rail({ run }) {
-  if (!run.stay) {
-    return <span aria-hidden="true" style={{ background: "radial-gradient(circle, var(--border-strong) 1.5px, transparent 2px) center / 100% 8px repeat-y" }} />;
-  }
-  const line = run.fromBefore || run.intoAfter;
+// The trip's timeline down the left (lib/dayPlaces.js timelineAt): one
+// line through every day, with a dot where the group arrives somewhere new.
+function Timeline({ top, bottom, dot }) {
   return (
     <span aria-hidden="true" style={{ position: "relative" }}>
-      {line ? (
-        <span
-          style={{
-            position: "absolute",
-            left: "50%",
-            width: 3,
-            marginLeft: -1.5,
-            top: run.fromBefore ? -1 : "50%",
-            bottom: run.intoAfter ? -1 : "50%",
-            background: "var(--geo)",
-            borderRadius: 2,
-          }}
-        />
-      ) : null}
-      {!run.fromBefore ? (
+      {top ? <TimelineSegment kind={top} style={{ top: -1, bottom: "50%" }} /> : null}
+      {bottom ? <TimelineSegment kind={bottom} style={{ top: "50%", bottom: -1 }} /> : null}
+      {dot ? (
         <span
           style={{
             position: "absolute",
@@ -315,6 +301,23 @@ function Rail({ run }) {
         />
       ) : null}
     </span>
+  );
+}
+
+// Solid between days with a stay; dashed and faint where one isn't set.
+function TimelineSegment({ kind, style }) {
+  return (
+    <span
+      style={{
+        position: "absolute",
+        left: "50%",
+        width: 2,
+        marginLeft: -1,
+        background:
+          kind === "solid" ? "var(--geo)" : "repeating-linear-gradient(to bottom, var(--border-strong) 0 4px, transparent 4px 8px)",
+        ...style,
+      }}
+    />
   );
 }
 

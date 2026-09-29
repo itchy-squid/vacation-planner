@@ -74,19 +74,37 @@ export function stayBefore(dayPlaces, dates, index) {
 }
 
 /**
- * How day `index`'s stay joins its neighbours: whether the same stay runs
- * on from the day before and into the day after, and where the group
- * moved from when it doesn't (a moving day).
+ * How day `index`'s stay follows the day before: whether a stay starts
+ * here (a new place, or the first day with one), and where the group moved
+ * from when it's a moving day.
  */
 export function stayRun(dayPlaces, dates, index) {
   const stay = placesOn(dayPlaces, dates[index]).stay;
   const before = stayBefore(dayPlaces, dates, index);
-  const after = index < dates.length - 1 ? placesOn(dayPlaces, dates[index + 1]).stay : null;
   return {
     stay,
-    fromBefore: Boolean(stay) && samePlace(stay, before),
-    intoAfter: Boolean(stay) && samePlace(stay, after),
+    startsHere: Boolean(stay) && !samePlace(stay, before),
     movedFrom: stay && before && !samePlace(stay, before) ? before : null,
+  };
+}
+
+/**
+ * Day `index` on the trip's timeline: one line through every day, solid
+ * between two days that both have a stay and dashed where either hasn't.
+ * A dot marks where a stay starts and where a solid stretch ends (the
+ * last day with a stay before an unset day or the end of the trip), so
+ * the solid line never stops without one. `top` and `bottom` are the
+ * halves of the line above and below the day ("solid" | "dashed" | null
+ * at the ends).
+ */
+export function timelineAt(dayPlaces, dates, index) {
+  const hasStay = (i) => i >= 0 && i < dates.length && Boolean(placesOn(dayPlaces, dates[i]).stay);
+  const segment = (a, b) => (hasStay(a) && hasStay(b) ? "solid" : "dashed");
+  const solidEndsHere = hasStay(index) && !hasStay(index + 1);
+  return {
+    top: index > 0 ? segment(index - 1, index) : null,
+    bottom: index < dates.length - 1 ? segment(index, index + 1) : null,
+    dot: stayRun(dayPlaces, dates, index).startsHere || solidEndsHere,
   };
 }
 

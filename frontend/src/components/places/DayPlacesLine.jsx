@@ -85,42 +85,23 @@ export function PlacesMismatch({ day, onCalendar, canEdit, onAdd }) {
 }
 
 /**
- * Under a day in the Plan tab's day strip: a bar that runs on into the
- * neighbouring days staying in the same place, and a dashed dot for a day
- * with a day trip.
+ * On a day in the Plan tab's day strip: a small dashed dot when that day
+ * has a day trip.
  */
-export function DayStripMarks({ run, hasDayTrip, selected }) {
+export function DayTripDot({ selected }) {
   return (
-    <>
-      {run.stay ? (
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            bottom: -9,
-            height: 3,
-            left: run.fromBefore ? -7 : 4,
-            right: run.intoAfter ? -7 : 4,
-            borderRadius: 2,
-            background: "var(--geo)",
-          }}
-        />
-      ) : null}
-      {hasDayTrip ? (
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            top: 3,
-            right: 3,
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            border: `1.5px dashed ${selected ? "#fff" : "var(--geo)"}`,
-            boxSizing: "border-box",
-          }}
-        />
-      ) : null}
-    </>
+    <span
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        top: 3,
+        right: 3,
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        border: `1.5px dashed ${selected ? "#fff" : "var(--geo)"}`,
+        boxSizing: "border-box",
+      }}
+    />
   );
 }
