@@ -18,6 +18,7 @@ from ..schemas import (
     ContestPlanOut,
     ContestProposeCreate,
     ContestPicked,
+    WithdrawResult,
     PlanItemCreate,
     PickRequest,
     PlanOut,
@@ -519,6 +520,79 @@ def update_proposal(
     return _contest_to_schema(contest, db, contributor)
 
 
+@router.post("/plans/{plan_id}/withdraw", response_model=WithdrawResult)
+def withdraw_proposal(
+    plan_id: int,
+    access: Access = Depends(require(PLANS_PROPOSE)),
+    db: Session = Depends(get_db),
+):
+    """Take a set you proposed out of its vote. Its votes and any custom
+    events only it used go with it.
+
+    What is left decides what happens to the hours. Other sets still in the
+    vote: it carries on without this one. Only the set that was on the board
+    when the hours were claimed (the incumbent, which nobody authored): there
+    is nothing left to decide, so its stops go back on the calendar as the
+    ordinary plans they were, exactly as if the group had picked it. Nothing
+    at all: the vote is deleted and the hours are free.
+
+    Who may: the set's author or the trip owner, the same as editing it.
+    The incumbent itself can't be withdrawn — it isn't anyone's proposal."""
+    from .plans import plan_to_schema  # local import, same as pick_set
+
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    if plan.status != PlanStatus.contested or plan.contest_id is None:
+        raise HTTPException(status_code=409, detail="Only a set in an open vote can be withdrawn")
+    contest = db.get(Contest, plan.contest_id)
+    if contest is None or contest.status != ContestStatus.open:
+        raise HTTPException(status_code=409, detail="That decision is already locked")
+    if plan.created_by_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="The set already on the board isn't a proposal, so it can't be withdrawn.",
+        )
+    contributor = access.member
+    if plan.created_by_id != contributor.id and not contributor.is_owner:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who proposed this set, or the trip owner, can withdraw it",
+        )
+
+    trip_id = contest.trip_id
+    contest_id = contest.id
+    plan_id = plan.id
+    remaining = [p for p in contest.plans if p.id != plan.id]
+    orphan_candidates = travel_item_ids_of([plan])
+
+    placed: list[Plan] = []
+    settled = not remaining or (len(remaining) == 1 and remaining[0].created_by_id is None)
+    if settled:
+        if remaining:
+            placed = _place_set(db, contest, remaining[0])
+        contest.winning_plan_id = None
+        db.flush()
+        db.delete(contest)  # cascades to its plans, their items, and the votes
+    else:
+        db.delete(plan)  # cascades to its items and the votes cast for it
+    db.flush()
+    forgotten = forget_orphaned_travel_items(db, orphan_candidates)
+    db.commit()
+
+    if settled:
+        bus.publish(trip_id, "contest.resolved", {"contest_id": contest_id, "plan_ids": [p.id for p in placed]})
+    else:
+        bus.publish(trip_id, "plan.withdrawn", {"plan_id": plan_id, "contest_id": contest_id})
+    publish_forgotten(forgotten)
+    if settled:
+        for p in placed:
+            db.refresh(p)
+        return WithdrawResult(contest=None, placed_plans=[plan_to_schema(p) for p in placed])
+    db.refresh(contest)
+    return WithdrawResult(contest=_contest_to_schema(contest, db, contributor), placed_plans=[])
+
+
 @router.patch("/contests/{contest_id}", response_model=ContestOut)
 def move_lone_proposal(
     contest_id: int,
@@ -626,6 +700,42 @@ def toggle_vote(
     return _contest_to_schema(contest, db, contributor)
 
 
+def _place_set(db: Session, contest: Contest, chosen: Plan) -> list[Plan]:
+    """Put a set's stops on the calendar as ordinary `placed` plans, one per
+    stop, at the time each had in the set. Shared by pick_set and by
+    withdrawing the last proposal against the board (withdraw_proposal),
+    which hands the hours back to what was there."""
+    trip_id = contest.trip_id
+    placed: list[Plan] = []
+    for item in sorted(chosen.items, key=lambda i: i.position):
+        start = item_start_minutes(chosen, item)
+        duration = item_duration_minutes(item)
+        plan = Plan(
+            trip_id=trip_id,
+            starts_at=chosen.starts_at + timedelta(minutes=start),
+            ends_at=chosen.starts_at + timedelta(minutes=start + duration),
+            color=chosen.color,
+            branch_id=contest.branch_id,
+            status=PlanStatus.placed,
+            created_by_id=chosen.created_by_id,
+        )
+        db.add(plan)
+        db.flush()
+        db.add(
+            PlanItem(
+                plan_id=plan.id,
+                pin_id=item.pin_id,
+                travel_item_id=item.travel_item_id,
+                position=0,
+                # A trim made in the set stays a trim; an untrimmed stop keeps
+                # tracking its pin's own duration, as it did in the set.
+                duration_minutes=item.duration_minutes,
+            )
+        )
+        placed.append(plan)
+    return placed
+
+
 @router.post("/contests/{contest_id}/pick", response_model=ContestPicked)
 def pick_set(
     contest_id: int,
@@ -661,33 +771,7 @@ def pick_set(
     trip_id = contest.trip_id
     orphan_candidates = travel_item_ids_of(contest.plans)
 
-    placed: list[Plan] = []
-    for item in sorted(chosen.items, key=lambda i: i.position):
-        start = item_start_minutes(chosen, item)
-        duration = item_duration_minutes(item)
-        plan = Plan(
-            trip_id=trip_id,
-            starts_at=chosen.starts_at + timedelta(minutes=start),
-            ends_at=chosen.starts_at + timedelta(minutes=start + duration),
-            color=chosen.color,
-            branch_id=contest.branch_id,
-            status=PlanStatus.placed,
-            created_by_id=chosen.created_by_id,
-        )
-        db.add(plan)
-        db.flush()
-        db.add(
-            PlanItem(
-                plan_id=plan.id,
-                pin_id=item.pin_id,
-                travel_item_id=item.travel_item_id,
-                position=0,
-                # A trim made in the set stays a trim; an untrimmed stop keeps
-                # tracking its pin's own duration, as it did in the set.
-                duration_minutes=item.duration_minutes,
-            )
-        )
-        placed.append(plan)
+    placed = _place_set(db, contest, chosen)
 
     contest.winning_plan_id = None
     db.flush()

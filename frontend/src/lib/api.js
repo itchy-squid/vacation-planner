@@ -429,6 +429,11 @@ export const api = {
   // votes cast for that plan and the tally on screen has to change with it
   // (see backend/app/routers/contests.py::update_proposal).
   updateProposal: (planId, payload) => request(`/api/plans/${planId}/stops`, { method: "PUT", body: payload }),
+  // Take a set you proposed out of its vote. Returns { contest, placed_plans }:
+  // the vote as it now stands, or contest null once nothing is left to decide
+  // (a set that was on the board comes back onto the calendar as placed_plans;
+  // see backend/app/routers/contests.py::withdraw_proposal).
+  withdrawProposal: (planId) => request(`/api/plans/${planId}/withdraw`, { method: "POST" }),
   // Move a proposal that is the only option in its vote to new hours:
   // { starts_at, ends_at }. The contest and its plan move together, stops
   // and all; votes for it are cleared. 409s once anything competes for the

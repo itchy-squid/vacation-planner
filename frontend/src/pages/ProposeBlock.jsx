@@ -752,6 +752,26 @@ export default function ProposeBlock() {
     navigate(`/trips/${trip.id}/schedule/${dayIndex}`, { replace: true });
   }
 
+  async function withdraw() {
+    if (!editing || busy) return;
+    setBusy(true);
+    setError("");
+    const result = await dispatch({ type: "WITHDRAW_PROPOSAL", planId: editPlanId });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error || "Couldn't withdraw that set.");
+      return;
+    }
+    committedRef.current = true;
+    // With other sets still in the vote there is a decision to go back to;
+    // otherwise it is gone (or settled back onto the calendar), so go to
+    // the day.
+    navigate(
+      result.contestRemains ? `/trips/${trip.id}/contests/${contestId}` : `/trips/${trip.id}/schedule/${dayIndex}`,
+      { replace: true, state: result.contestRemains ? { notice: "Your set was withdrawn." } : undefined }
+    );
+  }
+
   function cancel() {
     // Back where you came from: the decision you were adding to, or the
     // day you were looking at.
@@ -886,6 +906,7 @@ export default function ProposeBlock() {
           onBack={() => setStep(3)}
           onSaveDraft={saveDraft}
           onDiscardDraft={discardDraft}
+          onWithdraw={withdraw}
           onSend={sendToVote}
         />
       )}
@@ -1599,8 +1620,10 @@ function StepFour({
   onBack,
   onSaveDraft,
   onDiscardDraft,
+  onWithdraw,
   onSend,
 }) {
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   return (
     <>
       <ModalHeader
@@ -1732,6 +1755,59 @@ function StepFour({
           >
             Discard this draft
           </button>
+        )}
+
+        {/* Abandoning a set you proposed. Two taps, because it takes the
+            set and every vote for it out of the decision; the edit screen
+            is the only place it is offered, so it can't be hit by
+            accident while browsing the vote. */}
+        {editing && !confirmingWithdraw && (
+          <button
+            type="button"
+            onClick={() => setConfirmingWithdraw(true)}
+            disabled={busy}
+            style={{ alignSelf: "flex-start", font: "600 12px var(--font-sans)", color: "var(--warn)" }}
+          >
+            Withdraw this proposal
+          </button>
+        )}
+        {editing && confirmingWithdraw && (
+          <div
+            style={{
+              border: "1px solid var(--warn)",
+              borderRadius: "var(--radius-md)",
+              padding: "11px 13px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              font: "400 12px/1.5 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <span>
+              Withdraw this set? It comes out of the vote
+              {votesAtStake > 0 ? `, along with the ${votesAtStake} ${votesAtStake === 1 ? "vote" : "votes"} for it` : ""}.
+              This can&apos;t be undone.
+            </span>
+            <div style={{ display: "flex", gap: 14 }}>
+              <button
+                type="button"
+                onClick={onWithdraw}
+                disabled={busy}
+                style={{ font: "600 12.5px var(--font-sans)", color: "var(--warn)" }}
+              >
+                {busy ? "Withdrawing…" : "Withdraw"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingWithdraw(false)}
+                disabled={busy}
+                style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-secondary)" }}
+              >
+                Keep it
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
