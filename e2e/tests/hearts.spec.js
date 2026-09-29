@@ -1,4 +1,5 @@
 import { test, expect } from "../support/fixtures.js";
+import { ok } from "../support/api.js";
 import { dayUrl, dragHours } from "../support/calendar.js";
 import { pinsOf } from "../support/seed.js";
 
@@ -67,4 +68,20 @@ test("proposing hours can pull in the most hearted ideas first", async ({ page, 
 
   await page.getByRole("radio", { name: "Most hearted" }).click();
   await expect(chips.first()).toHaveAccessibleName(/^Tide pools .*♥ 1$/);
+});
+
+// A pin added from a pasted link starts out named after the link's host;
+// once renamed, the chip has to show the new name (it used to show a
+// copy of the name taken when the pin was created).
+test("pull-in chips show a pin's current name after it's renamed", async ({ page, api, seed }) => {
+  const trip = await seed({ pins: [{ title: "maps.app.goo.gl" }] });
+  const pinId = trip.pins["maps.app.goo.gl"];
+  await ok(api.patch(`/api/pins/${pinId}`, { data: { title: "Raohe Night Market" } }), "rename pin");
+
+  await page.goto(`${dayUrl(trip)}/propose`);
+  await dragHours(page, "09:00", "11:00");
+  await page.getByRole("button", { name: "Fill these hours" }).click();
+
+  await expect(page.getByRole("button", { name: /^Raohe Night Market · / })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^maps\.app\.goo\.gl · / })).toHaveCount(0);
 });

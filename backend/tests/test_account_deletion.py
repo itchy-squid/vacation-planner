@@ -132,7 +132,7 @@ def test_deleting_hands_over_owned_trips_and_keeps_what_you_added(client, trip, 
 def test_deleting_removes_trips_you_own_alone(client, db, deleted_photos):
     solo = _add_trip(db, "Solo weekend", [("mei@example.com", "Mei", "owner")])
     pin = Pin(
-        trip_id=solo.id, title="Cabin", short="Cabin", place="Cabin", region="", duration_minutes=60, cost_cents=0
+        trip_id=solo.id, title="Cabin", place="Cabin", region="", duration_minutes=60, cost_cents=0
     )
     db.add(pin)
     db.commit()

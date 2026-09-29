@@ -290,7 +290,6 @@ GooglePlaceId = Annotated[str, Field(min_length=1, max_length=300)]
 
 class PinCreate(BaseModel):
     title: str
-    short: str
     place: str
     region: str
     # From a place search (pages/NewPin.jsx); left out otherwise.
@@ -425,7 +424,6 @@ class PinOut(BaseModel):
     id: int
     trip_id: int
     title: str
-    short: str
     place: str
     region: str
     lat: float | None

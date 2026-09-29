@@ -77,7 +77,6 @@ export default function ByHandForm({ trip, knownRegions, canSetCost, focusTitle,
     onSubmit({
       payload: {
         title: name,
-        short: name.length > 28 ? `${name.slice(0, 27)}…` : name,
         place: regionName || name,
         region: regionName,
         link: link.trim(),

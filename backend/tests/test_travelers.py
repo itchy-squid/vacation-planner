@@ -139,7 +139,7 @@ def test_a_cost_is_shared_by_everyone_on_the_plan(client, trip):
 def test_a_new_pin_defaults_to_per_person(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/pins",
-        json={"title": "Kayak", "short": "Kayak", "place": "Bay", "region": "Xiaoliuqiu", "cost_cents": 900},
+        json={"title": "Kayak", "place": "Bay", "region": "Xiaoliuqiu", "cost_cents": 900},
         headers=MEI,
     )
     assert res.status_code == 201, res.text

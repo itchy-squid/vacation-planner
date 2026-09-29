@@ -38,7 +38,6 @@ export default function PlaceDetailsForm({ place, knownRegions, canSetCost, subm
     const costCents = Math.round(Math.max(0, Number(cost) || 0) * 100);
     onSubmit({
       title: finalTitle,
-      short: finalTitle.length > 28 ? `${finalTitle.slice(0, 27)}…` : finalTitle,
       place: areaLine(place),
       region: region.trim(),
       lat: place.lat,

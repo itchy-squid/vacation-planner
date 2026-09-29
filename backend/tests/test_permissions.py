@@ -211,7 +211,7 @@ def test_reader_sees_contests_but_cannot_vote(client, trip, reader):
 @pytest.mark.parametrize(
     "method,path_fn,body_fn",
     [
-        ("post", lambda t: f"/api/trips/{t.id}/pins", lambda t: {"title": "X", "short": "X", "place": "X", "region": "X"}),
+        ("post", lambda t: f"/api/trips/{t.id}/pins", lambda t: {"title": "X", "place": "X", "region": "X"}),
         ("patch", lambda t: f"/api/pins/{t.pins['vase'].id}", lambda t: {"title": "Renamed"}),
         ("delete", lambda t: f"/api/pins/{t.pins['vase'].id}", lambda t: None),
         ("put", lambda t: f"/api/pins/{t.pins['vase'].id}/availability-rule", lambda t: {"days": [3]}),
@@ -252,7 +252,7 @@ def test_reader_cannot_move_or_remove_a_plan(client, trip, reader):
 
 # --- companions ----------------------------------------------------------------------
 
-_NEW_PIN = {"title": "Night market", "short": "Market", "place": "Donggang", "region": "Xiaoliuqiu"}
+_NEW_PIN = {"title": "Night market", "place": "Donggang", "region": "Xiaoliuqiu"}
 
 
 def _propose(client, trip, headers, items=None):

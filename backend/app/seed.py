@@ -162,42 +162,42 @@ def seed_taiwan(db: Session) -> None:
     # (see travel_item_specs below) rather than Pins — see
     # docs/features/scheduling-feature-spec.md's Pin/TravelItem split. ----
     xiaoliuqiu = [
-        dict(id_="p1", title="Vase Rock", short="Vase Rock", place="Xiaoliuqiu, Pingtung", region="Xiaoliuqiu", lat=22.3487, lng=120.3712, duration_minutes=50, cost_cents=0, who="mei", notes="Best at low tide — 14:10 that day.", link="maps.app/vase-rock", tags=["outdoors", "swim"]),
-        dict(id_="p2", title="Meirendong tide pools", short="Tide pools", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=70, cost_cents=500, who="jae", notes="Reef shoes needed. Jae has two spare pairs.", link="maps.app/meirendong", tags=["swim", "outdoors"]),
-        dict(id_="p3", title="Shaved ice, Benfu St", short="Shaved ice", place="Benfu Street, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3442, lng=120.3801, duration_minutes=30, cost_cents=400, who="lin", notes="Closes at 17:00 on weekdays.", link="instagram.com/benfu-ice", tags=["food"]),
-        dict(id_="p4", title="Wild Boy trail loop", short="Wild Boy", place="Xiaoliuqiu west coast", region="Xiaoliuqiu", lat=22.3355, lng=120.3610, duration_minutes=80, cost_cents=400, who="lin", notes="Shaded most of the way; last stretch is exposed.", link="maps.app/wild-boy-trail", tags=["hike", "outdoors"]),
-        dict(id_="p5", title="Beach at Geban Bay", short="Geban Bay", place="Geban Bay, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3298, lng=120.3745, duration_minutes=65, cost_cents=0, who="ana", notes="Shade is gone after 15:30.", link="maps.app/geban-bay", tags=["swim", "sunset"]),
-        dict(id_="p6", title="Sanfu fishing port", short="Sanfu port", place="Sanfu, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3521, lng=120.3777, duration_minutes=40, cost_cents=0, who="jae", notes="", link="maps.app/sanfu-port", tags=["outdoors"]),
-        dict(id_="p7", title="Black Dwarf cave", short="Black Dwarf", place="Southeast Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3312, lng=120.3829, duration_minutes=45, cost_cents=300, who="mei", notes="", link="maps.app/black-dwarf", tags=["rainy-day"]),
+        dict(id_="p1", title="Vase Rock", place="Xiaoliuqiu, Pingtung", region="Xiaoliuqiu", lat=22.3487, lng=120.3712, duration_minutes=50, cost_cents=0, who="mei", notes="Best at low tide — 14:10 that day.", link="maps.app/vase-rock", tags=["outdoors", "swim"]),
+        dict(id_="p2", title="Meirendong tide pools", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=70, cost_cents=500, who="jae", notes="Reef shoes needed. Jae has two spare pairs.", link="maps.app/meirendong", tags=["swim", "outdoors"]),
+        dict(id_="p3", title="Shaved ice, Benfu St", place="Benfu Street, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3442, lng=120.3801, duration_minutes=30, cost_cents=400, who="lin", notes="Closes at 17:00 on weekdays.", link="instagram.com/benfu-ice", tags=["food"]),
+        dict(id_="p4", title="Wild Boy trail loop", place="Xiaoliuqiu west coast", region="Xiaoliuqiu", lat=22.3355, lng=120.3610, duration_minutes=80, cost_cents=400, who="lin", notes="Shaded most of the way; last stretch is exposed.", link="maps.app/wild-boy-trail", tags=["hike", "outdoors"]),
+        dict(id_="p5", title="Beach at Geban Bay", place="Geban Bay, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3298, lng=120.3745, duration_minutes=65, cost_cents=0, who="ana", notes="Shade is gone after 15:30.", link="maps.app/geban-bay", tags=["swim", "sunset"]),
+        dict(id_="p6", title="Sanfu fishing port", place="Sanfu, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3521, lng=120.3777, duration_minutes=40, cost_cents=0, who="jae", notes="", link="maps.app/sanfu-port", tags=["outdoors"]),
+        dict(id_="p7", title="Black Dwarf cave", place="Southeast Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3312, lng=120.3829, duration_minutes=45, cost_cents=300, who="mei", notes="", link="maps.app/black-dwarf", tags=["rainy-day"]),
     ]
     taipei = [
-        dict(id_="p8", title="Elephant Mountain lookout", short="Elephant Mtn", place="Xinyi, Taipei", region="Taipei", lat=25.0270, lng=121.5703, duration_minutes=90, cost_cents=0, who="ana", notes="Ana raised the heat — go before 09:00 or after 16:00.", link="maps.app/elephant-mountain", tags=["hike", "sunset"]),
-        dict(id_="p9", title="Raohe Night Market", short="Raohe Market", place="Songshan, Taipei", region="Taipei", lat=25.0505, lng=121.5773, duration_minutes=100, cost_cents=1500, who="jae", notes="Pepper buns at the temple end of the street.", link="maps.app/raohe-market", tags=["food"]),
-        dict(id_="p10", title="National Palace Museum", short="Palace Museum", place="Shilin, Taipei", region="Taipei", lat=25.1024, lng=121.5486, duration_minutes=150, cost_cents=1200, who="mei", notes="", link="npm.gov.tw", tags=["rainy-day"]),
-        dict(id_="p11", title="Beitou hot springs", short="Beitou springs", place="Beitou, Taipei", region="Taipei", lat=25.1367, lng=121.5084, duration_minutes=120, cost_cents=2000, who="lin", notes="", link="maps.app/beitou-hot-springs", tags=["rainy-day"]),
-        dict(id_="p12", title="Bopiliao Historic Block", short="Bopiliao", place="Wanhua, Taipei", region="Taipei", lat=25.0374, lng=121.5013, duration_minutes=60, cost_cents=0, who="ana", notes="", link="maps.app/bopiliao", tags=["rainy-day"]),
-        dict(id_="p13", title="Din Tai Fung, Xinyi", short="Din Tai Fung", place="Xinyi, Taipei", region="Taipei", lat=25.0339, lng=121.5645, duration_minutes=75, cost_cents=2500, who="jae", notes="Reservation opens 2 weeks out.", link="maps.app/din-tai-fung-xinyi", tags=["food"]),
-        dict(id_="p14", title="Ximending street art", short="Ximending", place="Wanhua, Taipei", region="Taipei", lat=25.0421, lng=121.5079, duration_minutes=90, cost_cents=500, who="lin", notes="", link="maps.app/ximending", tags=["kid-ok"]),
-        dict(id_="p15", title="Yangmingshan sulphur vents", short="Yangmingshan", place="Beitou, Taipei", region="Taipei", lat=25.1590, lng=121.5480, duration_minutes=130, cost_cents=0, who="mei", notes="Unlit trail — daylight only.", link="maps.app/yangmingshan", tags=["hike", "outdoors"]),
+        dict(id_="p8", title="Elephant Mountain lookout", place="Xinyi, Taipei", region="Taipei", lat=25.0270, lng=121.5703, duration_minutes=90, cost_cents=0, who="ana", notes="Ana raised the heat — go before 09:00 or after 16:00.", link="maps.app/elephant-mountain", tags=["hike", "sunset"]),
+        dict(id_="p9", title="Raohe Night Market", place="Songshan, Taipei", region="Taipei", lat=25.0505, lng=121.5773, duration_minutes=100, cost_cents=1500, who="jae", notes="Pepper buns at the temple end of the street.", link="maps.app/raohe-market", tags=["food"]),
+        dict(id_="p10", title="National Palace Museum", place="Shilin, Taipei", region="Taipei", lat=25.1024, lng=121.5486, duration_minutes=150, cost_cents=1200, who="mei", notes="", link="npm.gov.tw", tags=["rainy-day"]),
+        dict(id_="p11", title="Beitou hot springs", place="Beitou, Taipei", region="Taipei", lat=25.1367, lng=121.5084, duration_minutes=120, cost_cents=2000, who="lin", notes="", link="maps.app/beitou-hot-springs", tags=["rainy-day"]),
+        dict(id_="p12", title="Bopiliao Historic Block", place="Wanhua, Taipei", region="Taipei", lat=25.0374, lng=121.5013, duration_minutes=60, cost_cents=0, who="ana", notes="", link="maps.app/bopiliao", tags=["rainy-day"]),
+        dict(id_="p13", title="Din Tai Fung, Xinyi", place="Xinyi, Taipei", region="Taipei", lat=25.0339, lng=121.5645, duration_minutes=75, cost_cents=2500, who="jae", notes="Reservation opens 2 weeks out.", link="maps.app/din-tai-fung-xinyi", tags=["food"]),
+        dict(id_="p14", title="Ximending street art", place="Wanhua, Taipei", region="Taipei", lat=25.0421, lng=121.5079, duration_minutes=90, cost_cents=500, who="lin", notes="", link="maps.app/ximending", tags=["kid-ok"]),
+        dict(id_="p15", title="Yangmingshan sulphur vents", place="Beitou, Taipei", region="Taipei", lat=25.1590, lng=121.5480, duration_minutes=130, cost_cents=0, who="mei", notes="Unlit trail — daylight only.", link="maps.app/yangmingshan", tags=["hike", "outdoors"]),
     ]
     hualien = [
-        dict(id_="p16", title="Taroko Gorge trailhead", short="Taroko Gorge", place="Xiulin, Hualien", region="Hualien", lat=24.1584, lng=121.6244, duration_minutes=180, cost_cents=0, who="ana", notes="Permit needed for the Zhuilu Old Trail spur.", link="maps.app/taroko-gorge", tags=["hike", "outdoors"]),
-        dict(id_="p17", title="Qixingtan pebble beach", short="Qixingtan", place="Xincheng, Hualien", region="Hualien", lat=24.0453, lng=121.6403, duration_minutes=60, cost_cents=0, who="jae", notes="", link="maps.app/qixingtan", tags=["swim", "sunset"]),
-        dict(id_="p18", title="Dongdamen Night Market", short="Dongdamen", place="Hualien City", region="Hualien", lat=23.9769, lng=121.6069, duration_minutes=90, cost_cents=1200, who="lin", notes="", link="maps.app/dongdamen-market", tags=["food"]),
-        dict(id_="p19", title="Liyu Lake bike loop", short="Liyu Lake", place="Shoufeng, Hualien", region="Hualien", lat=23.8956, lng=121.5497, duration_minutes=100, cost_cents=600, who="mei", notes="", link="maps.app/liyu-lake", tags=["outdoors", "kid-ok"]),
+        dict(id_="p16", title="Taroko Gorge trailhead", place="Xiulin, Hualien", region="Hualien", lat=24.1584, lng=121.6244, duration_minutes=180, cost_cents=0, who="ana", notes="Permit needed for the Zhuilu Old Trail spur.", link="maps.app/taroko-gorge", tags=["hike", "outdoors"]),
+        dict(id_="p17", title="Qixingtan pebble beach", place="Xincheng, Hualien", region="Hualien", lat=24.0453, lng=121.6403, duration_minutes=60, cost_cents=0, who="jae", notes="", link="maps.app/qixingtan", tags=["swim", "sunset"]),
+        dict(id_="p18", title="Dongdamen Night Market", place="Hualien City", region="Hualien", lat=23.9769, lng=121.6069, duration_minutes=90, cost_cents=1200, who="lin", notes="", link="maps.app/dongdamen-market", tags=["food"]),
+        dict(id_="p19", title="Liyu Lake bike loop", place="Shoufeng, Hualien", region="Hualien", lat=23.8956, lng=121.5497, duration_minutes=100, cost_cents=600, who="mei", notes="", link="maps.app/liyu-lake", tags=["outdoors", "kid-ok"]),
     ]
     tainan = [
-        dict(id_="p20", title="Anping Old Fort", short="Anping Fort", place="Anping, Tainan", region="Tainan", lat=22.9976, lng=120.1616, duration_minutes=80, cost_cents=800, who="jae", notes="", link="maps.app/anping-fort", tags=["rainy-day"]),
-        dict(id_="p21", title="Shennong Street", short="Shennong St", place="West Central, Tainan", region="Tainan", lat=22.9958, lng=120.1985, duration_minutes=70, cost_cents=0, who="ana", notes="", link="maps.app/shennong-street", tags=["kid-ok"]),
-        dict(id_="p22", title="Chihkan Tower", short="Chihkan Tower", place="West Central, Tainan", region="Tainan", lat=22.9971, lng=120.2027, duration_minutes=60, cost_cents=600, who="lin", notes="", link="maps.app/chihkan-tower", tags=["rainy-day"]),
-        dict(id_="p23", title="Garden Night Market", short="Garden Market", place="North, Tainan", region="Tainan", lat=23.0129, lng=120.1993, duration_minutes=100, cost_cents=1000, who="mei", notes="Weekends only.", link="maps.app/garden-night-market", tags=["food"]),
-        dict(id_="p24", title="Sicao Green Tunnel", short="Green Tunnel", place="Annan, Tainan", region="Tainan", lat=23.0447, lng=120.1289, duration_minutes=50, cost_cents=900, who="jae", notes="", link="maps.app/sicao-green-tunnel", tags=["outdoors", "kid-ok"]),
+        dict(id_="p20", title="Anping Old Fort", place="Anping, Tainan", region="Tainan", lat=22.9976, lng=120.1616, duration_minutes=80, cost_cents=800, who="jae", notes="", link="maps.app/anping-fort", tags=["rainy-day"]),
+        dict(id_="p21", title="Shennong Street", place="West Central, Tainan", region="Tainan", lat=22.9958, lng=120.1985, duration_minutes=70, cost_cents=0, who="ana", notes="", link="maps.app/shennong-street", tags=["kid-ok"]),
+        dict(id_="p22", title="Chihkan Tower", place="West Central, Tainan", region="Tainan", lat=22.9971, lng=120.2027, duration_minutes=60, cost_cents=600, who="lin", notes="", link="maps.app/chihkan-tower", tags=["rainy-day"]),
+        dict(id_="p23", title="Garden Night Market", place="North, Tainan", region="Tainan", lat=23.0129, lng=120.1993, duration_minutes=100, cost_cents=1000, who="mei", notes="Weekends only.", link="maps.app/garden-night-market", tags=["food"]),
+        dict(id_="p24", title="Sicao Green Tunnel", place="Annan, Tainan", region="Tainan", lat=23.0447, lng=120.1289, duration_minutes=50, cost_cents=900, who="jae", notes="", link="maps.app/sicao-green-tunnel", tags=["outdoors", "kid-ok"]),
     ]
     # An activity, not a logistics leg — a real place with a cost and a
     # photo-worthy identity — so it stays a Pin (see the TravelItem split
     # note above).
     logistics_pin = [
-        dict(id_="p27", title="Turtle snorkel, Meirendong", short="Turtle snorkel", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=150, cost_cents=4500, who="jae", notes="", link="", tags=["swim", "outdoors"]),
+        dict(id_="p27", title="Turtle snorkel, Meirendong", place="Meirendong, Xiaoliuqiu", region="Xiaoliuqiu", lat=22.3391, lng=120.3688, duration_minutes=150, cost_cents=4500, who="jae", notes="", link="", tags=["swim", "outdoors"]),
     ]
 
     pins_by_local_id: dict[str, Pin] = {}
@@ -372,7 +372,7 @@ def seed_light_trip(
         db.add(Traveler(trip_id=trip.id, name=member.display_name, initial=member.initial, tint=member.tint, contributor_id=member.id, position=position))
 
     for i, (title, region) in enumerate(pin_titles):
-        db.add(Pin(trip_id=trip.id, title=title, short=title, place=f"{region}", region=region, duration_minutes=60, cost_cents=0, added_by_id=(owner.id if i % 2 == 0 else guest.id)))
+        db.add(Pin(trip_id=trip.id, title=title, place=f"{region}", region=region, duration_minutes=60, cost_cents=0, added_by_id=(owner.id if i % 2 == 0 else guest.id)))
 
     db.commit()
 

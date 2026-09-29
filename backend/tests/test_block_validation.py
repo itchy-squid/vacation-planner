@@ -22,7 +22,7 @@ def other_trip(db):
     db.flush()
     db.add(Contributor(trip_id=row.id, email="zoe@example.com", display_name="Zoe", initial="Z", is_owner=True))
     pin = Pin(
-        trip_id=row.id, title="Zoe's secret spot", short="Secret", place="Secret", region="Kyoto",
+        trip_id=row.id, title="Zoe's secret spot", place="Secret", region="Kyoto",
         duration_minutes=60, notes="door code 4412",
     )
     item = TravelItem(trip_id=row.id, title="Zoe's train", kind="other", duration_minutes=60)

@@ -19,7 +19,7 @@ SAFE = ["https://example.com/a?b=c", "http://example.com", "maps.app.goo.gl/abc"
 
 
 def new_pin(**fields):
-    return {"title": "Spot", "short": "Spot", "place": "Spot", "region": "Here", **fields}
+    return {"title": "Spot", "place": "Spot", "region": "Here", **fields}
 
 
 @pytest.mark.parametrize("link", UNSAFE)

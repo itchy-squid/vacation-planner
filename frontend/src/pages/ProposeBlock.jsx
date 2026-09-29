@@ -390,7 +390,7 @@ export default function ProposeBlock() {
         options.push({
           kind: "pin",
           refId: pin.id,
-          title: pin.short || pin.title,
+          title: pin.title,
           baseDurationMinutes: pin.dur,
           durationMinutes: pin.dur,
           costCents: pin.costCents,
@@ -1245,6 +1245,16 @@ function GroupChooser({ daySplits, branchId, travelers, onChoose }) {
   );
 }
 
+// A long title is cut with an ellipsis so the duration and hearts after
+// it stay on the chip.
+const TRUNCATED_TITLE = {
+  display: "inline-block",
+  maxWidth: 220,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  verticalAlign: "bottom",
+};
+
 // A ruled-out chip stays tappable, just quieter. Availability is the
 // group's own note about a place, not a constraint the server enforces —
 // someone who knows the shop opens late should be able to pull the pin in
@@ -1263,9 +1273,11 @@ function PullInChip({ option, onPullIn, muted = false }) {
         border: `1px ${muted ? "dashed" : "solid"} var(--border)`,
         font: "400 12px var(--font-sans)",
         color: muted ? "var(--text-faint)" : "var(--text-primary)",
+        maxWidth: "100%",
+        whiteSpace: "nowrap",
       }}
     >
-      {option.title} · {fmtMin(option.baseDurationMinutes)}
+      <span style={TRUNCATED_TITLE}>{option.title}</span> · {fmtMin(option.baseDurationMinutes)}
       {heartsSuffix(option.hearts ?? 0)}
     </button>
   );

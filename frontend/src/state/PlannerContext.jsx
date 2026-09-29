@@ -130,7 +130,6 @@ function normalizePin(p, contributorsById) {
   return {
     id: p.id,
     title: p.title,
-    short: p.short,
     place: p.place,
     region: p.region,
     coords: p.lat != null && p.lng != null ? `${p.lat.toFixed(4)}° N, ${p.lng.toFixed(4)}° E` : "",
@@ -692,7 +691,7 @@ export function PlannerProvider({ children }) {
           if (!pin) return;
           dispatch({
             type: "ARM_PLACEMENT",
-            placing: { kind: "pin", refId: pin.id, durationMinutes: pin.dur, label: pin.short || pin.title },
+            placing: { kind: "pin", refId: pin.id, durationMinutes: pin.dur, label: pin.title },
           });
           return;
         }

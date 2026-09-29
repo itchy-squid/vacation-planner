@@ -44,7 +44,6 @@ export async function seedTrip(api, { title = "trip", travelers = [], pins = [],
       api.post(`/api/trips/${trip.id}/pins`, {
         data: {
           title: pin.title,
-          short: pin.short ?? pin.title,
           place: pin.place ?? pin.region ?? "Taipei",
           region: pin.region ?? "Taipei",
           duration_minutes: pin.minutes ?? 60,

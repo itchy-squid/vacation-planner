@@ -155,7 +155,7 @@ export function calendarPlacesOnDay(plans, pins, startDate, dayIndex) {
   entries.forEach(({ plan }) =>
     plan.items.forEach((item) => {
       const pin = item.pinId ? pins[item.pinId] : null;
-      if (pin?.region) out.push({ title: pin.short || pin.title, region: pin.region });
+      if (pin?.region) out.push({ title: pin.title, region: pin.region });
     })
   );
   return out;

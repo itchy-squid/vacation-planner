@@ -262,7 +262,6 @@ class Pin(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(200))
-    short: Mapped[str] = mapped_column(String(60))
     place: Mapped[str] = mapped_column(String(200))
     region: Mapped[str] = mapped_column(String(120))
 

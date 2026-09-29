@@ -228,7 +228,6 @@ def trip(db) -> TripFixture:
         p = Pin(
             trip_id=row.id,
             title=title,
-            short=title,
             place=title,
             region="Xiaoliuqiu",
             duration_minutes=duration,

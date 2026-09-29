@@ -14,7 +14,7 @@ from conftest import as_user
 MEI = as_user("mei@example.com")  # owner
 JAE = as_user("jae@example.com")  # planner
 
-BEAUTY_CAVE = {"title": "Beauty Cave", "short": "Beauty Cave", "place": "Liuqiu", "region": "Xiaoliuqiu"}
+BEAUTY_CAVE = {"title": "Beauty Cave", "place": "Liuqiu", "region": "Xiaoliuqiu"}
 FOUND_AT = {"lat": 22.3398, "lng": 120.3697, "google_place_id": "ChIJbeauty-cave"}
 
 
