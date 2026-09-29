@@ -755,6 +755,16 @@ class PickRequest(BaseModel):
     plan_id: int
 
 
+class WithdrawResult(BaseModel):
+    """What withdrawing a set leaves behind. `contest` is the vote as it now
+    stands, or None once nothing was left to decide: then `placed_plans` are
+    the stops that went back on the calendar (only when a set already on the
+    board was left standing). See routers/contests.py withdraw_proposal."""
+
+    contest: ContestOut | None = None
+    placed_plans: list[PlanOut] = []
+
+
 class ContestPicked(BaseModel):
     """What picking a set leaves behind: one placed plan per stop. The
     contest itself is gone — see routers/contests.py pick_set."""

@@ -937,6 +937,20 @@ export function PlannerProvider({ children }) {
           }
         }
 
+        // Take your own set out of its vote. What is left decides the rest
+        // server side: other sets carry on, a set already on the board goes
+        // back onto the calendar, and an empty vote disappears.
+        case "WITHDRAW_PROPOSAL": {
+          try {
+            const result = await api.withdrawProposal(action.planId);
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, contestRemains: Boolean(result.contest) };
+          } catch (err) {
+            console.error("withdraw proposal failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
         case "CONFIRM_PROPOSE": {
           const sheet = state.proposeSheet;
           if (!sheet || !state.trip) return { ok: false };
