@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WORLD_SIZE } from "../../lib/clusters.js";
-import { layoutIdeas } from "./ideaLayout.js";
+import { cameraFor, expansionZoom, layoutIdeas } from "./ideaLayout.js";
 
 // Stands in for map.getProjection().fromLatLngToPoint (Web Mercator).
 function toWorld({ lat, lng }) {
@@ -36,7 +36,6 @@ test("zoomed out, nearby spots become a bubble", () => {
   assert.equal(clusters.length, 1);
   assert.deepEqual(idsOf(clusters[0].pins), [1, 2, 3]);
   assert.equal(clusters[0].count, 3);
-  assert.equal(clusters[0].splittable, true);
   assert.deepEqual(idsOf(dots), [4]);
 });
 
@@ -74,12 +73,40 @@ test("the selected idea never goes into a bubble", () => {
   assert.deepEqual(idsOf(dots), [3, 4]);
 });
 
-test("ideas on one spot make a bubble that can't be split", () => {
+const holdsTogether = (cluster, input, zoom) => {
+  const { clusters } = layoutIdeas({ ...input, view: at(zoom) });
+  return clusters.some((c) => c.key === cluster.key);
+};
+
+test("tapping a bubble zooms in just far enough for it to break up", () => {
+  const input = { pins, regions: [cozumel], view: at(8) };
+  const [cluster] = layoutIdeas(input).clusters;
+  const zoom = expansionZoom(cluster, input);
+  assert.ok(zoom > 8 && zoom <= 12, `zoom ${zoom}`);
+  assert.equal(holdsTogether(cluster, input, zoom), false);
+  // One level less and it would still be whole (unless that's where we are).
+  if (zoom - 1 > 8) assert.equal(holdsTogether(cluster, input, zoom - 1), true);
+});
+
+test("ideas on one spot never break up, so they're listed instead", () => {
   const hotel = [
     { id: 7, title: "Breakfast", lat: 20.5, lng: -86.95 },
     { id: 8, title: "Spa", lat: 20.5, lng: -86.95 },
   ];
-  const { clusters } = layoutIdeas({ pins: hotel, regions: [], view: at(21) });
-  assert.equal(clusters.length, 1);
-  assert.equal(clusters[0].splittable, false);
+  const input = { pins: hotel, regions: [], view: at(10) };
+  const [cluster] = layoutIdeas(input).clusters;
+  assert.equal(expansionZoom(cluster, input), null);
+});
+
+test("the camera centres the bubble in the part of the map the header leaves", () => {
+  const cluster = { lat: 20.36, lng: -86.99 };
+  const plain = cameraFor(cluster, 10, {}, toWorld);
+  assert.ok(Math.abs(plain.center.lat - 20.36) < 1e-9 && Math.abs(plain.center.lng + 86.99) < 1e-9);
+  // A 76px header over a 28px bottom margin: the map's own centre sits
+  // 24px above the bubble, so the bubble lands mid-way down the clear part.
+  const underHeader = cameraFor(cluster, 10, { top: 76, bottom: 28, left: 28, right: 28 }, toWorld);
+  assert.ok(underHeader.center.lat > 20.36);
+  assert.ok(Math.abs(underHeader.center.lng + 86.99) < 1e-9);
+  const shiftPx = (toWorld(cluster).y - toWorld(underHeader.center).y) * 2 ** 10;
+  assert.ok(Math.abs(shiftPx - 24) < 1e-6);
 });

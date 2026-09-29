@@ -1,5 +1,5 @@
 // Extensions on the imports so Node can run this for the tests (Vite doesn't need them).
-import { canSplit, clusterPoints, coversAny, extentOf, screenDistance } from "../../lib/clusters.js";
+import { MAX_ZOOM, clusterPoints, coversAny, extentOf, fromWorld, screenDistance } from "../../lib/clusters.js";
 import { DOT_SIZE, HIGHLIGHTED_DOT_SIZE, PHOTO_MARKER_SIZE, badgeSize, bubbleSize } from "./markerSizes.js";
 
 const NO_KEYS = new Set();
@@ -23,9 +23,9 @@ const NO_KEYS = new Set();
  *
  * Returns
  *   dots         pins drawn on their own
- *   clusters     bubbles: [{ key, lat, lng, bounds, pins, regions, count,
- *                splittable }]. `regions` are the badges rolled in, and
- *                `count` is their ideas plus `pins`.
+ *   clusters     bubbles: [{ key, lat, lng, bounds, pins, regions, count }].
+ *                `regions` are the badges rolled in, and `count` is their
+ *                ideas plus `pins`.
  *   badges       regions still drawn as their own badge
  *   compactKeys  Set of badge keys that would cover a dot, so show just
  *                their count
@@ -49,7 +49,7 @@ export function layoutIdeas({ pins, regions, highlightedId = null, selectedRegio
     .map((g) => {
       const members = g.map((p) => p.pin);
       const center = extentOf(members);
-      return { members, points: g, regions: [], ...at(center) };
+      return { members, regions: [], ...at(center) };
     });
 
   // Then each badge: rolled into the nearest bubble it would cover, shrunk
@@ -64,7 +64,6 @@ export function layoutIdeas({ pins, regions, highlightedId = null, selectedRegio
     if (covered.length > 0) {
       const nearest = covered.reduce((best, b) => (screenDistance(spot, b, zoom) < screenDistance(spot, best, zoom) ? b : best));
       nearest.regions.push(region);
-      nearest.points.push({ ...spot, region });
       return;
     }
     badges.push(region);
@@ -77,10 +76,42 @@ export function layoutIdeas({ pins, regions, highlightedId = null, selectedRegio
     pins: b.members,
     regions: b.regions,
     count: b.members.length + b.regions.reduce((n, r) => n + r.count, 0),
-    splittable: canSplit(b.points),
   }));
 
   return { dots, clusters, badges, compactKeys };
+}
+
+/**
+ * How far to zoom in when `cluster` is tapped: the first whole zoom level
+ * above the current one at which it no longer holds together, so it just
+ * breaks into smaller bubbles, dots or badges (tap again to go further).
+ * Fitting the camera to its ideas instead would zoom until they sat at
+ * opposite edges of the screen. `input` is what the cluster was laid out
+ * from (see layoutIdeas). Null when it holds together even at MAX_ZOOM,
+ * like ideas pinned to one hotel: zooming can't help, so list them.
+ */
+export function expansionZoom(cluster, input, maxZoom = MAX_ZOOM) {
+  const pinIds = cluster.pins.map((p) => p.id);
+  const regionKeys = cluster.regions.map((r) => r.key);
+  const holdsAll = (c) => pinIds.every((id) => c.pins.some((p) => p.id === id)) && regionKeys.every((key) => c.regions.some((r) => r.key === key));
+  for (let zoom = Math.floor(input.view.zoom) + 1; zoom <= maxZoom; zoom += 1) {
+    const { clusters } = layoutIdeas({ ...input, view: { ...input.view, zoom } });
+    if (!clusters.some(holdsAll)) return zoom;
+  }
+  return null;
+}
+
+/**
+ * Where to point the camera to show `cluster` at `zoom`: its centre, in the
+ * middle of the part of the map not covered by `padding` ({ top, right,
+ * bottom, left } in pixels, like the floating header's clearance).
+ */
+export function cameraFor(cluster, zoom, padding, toWorld) {
+  const scale = 2 ** zoom;
+  const point = toWorld({ lat: cluster.lat, lng: cluster.lng });
+  const dx = ((padding.right ?? 0) - (padding.left ?? 0)) / 2 / scale;
+  const dy = ((padding.bottom ?? 0) - (padding.top ?? 0)) / 2 / scale;
+  return { center: fromWorld({ x: point.x + dx, y: point.y + dy }), zoom };
 }
 
 function dotSize(pin, highlighted) {

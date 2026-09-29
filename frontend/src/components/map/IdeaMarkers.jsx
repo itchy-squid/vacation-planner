@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import ClusterBubbles from "./ClusterBubbles";
 import PinDots from "./PinDots";
 import RegionAreas from "./RegionAreas";
-import { layoutIdeas } from "./ideaLayout";
+import { cameraFor, expansionZoom, layoutIdeas } from "./ideaLayout";
 import { useMap } from "./mapContext";
 import { useMapZoom } from "./useMapZoom";
 
@@ -20,22 +20,28 @@ import { useMapZoom } from "./useMapZoom";
  *   onTapPin(pin), onTapRegion(region)
  *   onTapStack(cluster)  a bubble whose ideas share one spot, so zooming
  *                        can't split it: list them instead
- *   fitPadding           room to keep clear when zooming to a bubble
+ *   fitPadding           map edges covered by other things (the floating
+ *                        header), kept clear when centring on a bubble
  */
 export default function IdeaMarkers({ pins, regions, highlightedId, selectedRegionKey, onTapPin, onTapRegion, onTapStack, fitPadding }) {
   const map = useMap();
   const view = useMapZoom();
-  const { dots, clusters, badges, compactKeys } = useMemo(
-    () => layoutIdeas({ pins, regions, highlightedId, selectedRegionKey, view }),
-    [pins, regions, highlightedId, selectedRegionKey, view]
-  );
+  const input = useMemo(() => ({ pins, regions, highlightedId, selectedRegionKey, view }), [pins, regions, highlightedId, selectedRegionKey, view]);
+  const { dots, clusters, badges, compactKeys } = useMemo(() => layoutIdeas(input), [input]);
 
+  // Just far enough in for the bubble to break up, centred on it.
   const tapCluster = useCallback(
     (cluster) => {
-      if (cluster.splittable) map?.fitBounds(cluster.bounds, fitPadding);
-      else onTapStack(cluster);
+      const zoom = expansionZoom(cluster, input);
+      if (zoom == null) {
+        onTapStack(cluster);
+        return;
+      }
+      const { center } = cameraFor(cluster, zoom, fitPadding, input.view.toWorld);
+      map?.setCenter(center);
+      map?.setZoom(zoom);
     },
-    [map, fitPadding, onTapStack]
+    [map, input, fitPadding, onTapStack]
   );
 
   return (

@@ -15,7 +15,7 @@ export const WORLD_SIZE = 256;
 export const CLUSTER_RADIUS_PX = 48;
 
 // The most Google will zoom in (satellite goes further, but the app only
-// uses the road map). Used to tell whether a bubble could ever split.
+// uses the road map). A bubble still whole at this zoom never splits.
 export const MAX_ZOOM = 21;
 
 /**
@@ -59,17 +59,12 @@ export function clusterPoints(points, zoom, radius = CLUSTER_RADIUS_PX) {
 }
 
 /**
- * Whether zooming in could ever pull a group apart: false when its points
- * share (nearly) one spot, like two ideas pinned to the same hotel. Such a
- * bubble lists its ideas instead of zooming.
+ * The lat/lng of a world point: the inverse of Google's projection
+ * (Web Mercator), for placing the camera without a live map.
  */
-export function canSplit(points, radius = CLUSTER_RADIUS_PX, maxZoom = MAX_ZOOM) {
-  for (let i = 0; i < points.length; i += 1) {
-    for (let j = i + 1; j < points.length; j += 1) {
-      if (screenDistance(points[i], points[j], maxZoom) >= radius) return true;
-    }
-  }
-  return false;
+export function fromWorld({ x, y }) {
+  const n = Math.PI - (2 * Math.PI * y) / WORLD_SIZE;
+  return { lat: (180 / Math.PI) * Math.atan(Math.sinh(n)), lng: (x / WORLD_SIZE) * 360 - 180 };
 }
 
 /**

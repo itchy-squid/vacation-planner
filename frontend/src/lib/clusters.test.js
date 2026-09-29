@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's built-in test runner, no dependencies).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canSplit, clusterPoints, coversAny, extentOf, screenDistance, WORLD_SIZE } from "./clusters.js";
+import { clusterPoints, coversAny, extentOf, fromWorld, screenDistance, WORLD_SIZE } from "./clusters.js";
 
 // World coordinates for a lat/lng, the same Web Mercator Google uses.
 function world(lat, lng) {
@@ -50,10 +50,10 @@ test("an empty map has no groups", () => {
   assert.deepEqual(clusterPoints([], 10), []);
 });
 
-test("spots on one hotel can't be split by zooming", () => {
-  const hotel = world(20.5, -86.95);
-  assert.equal(canSplit([hotel, { ...hotel }]), false);
-  assert.equal(canSplit(cozumel), true);
+test("fromWorld undoes the projection", () => {
+  const { lat, lng } = fromWorld(world(20.443, -86.998));
+  assert.ok(Math.abs(lat - 20.443) < 1e-9);
+  assert.ok(Math.abs(lng + 86.998) < 1e-9);
 });
 
 test("coversAny finds a badge that would sit on a marker", () => {

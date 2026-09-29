@@ -6,8 +6,8 @@ import { BASE_URL } from "../support/env.js";
 //   - exact spots too close to tell apart merge into a bubble with a count;
 //     a region's badge that would sit on the bubble is counted in it, and
 //     comes back out when zooming in
-//   - tapping a bubble zooms in and splits it; one whose ideas share a spot
-//     lists them instead
+//   - tapping a bubble zooms in just until it breaks up; one whose ideas
+//     share a spot lists them instead
 //   - a selected idea shows its photo, and ✕, a tap on empty map or Esc
 //     goes back to the summary
 // Markers only exist on a real map, so these skip without a Maps key.
@@ -43,12 +43,27 @@ test("zoomed out, nearby ideas share a bubble that zooms in when tapped", async 
   await expect(badge).toHaveCount(0);
   await expect(page.getByRole("button", { name: MERIDA.title })).toBeVisible();
 
+  // Each tap zooms in only until the bubble breaks up, so it can take a
+  // few taps (on what's left of it) before every spot is its own dot.
   await bubble.click();
   await expect(bubble).toHaveCount(0, { timeout: 20_000 });
+  await expect(badge).toBeVisible();
+  // A bubble that breaks up always leaves more markers than it was, so
+  // count the Cozumel spots' dots plus any bubbles still standing.
+  const remaining = page.getByRole("button", { name: /^\d+ ideas here$/ });
+  const markers = async () => {
+    let dots = 0;
+    for (const pin of [CHANKANAAB, PALANCAR, PUNTA_SUR]) dots += await page.getByRole("button", { name: pin.title }).count();
+    return dots + (await remaining.count());
+  };
+  for (let taps = 0; taps < 5 && (await remaining.count()) > 0; taps += 1) {
+    const before = await markers();
+    await remaining.first().click();
+    await expect.poll(markers, { timeout: 20_000 }).toBeGreaterThan(before);
+  }
   for (const pin of [CHANKANAAB, PALANCAR, PUNTA_SUR]) {
     await expect(page.getByRole("button", { name: pin.title })).toBeVisible();
   }
-  await expect(badge).toBeVisible();
 });
 
 test("a bubble whose ideas share one spot lists them", async ({ page, seed }) => {
