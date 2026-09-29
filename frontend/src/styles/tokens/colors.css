@@ -24,6 +24,7 @@
   --plum-700: #6f3159;
   --plum-tint: rgba(143, 68, 120, 0.06);
   --plum-tint-strong: rgba(143, 68, 120, 0.13);
+  --plum-300: #dca6ca;   /* the accent on dark surfaces (a toast's action) */
 
   --teal-600: #3d8a9c;   /* oklch(.55 .11 200) — geography, regions, confirmed */
   --teal-tint: rgba(61, 138, 156, 0.22);
@@ -59,6 +60,7 @@
   --accent:        var(--plum-600);
   --accent-press:  var(--plum-700);
   --accent-quiet:  var(--plum-tint);
+  --accent-on-dark: var(--plum-300);
   --geo:           var(--teal-600);
   --geo-quiet:     var(--teal-50);
   --draft:         var(--moss-600);

@@ -123,6 +123,14 @@ Engineering additions, not design-reviewed screens:
   Dates are real `start_date`/`end_date` columns (`b3eefc046a80` migration);
   day-of-trip scheduling intentionally doesn't derive from them yet — see
   `formatDateRange` in `frontend/src/lib/format.js`.
+- **Where we'll be** (`frontend/src/pages/DayPlaces.jsx`,
+  `/trips/:tripId/places`; `backend/app/routers/day_places.py`) — the place
+  the group stays in each day, plus day trips (there and back the same
+  day). Stored by date in `trip_day_places`; set from the Plan tab's day
+  header or the whole-trip list, several days at once, with Undo. Once a
+  day is set, the Plan tab's header, day strip and "+ Add" filter use it
+  instead of guessing from the calendar. Planners and owners change it;
+  everyone can see it. Design: the project's `day-places-mockups` doc.
 
 ## Repo layout
 

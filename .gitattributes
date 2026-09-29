@@ -1,0 +1,21 @@
+# Line endings. The repository stores text files with LF. Git converts them
+# to your platform's line ending on checkout and back to LF on commit, so a
+# Windows checkout (CRLF) and a Linux or macOS one (LF) both show a clean
+# status, whatever each machine's core.autocrlf is set to.
+* text=auto
+
+# Files that run inside Linux containers keep LF everywhere.
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Binary files: never converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.pdf binary

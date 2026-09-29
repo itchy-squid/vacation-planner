@@ -57,6 +57,14 @@ export function getTripDays(startDate, endDate, fallbackDayCount = TRIP_DAYS.len
   return days;
 }
 
+// "Sun, Mar 14" for day `dayIndex` (1-based), or "" for a trip without
+// dates.
+export function tripDayTitle(dayIndex, startDate, endDate) {
+  const d = getTripDays(startDate, endDate)[dayIndex - 1];
+  if (!d?.dow) return "";
+  return `${d.dow[0]}${d.dow.slice(1).toLowerCase()}, ${d.month} ${d.n}`;
+}
+
 // "Day N" in the product = the Nth day of the trip, 1-indexed. Derives the
 // weekday/month/day-of-month from the trip's real dates via getTripDays()
 // rather than the fixed TRIP_DAYS list above.
