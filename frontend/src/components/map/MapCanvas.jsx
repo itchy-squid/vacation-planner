@@ -29,6 +29,9 @@ export default function MapCanvas({ area, fitPadding, options, onClick, label = 
   useEffect(() => {
     if (!map || !listensForClicks) return undefined;
     const listener = map.addListener("click", (event) => {
+      // A tap on a marker is the marker's, not the map's (it would otherwise
+      // clear the selection it just made, or pin a spot under a badge).
+      if (event.domEvent?.target?.closest?.("gmp-advanced-marker")) return;
       if (event.latLng) onClickRef.current?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
     });
     return () => listener.remove();

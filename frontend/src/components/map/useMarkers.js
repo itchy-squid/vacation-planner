@@ -5,7 +5,9 @@ import { useMap } from "./mapContext";
 /**
  * Draws `items` as markers on the surrounding MapCanvas. Each item needs
  * `key`, `lat` and `lng`; `render(item)` returns the marker's element and
- * `onTap(item)`, if given, makes it tappable.
+ * `onTap(item)`, if given, makes it tappable. Optional per item: `title`
+ * (its accessible name), `zIndex`, and `hidesLabels`, which hides Google's
+ * own labels (town and road names) under the marker so it stays readable.
  *
  * Markers are rebuilt whenever `items` changes: the app draws tens of
  * them at most, so rebuilding is simpler than patching each one. Pass a
@@ -47,6 +49,7 @@ export function useMarkers(items, render, onTap) {
         content: renderRef.current(item),
         zIndex: item.zIndex ?? 1,
         gmpClickable: tappable,
+        ...(item.hidesLabels ? { collisionBehavior: library.CollisionBehavior?.REQUIRED_AND_HIDES_OPTIONAL ?? "REQUIRED_AND_HIDES_OPTIONAL" } : {}),
       });
       if (tappable) marker.addEventListener("gmp-click", () => onTapRef.current?.(item));
       return marker;

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import MapCanvas from "../components/map/MapCanvas";
-import PinDots from "../components/map/PinDots";
-import RegionAreas from "../components/map/RegionAreas";
+import IdeaMarkers from "../components/map/IdeaMarkers";
 import { useMap } from "../components/map/mapContext";
 import { useRegionLocations } from "../components/map/useRegionLocations";
 import { useKnownRegions } from "../components/map/useKnownRegions";
@@ -19,9 +20,14 @@ import { otherTripRegion } from "../lib/places";
 const FIT_PADDING = { top: 76, right: 28, bottom: 28, left: 28 };
 
 // The Map tab: every idea that can be placed. An idea with an exact spot
-// (found by search, or pinned) is a dot. One without is counted in a badge
-// in its region's area ("2 Cozumel"), because scattering those around the
-// region would suggest a precision nobody has. Tapping a badge lists them,
+// (found by search, or pinned) is a dot, and dots too close together to
+// tell apart at this zoom become a numbered bubble that zooms in when
+// tapped (components/map/IdeaMarkers.jsx). One without is counted in a
+// teal badge at its region's centre ("2 Cozumel"), because scattering those
+// around the region would suggest a precision nobody has; a badge that
+// would sit on a bubble is counted in the bubble instead. Tapping a dot
+// shows the idea with its photo; ✕, a tap on empty map or Esc clears it.
+// Tapping a badge lists the region's ideas,
 // each with "Find on Google" (for an idea Google knows, added without its
 // place: components/newpin/FindOnGoogle.jsx, saved straight away) and
 // "Pin a spot", which turns the next tap on the map into that
@@ -58,8 +64,9 @@ export default function TripMap() {
   const areas = useMemo(() => Object.values(byRegion).map((g) => ({ ...g, count: g.pins.length })), [byRegion]);
   const unplaced = pinList.length - exact.length - areas.reduce((n, a) => n + a.count, 0);
 
-  // What the sheet shows: a summary, one region's ideas, or one idea.
-  const [selected, setSelected] = useState(null); // { kind: "region", key } | { kind: "pin", id }
+  // What the sheet shows: a summary, one region's ideas, the ideas sharing
+  // one spot (a bubble zooming can't split), or one idea.
+  const [selected, setSelected] = useState(null); // { kind: "region", key } | { kind: "pin", id } | { kind: "stack", ids, regionKeys }
   const [placing, setPlacing] = useState(null); // the pin whose spot the next tap sets
   // A line for the sheet. Can arrive from the "On Google Maps?" review
   // (pages/LinkReview.jsx) in navigation state, which is then cleared so a
@@ -111,6 +118,21 @@ export default function TripMap() {
     setNotice(result?.ok ? `Moved to ${region}.` : `Couldn’t move it to ${region}. Try again.`);
   }
 
+  const clearSelection = useCallback(() => {
+    setNotice("");
+    setMoveOffer(null);
+    setSelected(null);
+  }, []);
+  const hasSelection = selected != null;
+  useEffect(() => {
+    if (!hasSelection || placing) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") clearSelection();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [hasSelection, placing, clearSelection]);
+
   const tapRegion = useCallback((region) => {
     setNotice("");
     setSelected((current) => (current?.kind === "region" && current.key === region.key ? null : { kind: "region", key: region.key }));
@@ -119,10 +141,26 @@ export default function TripMap() {
     setNotice("");
     setSelected({ kind: "pin", id: pin.id });
   }, []);
+  const tapStack = useCallback((cluster) => {
+    setNotice("");
+    setSelected({ kind: "stack", ids: cluster.pins.map((p) => p.id), regionKeys: cluster.regions.map((r) => r.key) });
+  }, []);
 
   const openIdea = (pin) => navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`);
   const selectedRegion = selected?.kind === "region" ? byRegion[selected.key] : null;
   const selectedPin = selected?.kind === "pin" ? pins[selected.id] : null;
+  // A bubble's ideas that share one spot: exact spots, then the ideas of any
+  // region rolled into it, which open their region's list when tapped.
+  const stacked =
+    selected?.kind === "stack"
+      ? [
+          ...selected.ids.map((id) => pins[id]).filter(Boolean).map((pin) => ({ pin, open: () => tapPin(pin) })),
+          ...selected.regionKeys
+            .map((key) => byRegion[key])
+            .filter(Boolean)
+            .flatMap((region) => region.pins.map((pin) => ({ pin, region, open: () => tapRegion(region) }))),
+        ]
+      : null;
 
   if (finding) {
     return (
@@ -145,11 +183,19 @@ export default function TripMap() {
         label="Trip map"
         area={area}
         fitPadding={FIT_PADDING}
-        onClick={placing ? placeSpot : undefined}
+        onClick={placing ? placeSpot : hasSelection ? clearSelection : undefined}
         style={{ position: "absolute", inset: 0, cursor: placing ? "crosshair" : undefined }}
       >
-        <RegionAreas regions={areas} selectedKey={selectedRegion?.key ?? null} onTap={tapRegion} />
-        <PinDots pins={exact} highlightedId={selectedPin?.lat != null ? selectedPin.id : null} onTap={tapPin} />
+        <IdeaMarkers
+          pins={exact}
+          regions={areas}
+          highlightedId={selectedPin?.lat != null ? selectedPin.id : null}
+          selectedRegionKey={selectedRegion?.key ?? null}
+          onTapPin={tapPin}
+          onTapRegion={tapRegion}
+          onTapStack={tapStack}
+          fitPadding={FIT_PADDING}
+        />
         <FitToContent exact={exact} areas={areas} />
       </MapCanvas>
 
@@ -172,7 +218,7 @@ export default function TripMap() {
         <Sheet>
           {selectedRegion ? (
             <>
-              <SheetTitle>In {selectedRegion.name}, no exact spot</SheetTitle>
+              <SheetHeader onClear={clearSelection}>In {selectedRegion.name}, no exact spot</SheetHeader>
               <ul aria-label={`Ideas in ${selectedRegion.name}`} style={{ listStyle: "none", border: "1px solid var(--hairline)", borderRadius: "var(--radius-lg)", maxHeight: 190, overflowY: "auto" }}>
                 {selectedRegion.pins.map((pin, i) => (
                   <li key={pin.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderTop: i ? "1px solid var(--hairline)" : "none" }}>
@@ -208,9 +254,24 @@ export default function TripMap() {
                 ))}
               </ul>
             </>
+          ) : stacked ? (
+            <>
+              <SheetHeader onClear={clearSelection}>{stacked.length} ideas at this spot</SheetHeader>
+              <ul aria-label="Ideas at this spot" style={{ listStyle: "none", border: "1px solid var(--hairline)", borderRadius: "var(--radius-lg)", maxHeight: 190, overflowY: "auto" }}>
+                {stacked.map(({ pin, region, open }, i) => (
+                  <li key={pin.id} style={{ borderTop: i ? "1px solid var(--hairline)" : "none" }}>
+                    <button type="button" onClick={open} style={{ width: "100%", padding: "9px 12px", textAlign: "left", display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ flex: 1, minWidth: 0, font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>{pin.title}</span>
+                      {region ? <span style={{ flex: "none", font: "400 11.5px var(--font-sans)", color: "var(--text-secondary)" }}>In {region.name}, no exact spot</span> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : selectedPin ? (
             <>
-              <SheetTitle>{selectedPin.title}</SheetTitle>
+              <SheetHeader onClear={clearSelection}>{selectedPin.title}</SheetHeader>
+              <SheetPhoto key={selectedPin.id} src={selectedPin.photoUrl} alt={selectedPin.title} />
               <SheetText>
                 {notice || (selectedPin.region ? `${selectedPin.region} · exact spot` : "Exact spot")}
               </SheetText>
@@ -292,6 +353,53 @@ function Sheet({ children }) {
     >
       {children}
     </div>
+  );
+}
+
+// The selection's title, with ✕ to go back to the trip's summary. Always
+// the same corner, whatever is selected.
+function SheetHeader({ onClear, children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <SheetTitle>{children}</SheetTitle>
+      </div>
+      <button
+        type="button"
+        aria-label="Clear selection"
+        onClick={onClear}
+        style={{
+          flex: "none",
+          width: 30,
+          height: 30,
+          margin: "-4px -4px 0 0",
+          borderRadius: "50%",
+          background: "var(--surface-page)",
+          color: "var(--text-primary)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <FontAwesomeIcon icon={faXmark} style={{ fontSize: 13 }} />
+      </button>
+    </div>
+  );
+}
+
+// The idea's own photo, the one its board card shows. No photo, or one that
+// won't load (it can be hotlinked), and the band is left out rather than
+// shown as a placeholder, so the map keeps the room.
+function SheetPhoto({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return null;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+      style={{ display: "block", width: "100%", height: 116, objectFit: "cover", borderRadius: "var(--radius-lg)", background: "var(--pattern-photo)" }}
+    />
   );
 }
 

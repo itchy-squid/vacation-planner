@@ -8,20 +8,27 @@ import { markerElement, useMarkers } from "./useMarkers";
 const AREA_COLOR = "#3d8a9c";
 
 /**
- * Regions as soft teal areas on the surrounding MapCanvas, each with a
- * marker at its centre for the ideas shown there without an exact spot.
+ * Regions on the surrounding MapCanvas: a marker at each one's centre for
+ * the ideas shown there without an exact spot, over a soft teal area.
  *
- *   regions  [{ key, name, lat, lng, south, west, north, east, count }]
- *   variant  "badge": a count and the name ("2 Cozumel"), tappable (Map tab)
- *            "question": a dashed "?" (the by-hand form's preview)
+ *   regions      [{ key, name, lat, lng, south, west, north, east, count }]
+ *   variant      "badge": a teal count and the name ("2 Cozumel"), tappable
+ *                (Map tab). Teal and dashed, unlike the plum bubbles of
+ *                exact spots, because these ideas never split apart.
+ *                "question": a dashed "?" (the by-hand form's preview)
+ *   showArea     draw the teal area. The Map tab leaves it off: at most
+ *                zooms it collided with dots and bubbles, and the badge
+ *                already names the region.
+ *   compactKeys  Set of regions whose badge would cover a dot or bubble,
+ *                shown as just the count (IdeaMarkers.jsx decides)
  *   selectedKey, onTap(region)  for badges
  */
-export default function RegionAreas({ regions, variant = "badge", selectedKey = null, onTap }) {
+export default function RegionAreas({ regions, variant = "badge", showArea = true, compactKeys = NO_KEYS, selectedKey = null, onTap }) {
   const map = useMap();
   const [Circle, setCircle] = useState(null);
 
   useEffect(() => {
-    if (!map) return undefined;
+    if (!map || !showArea) return undefined;
     let cancelled = false;
     importMapsLibrary("maps")
       .then(({ Circle: CircleClass }) => {
@@ -31,10 +38,10 @@ export default function RegionAreas({ regions, variant = "badge", selectedKey = 
     return () => {
       cancelled = true;
     };
-  }, [map]);
+  }, [map, showArea]);
 
   useEffect(() => {
-    if (!map || !Circle) return undefined;
+    if (!map || !Circle || !showArea) return undefined;
     const circles = regions.map(
       (r) =>
         new Circle({
@@ -50,26 +57,39 @@ export default function RegionAreas({ regions, variant = "badge", selectedKey = 
         })
     );
     return () => circles.forEach((c) => c.setMap(null));
-  }, [map, Circle, regions]);
+  }, [map, Circle, regions, showArea]);
 
   const items = useMemo(
-    () => regions.map((r) => ({ ...r, title: r.name, variant, on: r.key === selectedKey, zIndex: 4 })),
-    [regions, variant, selectedKey]
+    () =>
+      regions.map((r) => ({
+        ...r,
+        title: r.name,
+        variant,
+        on: r.key === selectedKey,
+        compact: compactKeys.has(r.key),
+        hidesLabels: variant === "badge",
+        // Above bubbles, so a compact badge next to one stays tappable.
+        zIndex: 4,
+      })),
+    [regions, variant, selectedKey, compactKeys]
   );
   const tap = useCallback((item) => onTap?.(regions.find((r) => r.key === item.key)), [onTap, regions]);
   useMarkers(items, variant === "badge" ? badgeElement : questionElement, variant === "badge" && onTap ? tap : undefined);
   return null;
 }
 
-function badgeElement({ name, count, on }) {
+const NO_KEYS = new Set();
+
+function badgeElement({ name, count, on, compact }) {
+  if (compact) return compactElement({ count, on });
   const el = markerElement("", [
     "display:flex",
     "align-items:center",
     "gap:6px",
     "padding:4px 10px 4px 5px",
     "border-radius:999px",
-    `border:1.5px ${on ? "solid" : "dashed"} var(--accent)`,
-    `background:${on ? "var(--accent-quiet)" : "#fff"}`,
+    `border:1.5px ${on ? "solid" : "dashed"} var(--geo)`,
+    `background:${on ? "var(--geo-quiet)" : "#fff"}`,
     "box-shadow:var(--shadow-pin-quiet)",
     "font:600 11px var(--font-sans)",
     "color:var(--text-primary)",
@@ -81,7 +101,7 @@ function badgeElement({ name, count, on }) {
     "padding:0 4px",
     "box-sizing:border-box",
     "border-radius:999px",
-    "background:var(--accent)",
+    "background:var(--geo)",
     "color:#fff",
     "display:flex",
     "align-items:center",
@@ -90,6 +110,26 @@ function badgeElement({ name, count, on }) {
   ]);
   el.append(bubble, document.createTextNode(name));
   return el;
+}
+
+// Just the count, in a small dashed teal square: the same look as the
+// full badge, without the name that would cover its neighbours.
+function compactElement({ count, on }) {
+  return markerElement(String(count), [
+    "min-width:22px",
+    "height:22px",
+    "padding:0 5px",
+    "box-sizing:border-box",
+    "border-radius:6px",
+    `border:1.5px ${on ? "solid" : "dashed"} var(--geo)`,
+    `background:${on ? "var(--geo-quiet)" : "#fff"}`,
+    "box-shadow:var(--shadow-pin-quiet)",
+    "color:var(--geo)",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "font:700 11px var(--font-sans)",
+  ]);
 }
 
 function questionElement() {
