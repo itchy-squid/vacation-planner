@@ -84,6 +84,23 @@ export async function placePlan(api, trip, { day = 1, from, to, pin, event, bran
   );
 }
 
+// Put a proposal up for a vote over some hours: `pins` / `events` are the
+// set's stops, by id, packed from `from`. Returns the contest. Anything
+// already in those hours becomes the "on the board" option it competes
+// with (backend/app/routers/contests.py open_block_contest).
+export async function proposeBlock(api, trip, { day = 1, from, to, pins = [], events = [] }) {
+  return ok(
+    api.post(`/api/trips/${trip.id}/contests`, {
+      data: {
+        starts_at: at(day, from),
+        ends_at: at(day, to),
+        items: [...pins.map((id) => ({ pin_id: id })), ...events.map((id) => ({ travel_item_id: id }))],
+      },
+    }),
+    "propose block"
+  );
+}
+
 // Split the group over some hours: `groups` is [{ label, travelers: [ids] }]
 // in order. Returns the split, whose `branches` carry the ids placePlan's
 // `branch` takes.

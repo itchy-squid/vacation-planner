@@ -66,6 +66,26 @@ export async function dragSplitEdge(page, edge, from, to) {
 // Open a plan's details sheet by tapping its block. A block that has only
 // just been placed can be re-rendered by the refetch that follows, eating
 // the first tap, so keep tapping until the sheet is up.
+// Drag a block by its title from the hour it starts at to another
+// (pages/DaySchedule.jsx drag-to-reschedule). Moves by the distance
+// between the two hours' labels, so the grab point inside the block
+// doesn't matter.
+export async function dragBlock(page, title, from, to) {
+  const block = page.getByText(title, { exact: true }).first();
+  await block.scrollIntoViewIfNeeded();
+  const box = await block.boundingBox();
+  const a = await page.getByText(from, { exact: true }).first().boundingBox();
+  const b = await page.getByText(to, { exact: true }).first().boundingBox();
+  if (!box || !a || !b) throw new Error(`No ${title} block, or no ${from}/${to} on the calendar`);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + (b.y - a.y) / 2, { steps: 4 });
+  await page.mouse.move(x, y + (b.y - a.y), { steps: 4 });
+  await page.mouse.up();
+}
+
 export async function openPlan(page, title) {
   await expect(async () => {
     await page.getByText(title, { exact: true }).first().click({ timeout: 2000 });

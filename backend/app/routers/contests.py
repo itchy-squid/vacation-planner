@@ -13,6 +13,7 @@ from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, VOTES_WRITE, 
 from ..splits import audience, names, resolve_branch, roster_ids, voter_ids
 from ..tripclock import minutes_between, same_moment
 from ..schemas import (
+    ContestMove,
     ContestOut,
     ContestPlanOut,
     ContestProposeCreate,
@@ -207,6 +208,30 @@ def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan])
     return incumbent
 
 
+def _stops_of(plan: Plan) -> list[PlanItemCreate]:
+    """A stored plan's stops in the shape a new block is built from, so
+    they can go back through validate_block against different hours."""
+    return [
+        PlanItemCreate(
+            pin_id=item.pin_id,
+            travel_item_id=item.travel_item_id,
+            duration_minutes=item.duration_minutes,
+            offset_minutes=item.offset_minutes,
+        )
+        for item in plan.items
+    ]
+
+
+def _clear_votes_for(db: Session, contest: Contest, plan: Plan) -> int:
+    """Drop every vote cast for `plan`, returning how many went. A vote is
+    for a list of places in an arrangement of hours; once either changes,
+    keeping it would attach it to a plan the voter never saw."""
+    stale = db.scalars(select(Vote).where(Vote.contest_id == contest.id, Vote.plan_id == plan.id)).all()
+    for vote in stale:
+        db.delete(vote)
+    return len(stale)
+
+
 def open_block_contest(
     db: Session,
     trip_id: int,
@@ -381,15 +406,7 @@ def publish_plan(
         # shouldn't confirm that one exists at that id.
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    items = [
-        PlanItemCreate(
-            pin_id=item.pin_id,
-            travel_item_id=item.travel_item_id,
-            duration_minutes=item.duration_minutes,
-            offset_minutes=item.offset_minutes,
-        )
-        for item in plan.items
-    ]
+    items = _stops_of(plan)
     trip_id = plan.trip_id
     contest = open_block_contest(
         db,
@@ -433,7 +450,9 @@ def update_proposal(
     The window is not editable here and is not in the body. Every option in
     a contest spans exactly the contest's hours; an option that moved them
     would no longer be an answer to the same question, and the hours
-    themselves are already claimed against the rest of the calendar.
+    themselves are already claimed against the rest of the calendar. (A
+    proposal with nothing competing for its hours can be moved as a whole
+    — see move_lone_proposal.)
 
     Votes cast for this plan are cleared. Someone voting for "ruins first,
     beach after" voted for a list of places in an arrangement of hours;
@@ -487,18 +506,84 @@ def update_proposal(
     # rather than lingering in the unplaced list (app/custom_events.py).
     forgotten = forget_orphaned_travel_items(db, dropped)
 
-    stale = db.scalars(select(Vote).where(Vote.contest_id == contest.id, Vote.plan_id == plan.id)).all()
-    for vote in stale:
-        db.delete(vote)
+    votes_cleared = _clear_votes_for(db, contest, plan)
 
     db.commit()
     db.refresh(contest)
     bus.publish(
         plan.trip_id,
         "plan.revised",
-        {"plan_id": plan.id, "contest_id": contest.id, "votes_cleared": len(stale)},
+        {"plan_id": plan.id, "contest_id": contest.id, "votes_cleared": votes_cleared},
     )
     publish_forgotten(forgotten)
+    return _contest_to_schema(contest, db, contributor)
+
+
+@router.patch("/contests/{contest_id}", response_model=ContestOut)
+def move_lone_proposal(
+    contest_id: int,
+    payload: ContestMove,
+    access: Access = Depends(require(PLANS_PROPOSE)),
+    db: Session = Depends(get_db),
+):
+    """Move a proposal to different hours, the way a placed plan is dragged
+    — allowed only while it is the contest's one and only option.
+
+    The window belongs to the contest, and every option spans it exactly,
+    so with two or more options moving the hours would change the question
+    under everyone who answered it. With one there is no one else's answer
+    to protect: the contest and its lone plan move together, stops and all
+    (a stop's offset is measured from the window's start). The new hours
+    are checked the way a fresh placement's are — inside the right group's
+    split, and clear of every other plan for that group, including other
+    open votes and locked items. Nothing is captured on the way: a move
+    that lands on something is refused, as a dragged plan's is.
+
+    Who may do it matches who may edit the set: its author or the trip
+    owner. Votes for it are cleared, for the reason update_proposal gives."""
+    contest = db.get(Contest, contest_id)
+    if not contest:
+        raise HTTPException(status_code=404, detail="Contest not found")
+    if contest.status != ContestStatus.open:
+        raise HTTPException(status_code=409, detail="That decision is already locked")
+    if len(contest.plans) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Another set is up for a vote in these hours, so they can't be moved.",
+        )
+    (plan,) = contest.plans
+
+    contributor = access.member
+    if plan.created_by_id != contributor.id and not contributor.is_owner:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who proposed this set, or the trip owner, can move it",
+        )
+
+    validate_block(db, contest.trip_id, payload.starts_at, payload.ends_at, _stops_of(plan))
+    resolve_branch(db, contest.trip_id, contest.branch_id, payload.starts_at, payload.ends_at)
+    occupying = find_overlapping_plan(
+        db,
+        contest.trip_id,
+        payload.starts_at,
+        payload.ends_at,
+        branch_id=contest.branch_id,
+        exclude_plan_id=plan.id,
+    )
+    if occupying is not None:
+        raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
+
+    contest.starts_at = plan.starts_at = payload.starts_at
+    contest.ends_at = plan.ends_at = payload.ends_at
+    votes_cleared = _clear_votes_for(db, contest, plan)
+
+    db.commit()
+    db.refresh(contest)
+    bus.publish(
+        contest.trip_id,
+        "plan.moved",
+        {"plan_id": plan.id, "contest_id": contest.id, "votes_cleared": votes_cleared},
+    )
     return _contest_to_schema(contest, db, contributor)
 
 

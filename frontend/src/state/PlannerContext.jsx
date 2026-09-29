@@ -844,16 +844,23 @@ export function PlannerProvider({ children }) {
           }
         }
 
-        // Drag-to-reschedule (pages/DaySchedule.jsx's pointer-drag handling
-        // on a placed/pencilled block) — keeps the plan's duration fixed
-        // and only changes starts_at/ends_at, per spec "Moving / unplacing".
+        // Drag-to-reschedule (pages/DaySchedule.jsx's pointer-drag handling)
+        // — keeps the block's duration fixed and only changes starts_at/
+        // ends_at, per spec "Moving / unplacing". A placed/pencilled plan
+        // moves itself; a proposal alone in its vote (`contestId` set)
+        // moves its contest, whose hours it spans (lib/planDrag.js).
         // Unlike PLACE_AT, this has no tray item or "placing" state behind
         // it, so a 409 (someone else placed something there first) is just
         // reported back as an occupied error for the caller to show and
         // revert, rather than opening the propose-alternative sheet.
         case "MOVE_PLAN": {
+          const fields = { starts_at: action.startsAt, ends_at: action.endsAt };
           try {
-            await api.movePlan(action.planId, { starts_at: action.startsAt, ends_at: action.endsAt });
+            if (action.contestId != null) {
+              await api.moveContest(action.contestId, fields);
+            } else {
+              await api.movePlan(action.planId, fields);
+            }
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true };
           } catch (err) {

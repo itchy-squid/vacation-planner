@@ -429,6 +429,12 @@ export const api = {
   // votes cast for that plan and the tally on screen has to change with it
   // (see backend/app/routers/contests.py::update_proposal).
   updateProposal: (planId, payload) => request(`/api/plans/${planId}/stops`, { method: "PUT", body: payload }),
+  // Move a proposal that is the only option in its vote to new hours:
+  // { starts_at, ends_at }. The contest and its plan move together, stops
+  // and all; votes for it are cleared. 409s once anything competes for the
+  // hours, or when the new ones are taken (see backend/app/routers/
+  // contests.py::move_lone_proposal).
+  moveContest: (contestId, fields) => request(`/api/contests/${contestId}`, { method: "PATCH", body: fields }),
 
   toggleContestVote: (contestId, planId) =>
     request(`/api/contests/${contestId}/vote`, { method: "POST", body: { plan_id: planId } }),
