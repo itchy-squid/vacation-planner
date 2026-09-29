@@ -617,6 +617,17 @@ class ProposalUpdate(BaseModel):
     items: list[PlanItemCreate] = Field(min_length=1)
 
 
+class ContestMove(BaseModel):
+    """Move a lone proposal's hours — PATCH /api/contests/{id}.
+
+    Both edges, always: the window is the contest's, and a proposal with
+    nothing competing for it moves as one block, stops and all (their
+    offsets are relative to the window's start, so they ride along)."""
+
+    starts_at: datetime
+    ends_at: datetime
+
+
 class PlanMove(BaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None

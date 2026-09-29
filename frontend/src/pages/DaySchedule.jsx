@@ -31,6 +31,7 @@ import {
   spanWithEdgeMoved,
   topForMinute,
 } from "../lib/dayGrid";
+import { dragKind } from "../lib/planDrag";
 import TripHeader from "../components/core/TripHeader";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
@@ -350,14 +351,17 @@ export default function DaySchedule() {
   }
 
   // ---- Drag-to-reschedule -------------------------------------------------
-  // Dragging a placed/pencilled block changes only its start time — the
-  // duration is fixed, so the block just slides up/down the grid and the
-  // end time follows along. This replaces the old tap-to-arm "Move" flow;
-  // contested/locked plans still only respond to a tap (which opens the
-  // compare screen). dragInfoRef holds the in-progress gesture (kept out
-  // of state so pointermove doesn't need a state read on every event);
-  // dragPreview is the bit of it the render actually needs.
-  const dragInfoRef = useRef(null); // { pointerId, planId, startClientY, originStart, durationMinutes, moved }
+  // Dragging a block changes only its start time — the duration is fixed,
+  // so the block just slides up/down the grid and the end time follows
+  // along. This replaces the old tap-to-arm "Move" flow. Placed/pencilled
+  // plans drag, and so does a proposal with nothing competing for its
+  // hours, for whoever may edit it (lib/planDrag.js says which, and what
+  // the drop asks the server to do). A proposal in a real contest, and a
+  // locked plan, only respond to a tap (which opens the compare screen or
+  // the details sheet). dragInfoRef holds the in-progress gesture (kept
+  // out of state so pointermove doesn't need a state read on every
+  // event); dragPreview is the bit of it the render actually needs.
+  const dragInfoRef = useRef(null); // { pointerId, planId, kind, startClientY, originStart, durationMinutes, moved }
   const [dragPreview, setDragPreview] = useState(null); // { planId, previewStart, durationMinutes }
 
   function planPreviewStart(info, clientY) {
@@ -371,9 +375,14 @@ export default function DaySchedule() {
     return Math.min(Math.max(snapped, DAY_START_MIN), DAY_END_MIN - SNAP_MIN);
   }
 
+  function dragKindOf(plan) {
+    return dragKind(plan, { plans, canPlan, canPropose, currentUser });
+  }
+
   function handlePlanPointerDown(e, plan, entry) {
-    if (placing || !canPlan) return;
-    if (plan.status !== "placed" && plan.status !== "pencilled") return; // contested/locked aren't draggable
+    if (placing) return;
+    const kind = dragKindOf(plan);
+    if (!kind) return;
     // A plan is moved from the day it begins on. Dragging the morning
     // tail of last night's crossing would be moving a block whose start
     // isn't on screen, which is not something to reason about mid-drag.
@@ -383,6 +392,7 @@ export default function DaySchedule() {
     dragInfoRef.current = {
       pointerId: e.pointerId,
       planId: plan.id,
+      kind,
       startClientY: e.clientY,
       originStart: entry.startMin,
       durationMinutes: planDurationMinutes(plan),
@@ -435,7 +445,8 @@ export default function DaySchedule() {
 
     const startsAt = isoForDayMinute(trip.startDate, dayIndex, previewStart);
     const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
-    const result = await dispatch({ type: "MOVE_PLAN", planId: plan.id, startsAt, endsAt });
+    const contestId = info.kind === "contest" ? plan.contestId : null;
+    const result = await dispatch({ type: "MOVE_PLAN", planId: plan.id, contestId, startsAt, endsAt });
     if (!result.ok) {
       setMoveError(result.message && result.message !== "That time is already occupied." ? result.message : "That time is already taken — try another slot.");
     }
@@ -772,8 +783,7 @@ export default function DaySchedule() {
             {laidOut.map((entry) => {
                 const { plan } = entry;
                 const isDragging = dragPreview?.planId === plan.id;
-                const draggable =
-                  canPlan && (plan.status === "placed" || plan.status === "pencilled") && !entry.continuesBefore;
+                const draggable = !placing && dragKindOf(plan) != null && !entry.continuesBefore;
                 // The block's span on THIS day, which can start before
                 // 00:00 or end after 24:00. The rectangle is clipped to
                 // the grid; the arrows say which way it runs on.

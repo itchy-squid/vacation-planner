@@ -14,7 +14,7 @@
 // are for right now) and `forEveryone`, so screens that only want faces or
 // names never need to look the branch up.
 
-import { clockLabel, dayIndexForDate } from "./planTime";
+import { clockLabel, dayIndexForDate } from "./planTime.js";
 
 // Every branch of every split, by id.
 export function branchesById(splits) {
