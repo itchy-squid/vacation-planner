@@ -8,8 +8,8 @@ import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
 import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
 import DayPlacesSheet from "../components/places/DayPlacesSheet";
-import { DayPlacesLine, DayTripDot, PlacesMismatch } from "../components/places/DayPlacesLine";
-import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, tripDates, withVisit } from "../lib/dayPlaces";
+import { DayPlacesLine, DayTripDot, PlacesMismatch, StayBar } from "../components/places/DayPlacesLine";
+import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDates, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
@@ -593,34 +593,39 @@ export default function DaySchedule() {
         <div className="day-marquee" style={{ position: "relative" }}>
           <div
             ref={dayStripRef}
-            style={{ display: "flex", gap: 6, padding: "0 var(--gutter-screen) 16px", overflowX: "auto", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}
+            style={{ display: "flex", gap: DAY_STRIP_GAP, padding: "0 var(--gutter-screen) 16px", overflowX: "auto", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}
           >
             {tripDays.map((d, i) => {
               const n = i + 1;
               const selected = n === dayIndex;
+              // Wrapped so the stay bar is laid out against the day's slot,
+              // not the button: the bar then lines up the same under every
+              // day, selected or not.
               return (
-                <button
-                  key={n}
-                  ref={(el) => {
-                    dayRefs.current[n] = el;
-                  }}
-                  onClick={() => navigate(`/trips/${trip.id}/schedule/${n}`)}
-                  style={{
-                    flex: "none",
-                    position: "relative",
-                    width: 38,
-                    padding: "6px 0",
-                    borderRadius: "var(--radius-md)",
-                    background: selected ? "var(--surface-inverse)" : "var(--surface-card)",
-                    border: selected ? "none" : "1px solid var(--border)",
-                    textAlign: "center",
-                    scrollSnapAlign: "center",
-                  }}
-                >
-                  <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow}</div>
-                  <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
-                  {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
-                </button>
+                <div key={n} style={{ flex: "none", position: "relative" }}>
+                  <button
+                    ref={(el) => {
+                      dayRefs.current[n] = el;
+                    }}
+                    onClick={() => navigate(`/trips/${trip.id}/schedule/${n}`)}
+                    style={{
+                      position: "relative",
+                      width: 38,
+                      padding: "6px 0",
+                      borderRadius: "var(--radius-md)",
+                      background: selected ? "var(--surface-inverse)" : "var(--surface-card)",
+                      // The same 1px either way, so a selected day is the same height as the rest.
+                      border: `1px solid ${selected ? "var(--surface-inverse)" : "var(--border)"}`,
+                      textAlign: "center",
+                      scrollSnapAlign: "center",
+                    }}
+                  >
+                    <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow}</div>
+                    <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
+                    {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
+                  </button>
+                  {dates.length ? <StayBar run={stayRun(dayPlaces, dates, i)} gap={DAY_STRIP_GAP} /> : null}
+                </div>
               );
             })}
           </div>
@@ -1006,6 +1011,9 @@ export default function DaySchedule() {
     </div>
   );
 }
+
+// Space between days in the day strip; the stay bar bridges it.
+const DAY_STRIP_GAP = 6;
 
 const splitCaptionStyle = {
   position: "absolute",

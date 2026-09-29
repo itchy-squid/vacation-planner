@@ -401,11 +401,10 @@ def delete_plan(
 
     trip_id = plan.trip_id
     was_draft = plan.status == PlanStatus.draft
-    # Removing a plan from the calendar (or discarding a draft) takes its
-    # custom events with it rather than dropping them into the unplaced
-    # list — see app/custom_events.py. Pins are untouched and go back to
-    # the tray as before.
-    orphan_candidates = travel_item_ids_of([plan])
+    # Discarding a draft takes the custom events made in it along — see
+    # app/custom_events.py. Unplacing from the calendar doesn't: the event
+    # goes back to the unplaced list like a pin, ready to be placed again.
+    orphan_candidates = travel_item_ids_of([plan]) if was_draft else set()
     db.delete(plan)
     forgotten = forget_orphaned_travel_items(db, orphan_candidates)
     db.commit()

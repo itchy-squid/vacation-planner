@@ -1,6 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl, openPlan, tapCalendar } from "../support/calendar.js";
-import { plansOf, travelItemsOf } from "../support/seed.js";
+import { placePlan, plansOf, travelItemsOf } from "../support/seed.js";
 
 test.describe("custom events", () => {
   // Regression: arming placement right after creating the event used to
@@ -48,6 +48,22 @@ test.describe("custom events", () => {
     expect(item.sharer_ids).toEqual([trip.me, trip.travelers.Ana].sort((a, b) => a - b));
     expect(item.each_cents).toBe(1200);
     expect(item.total_cents).toBe(2400);
+  });
+
+  // Regression: clearing the start time used to delete the event outright,
+  // so it vanished instead of landing in Unplaced like a pin does.
+  test("clearing a placed event's start time sends it back to unplaced", async ({ page, api, seed }) => {
+    const trip = await seed({ events: [{ title: "Scooter hire", minutes: 60 }] });
+    await placePlan(api, trip, { from: "10:00", to: "11:00", event: trip.events["Scooter hire"] });
+    await page.goto(dayUrl(trip));
+    await expect(page.getByRole("button", { name: "0 unplaced" })).toBeVisible();
+
+    await openPlan(page, "Scooter hire");
+    await page.getByRole("button", { name: "Clear start time — removes this item from the schedule" }).click();
+
+    await expect(page.getByRole("button", { name: "1 unplaced" })).toBeVisible();
+    expect(await plansOf(api, trip)).toEqual([]);
+    expect((await travelItemsOf(api, trip)).map((t) => t.title)).toEqual(["Scooter hire"]);
   });
 
   test("deleting a placed event removes it from the calendar and the trip", async ({ page, api, seed }) => {

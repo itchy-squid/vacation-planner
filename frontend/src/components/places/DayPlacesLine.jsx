@@ -85,6 +85,35 @@ export function PlacesMismatch({ day, onCalendar, canEdit, onAdd }) {
 }
 
 /**
+ * Under a day in the Plan tab's day strip: a bar for the place the group
+ * stays in, which reaches halfway across the gap to a neighbouring day
+ * staying in the same place, so a run of days reads as one bar with
+ * rounded ends. Laid out against the day's slot, whose width is the
+ * button's, so it's the same under every day. `gap` is the strip's gap.
+ */
+export function StayBar({ run, gap }) {
+  if (!run.stay) return null;
+  const inset = 4;
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        bottom: -8,
+        height: 3,
+        left: run.startsHere ? inset : -gap / 2,
+        right: run.endsHere ? inset : -gap / 2,
+        borderTopLeftRadius: run.startsHere ? 2 : 0,
+        borderBottomLeftRadius: run.startsHere ? 2 : 0,
+        borderTopRightRadius: run.endsHere ? 2 : 0,
+        borderBottomRightRadius: run.endsHere ? 2 : 0,
+        background: "var(--geo)",
+      }}
+    />
+  );
+}
+
+/**
  * On a day in the Plan tab's day strip: a small dashed dot when that day
  * has a day trip.
  */

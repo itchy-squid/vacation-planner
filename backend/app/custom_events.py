@@ -5,10 +5,14 @@ into the calendar or into a proposal: "scooter hire", "dinner with Lin's
 cousin". Unlike a pin it isn't a place the group collected and might want
 to schedule later, so once the plan holding it is gone there is nothing
 for it to go back to. Leaving it in the unplaced list only makes people
-delete it by hand. So whenever a plan is removed — unplaced from the
-calendar, a draft discarded, a losing set forgotten at lock time, or a
-stop dropped from a set — any custom event that no plan references any
-more is deleted with it.
+delete it by hand. So whenever a plan is thrown away — a draft discarded,
+a losing set forgotten at lock time, or a stop dropped from a set — any
+custom event that no plan references any more is deleted with it.
+
+Unplacing from the calendar (clearing a plan's start time, DELETE
+/api/plans/{id} on a placed or pencilled plan) is the exception: that is
+"not now", not "never", so the event goes back to the unplaced list like a
+pin. "Delete permanently" is how to get rid of one from the calendar.
 
 "Any plan" includes other people's drafts and other open sets: an event
 still used somewhere else is left alone. Capture into an incumbent and

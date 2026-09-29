@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day Control Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface-page: #f4f3f5; --surface-card: #fff; --surface-inverse: #1b1a1f;
+    --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95; --text-faint: #a3a1ab;
+    --accent: #8f4478; --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --stone-250: #dcdae0; --danger: #b3261e;
+    --radius-md: 10px; --radius-lg: 12px;
+    --font-serif: Newsreader, Georgia, serif; --font-sans: "Libre Franklin", system-ui, sans-serif; --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e9e7ec; font-family: var(--font-sans); color: var(--text-primary); padding: 24px 16px 48px; }
+  h1 { font: 500 24px var(--font-serif); margin: 0 0 4px; }
+  .intro { font-size: 13px; color: var(--text-secondary); max-width: 760px; margin: 0 0 24px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .col { width: 360px; max-width: 100%; }
+  .col h2 { font: 600 13px var(--font-sans); margin: 0 0 4px; }
+  .col p { font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; line-height: 1.45; min-height: 52px; }
+  .phone { background: rgba(0,0,0,.4); border-radius: 24px; padding-top: 70px; overflow: hidden; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 18px 24px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 16px; }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .title { font: 400 19px var(--font-serif); margin-top: 3px; }
+  .sub { font: 400 10px var(--font-mono); color: var(--text-secondary); margin-top: 3px; }
+  .x { position: absolute; right: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-page); border: 1px solid var(--border); color: var(--text-secondary); font-size: 13px; }
+  .fields { margin-top: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; margin-top: 6px; padding-bottom: 2px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; width: 44px; padding: 6px 0; border-radius: var(--radius-md); background: var(--surface-page); border: 1px solid var(--border); text-align: center; font-family: inherit; }
+  .chip .d { font: 400 10px var(--font-mono); color: var(--text-faint); }
+  .chip .n { font: 600 13px var(--font-sans); margin-top: 1px; color: var(--text-primary); }
+  .chip.sel { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .chip.sel .d { color: rgba(255,255,255,.6); } .chip.sel .n { color: #fff; }
+  .stepper { margin-top: 6px; display: flex; align-items: center; background: var(--surface-card); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); height: 46px; overflow: hidden; }
+  .stepper button { width: 40px; height: 100%; border: 0; background: none; font: 400 20px var(--font-sans); color: var(--text-secondary); cursor: pointer; }
+  .stepper button:disabled { opacity: .3; cursor: default; }
+  .stepper .val { flex: 1; text-align: center; font: 600 14px var(--font-sans); display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+  .stepper .val small { font: 400 11px var(--font-sans); color: var(--text-muted); white-space: nowrap; }
+  .dayinput { width: 34px; height: 30px; text-align: center; font: 600 14px var(--font-sans); border: 1px solid var(--border); border-radius: 8px; background: var(--surface-page); color: var(--text-primary); -moz-appearance: textfield; }
+  .dayinput::-webkit-outer-spin-button, .dayinput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .dayinput:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .timefield { margin-top: 6px; height: 46px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); font: 600 14px var(--font-sans); display: flex; align-items: center; padding: 0 13px; justify-content: space-between; }
+  .timefield span:last-child { color: var(--text-muted); font-weight: 600; }
+  .two { display: flex; gap: 10px; } .two > div { flex: 1; min-width: 0; }
+  .note { margin-top: 14px; font-size: 11px; color: var(--text-muted); line-height: 1.45; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .err { color: var(--danger); font-size: 11px; margin-top: 4px; }
+  .err:empty { display: none; }
+  .tag { display: inline-block; font: 600 10px var(--font-mono); color: var(--accent); background: rgba(143,68,120,.08); padding: 2px 6px; border-radius: 99px; margin-left: 6px; vertical-align: 1px; }
+</style>
+</head>
+<body>
+<h1>Calendar item sheet · Day control</h1>
+<p class="intro">Mock of the <b>Day</b> field in the calendar item sheet (PlanDetailsSheet) on a 21-day trip. Today it's a horizontal chip row; on a long trip most days are off-screen and there's no visible scrollbar on desktop, so later days are hard to reach. Both options swap it for a stepper like Duration. All three are interactive — the selected item starts on Day 12.</p>
+
+<div class="row">
+  <div class="col">
+    <h2>Now · chip row</h2>
+    <p>Only ~7 days fit. Day 12 is off-screen at open; reaching Day 20 needs a horizontal scroll or trackpad swipe.</p>
+    <div class="phone"><div class="sheet" id="now"></div></div>
+  </div>
+  <div class="col">
+    <h2>A · Day stepper <span class="tag">simplest</span></h2>
+    <p>Same control as Duration: − / +, one day per tap. Full-width row so the date fits. Good for nudging a day or two; slow for big jumps.</p>
+    <div class="phone"><div class="sheet" id="a"></div></div>
+  </div>
+  <div class="col">
+    <h2>B · Stepper you can type into <span class="tag">recommended</span></h2>
+    <p>Stepper with the day number as a small text box: tap it, type <b>20</b>, Enter or tab away to save. − / + still nudge. Out-of-range input snaps back.</p>
+    <div class="phone"><div class="sheet" id="b"></div></div>
+  </div>
+</div>
+
+<script>
+  const TRIP_START = new Date(2026, 9, 1); // Oct 1
+  const DAYS = 21;
+  const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const dayDate = (n) => { const d = new Date(TRIP_START); d.setDate(d.getDate() + n - 1); return d; };
+  const label = (n) => { const d = dayDate(n); return `${DOW[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}`; };
+  const state = { now: 12, a: 12, b: 12 };
+
+  function header() {
+    return `<div class="grab"></div>
+      <div style="position:relative">
+        <div class="cap">Scheduled</div>
+        <div class="title">Taroko Gorge — Shakadang Trail</div>
+        <div class="sub">9:00 AM–11:30 AM</div>
+        <button class="x" aria-label="Close">✕</button>
+      </div>`;
+  }
+  function timeAndDuration() {
+    return `<div class="two">
+      <div><div class="cap">Start time</div><div class="timefield"><span>09:00 AM</span><span>✕</span></div></div>
+      <div><div class="cap">Duration</div><div class="stepper"><button>−</button><div class="val">2h 30m</div><button>+</button></div></div>
+    </div>`;
+  }
+
+  function renderNow() {
+    const el = document.getElementById("now");
+    const chips = Array.from({ length: DAYS }, (_, i) => {
+      const n = i + 1, d = dayDate(n);
+      return `<button class="chip ${n === state.now ? "sel" : ""}" data-n="${n}"><div class="d">${DOW[d.getDay()]}</div><div class="n">${d.getDate()}</div></button>`;
+    }).join("");
+    el.innerHTML = header() + `<div class="fields"><div><div class="cap">Day</div><div class="chips">${chips}</div></div>${timeAndDuration()}</div>
+      <div class="note">Selected: Day ${state.now} · ${label(state.now)}</div>`;
+    el.querySelectorAll(".chip").forEach((c) => c.onclick = () => { state.now = +c.dataset.n; renderNow(); });
+  }
+
+  function renderA() {
+    const el = document.getElementById("a"), n = state.a;
+    el.innerHTML = header() + `<div class="fields">
+      <div><div class="cap">Day</div>
+        <div class="stepper">
+          <button id="a-down" aria-label="Earlier day" ${n <= 1 ? "disabled" : ""}>−</button>
+          <div class="val">Day ${n} <small>· ${label(n)}</small></div>
+          <button id="a-up" aria-label="Later day" ${n >= DAYS ? "disabled" : ""}>+</button>
+        </div>
+      </div>${timeAndDuration()}</div>
+      <div class="note">− / + disable at Day 1 and Day ${DAYS}. Each tap saves, same as Duration (an occupied slot reverts with the usual message).</div>`;
+    el.querySelector("#a-down").onclick = () => { state.a = Math.max(1, n - 1); renderA(); };
+    el.querySelector("#a-up").onclick = () => { state.a = Math.min(DAYS, n + 1); renderA(); };
+  }
+
+  function renderB(errMsg = "") {
+    const el = document.getElementById("b"), n = state.b;
+    el.innerHTML = header() + `<div class="fields">
+      <div><div class="cap">Day</div>
+        <div class="stepper">
+          <button id="b-down" aria-label="Earlier day" ${n <= 1 ? "disabled" : ""}>−</button>
+          <div class="val">Day <input class="dayinput" id="b-in" inputmode="numeric" type="number" min="1" max="${DAYS}" value="${n}" aria-label="Day number"> <small>of ${DAYS} · ${label(n)}</small></div>
+          <button id="b-up" aria-label="Later day" ${n >= DAYS ? "disabled" : ""}>+</button>
+        </div>
+        <div class="err">${errMsg}</div>
+      </div>${timeAndDuration()}</div>
+      <div class="note">Saves on Enter or blur, not per keystroke — typing “2” on the way to “20” shouldn't move the item to Day 2.</div>`;
+    const input = el.querySelector("#b-in");
+    const commit = () => {
+      const v = parseInt(input.value, 10);
+      if (Number.isNaN(v) || v < 1 || v > DAYS) { renderB(`Pick a day from 1 to ${DAYS}.`); return; }
+      state.b = v; renderB();
+    };
+    input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } if (e.key === "Escape") { input.value = n; input.blur(); } };
+    input.onblur = commit;
+    input.onfocus = () => input.select();
+    el.querySelector("#b-down").onclick = () => { state.b = Math.max(1, n - 1); renderB(); };
+    el.querySelector("#b-up").onclick = () => { state.b = Math.min(DAYS, n + 1); renderB(); };
+  }
+
+  renderNow(); renderA(); renderB();
+</script>
+</body>
+</html>

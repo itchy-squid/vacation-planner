@@ -74,16 +74,19 @@ export function stayBefore(dayPlaces, dates, index) {
 }
 
 /**
- * How day `index`'s stay follows the day before: whether a stay starts
- * here (a new place, or the first day with one), and where the group moved
- * from when it's a moving day.
+ * How day `index`'s stay joins its neighbours: whether a stay starts here
+ * (a new place, or the first day with one) and whether it ends here (the
+ * next day is somewhere else, unset, or past the trip), and where the
+ * group moved from on a moving day.
  */
 export function stayRun(dayPlaces, dates, index) {
   const stay = placesOn(dayPlaces, dates[index]).stay;
   const before = stayBefore(dayPlaces, dates, index);
+  const after = index < dates.length - 1 ? placesOn(dayPlaces, dates[index + 1]).stay : null;
   return {
     stay,
     startsHere: Boolean(stay) && !samePlace(stay, before),
+    endsHere: Boolean(stay) && !samePlace(stay, after),
     movedFrom: stay && before && !samePlace(stay, before) ? before : null,
   };
 }

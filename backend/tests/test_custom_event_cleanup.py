@@ -1,13 +1,15 @@
 """Custom events (travel items) don't outlive the plans holding them.
 
-Removing one from the calendar, discarding the draft it was made in,
-forgetting the other sets when one is picked, or dropping it from a set deletes it
-rather than leaving it in the unplaced list — unless another plan still
-uses it. Pins keep the old behaviour and go back to the tray. See
+Discarding the draft one was made in, forgetting the other sets when one
+is picked, or dropping it from a set deletes it rather than leaving it in
+the unplaced list — unless another plan still uses it. Unplacing one from
+the calendar is the exception: like a pin, it goes back to the tray. See
 app/custom_events.py.
 """
 
-from app.models import Pin, TravelItem
+from sqlalchemy import select
+
+from app.models import Pin, PlanItem, TravelItem
 
 from conftest import as_user, at
 
@@ -26,12 +28,26 @@ def travel_ids(client, trip):
     return {t["id"] for t in client.get(f"/api/trips/{trip.id}/travel-items").json()}
 
 
-def test_unplacing_a_custom_event_deletes_it(client, trip, db):
+def test_unplacing_a_custom_event_leaves_it_in_the_tray(client, trip, db):
     plan = trip.place(start=480, end=555, travel_item="ferry")
     ferry_id = trip.travel_items["ferry"].id
 
     res = client.delete(f"/api/plans/{plan.id}", headers=as_user("mei@example.com"))
     assert res.status_code == 204
+
+    assert ferry_id in travel_ids(client, trip)
+    # ...and it's unplaced: nothing on the calendar holds it any more.
+    db.expire_all()
+    assert db.scalar(select(PlanItem).where(PlanItem.travel_item_id == ferry_id)) is None
+
+
+def test_an_unplaced_custom_event_can_then_be_deleted(client, trip, db):
+    plan = trip.place(start=480, end=555, travel_item="ferry")
+    ferry_id = trip.travel_items["ferry"].id
+
+    assert client.delete(f"/api/plans/{plan.id}", headers=as_user("mei@example.com")).status_code == 204
+    res = client.delete(f"/api/travel-items/{ferry_id}", headers=as_user("mei@example.com"))
+    assert res.status_code == 204, res.text
 
     assert ferry_id not in travel_ids(client, trip)
 

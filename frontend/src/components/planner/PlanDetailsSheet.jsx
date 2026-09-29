@@ -3,12 +3,13 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLock, faLockOpen, faArrowUpRightFromSquare } from "@fortawesome/free-solid-svg-icons";
 import { useNavigate } from "react-router-dom";
 import { usePlannerState, usePlannerDispatch, useCan } from "../../state/PlannerContext";
-import { getTripDays } from "../../data/trip";
+import { getTripDays, tripDayTitle } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
 import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
 import { planDurationMinutes } from "../../lib/dayGrid";
 import { externalHref } from "../../lib/externalHref";
 import Stepper from "../forms/Stepper";
+import DayStepper from "../forms/DayStepper";
 import WhoIsGoing from "./WhoIsGoing";
 
 // Calendar item details — a bottom sheet overlaid on pages/DaySchedule.jsx,
@@ -127,10 +128,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   // reopening it (routers/contests.py reopen_plan tolerates a null
   // contest_id) is always safe to offer right here.
   const isLocked = plan.status === "locked";
-  const isCustomEvent = plan.items.length > 0 && plan.items.every((i) => i.travelItemId != null);
-  const clearLabel = isCustomEvent
-    ? "Clear start time — deletes this event"
-    : "Clear start time — removes this item from the schedule";
+  const clearLabel = "Clear start time — removes this item from the schedule";
   // The pin behind this plan, when it is a single pin (not a custom event
   // or a multi-item plan) — drives the "open link" and "pin details"
   // buttons, which only make sense for pins.
@@ -241,11 +239,9 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   }
 
   // The "clear" (x) on Start time — unplaces, no confirmation needed.
-  // A pin is untouched and lands back in the unscheduled tray (spec
-  // "Moving / unplacing"); you can just place it again, so this behaves
-  // like clearing any other field. A custom event has no tray to go back
-  // to — the server deletes it along with the plan
-  // (backend/app/custom_events.py) — so for one of those the ✕ says so.
+  // The pin or custom event is untouched and lands back in the
+  // unscheduled tray (spec "Moving / unplacing"); you can just place it
+  // again, so this behaves like clearing any other field.
   function handleClearStart() {
     if (clearing || deleting || !editable) return;
     setClearing(true);
@@ -302,12 +298,10 @@ export default function PlanDetailsSheet({ planId, onClose }) {
       setError("Couldn't delete this item — try again.");
       return;
     }
-    if (!ref || ref.kind === "travel") {
-      // A custom event is already gone: unplacing deleted it server-side
-      // (backend/app/custom_events.py), so there's nothing left to delete.
-      // And with no single underlying item (defensive — every plan the
-      // app creates today has exactly one), unplacing is the best this
-      // sheet can do for a multi-item plan.
+    if (!ref) {
+      // No single underlying item (defensive — every plan the app creates
+      // today has exactly one): unplacing is the best this sheet can do
+      // for a multi-item plan.
       onClose();
       return;
     }
@@ -441,38 +435,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
         )}
 
         <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div>
-            <div className="mono-caption">Day</div>
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 6, paddingBottom: 2 }}>
-              {tripDays.map((d, i) => {
-                const n = i + 1;
-                const selected = n === dayIndex;
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    disabled={!editable}
-                    onClick={() => handleDayChange(n)}
-                    style={{
-                      flex: "none",
-                      width: 44,
-                      padding: "6px 0",
-                      borderRadius: "var(--radius-md)",
-                      background: selected ? "var(--surface-inverse)" : "var(--surface-page)",
-                      border: selected ? "none" : "1px solid var(--border)",
-                      textAlign: "center",
-                      opacity: editable ? 1 : 0.6,
-                    }}
-                  >
-                    <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)" }}>
-                      {d.dow}
-                    </div>
-                    <div style={{ font: "600 13px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <DayStepper
+            value={dayIndex}
+            count={tripDays.length}
+            detail={tripDayTitle(dayIndex, trip.startDate, trip.endDate)}
+            onChange={handleDayChange}
+            disabled={!editable}
+          />
 
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>

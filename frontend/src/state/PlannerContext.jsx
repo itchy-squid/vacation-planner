@@ -945,7 +945,7 @@ export function PlannerProvider({ children }) {
         // is a whole window plus a whole stop list — there's no partial
         // edit of it worth an endpoint of its own.
         //
-        // New copy first, old one second. Deleting a plan deletes any
+        // New copy first, old one second. Discarding a draft deletes any
         // custom event nothing else holds (backend/app/custom_events.py),
         // so deleting the old draft first would take the custom events
         // this very save is about to reference with it. Drafts occupy no
@@ -1134,9 +1134,7 @@ export function PlannerProvider({ children }) {
 
         // Permanently deletes the pin itself (backend/app/routers/pins.py) —
         // distinct from UNPLACE_PLAN above, which only removes the Plan/
-        // PlanItem and leaves the pin sitting unscheduled in the tray. (A
-        // custom event doesn't go back to the tray: unplacing deletes it —
-        // backend/app/custom_events.py.) The
+        // PlanItem and leaves the pin sitting unscheduled in the tray. The
         // backend rejects this with 409 while any PlanItem still points at
         // the pin, so callers (components/planner/PlanDetailsSheet.jsx)
         // unplace first when deleting something currently on the calendar.
