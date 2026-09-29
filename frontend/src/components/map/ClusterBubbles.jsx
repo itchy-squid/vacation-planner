@@ -3,10 +3,10 @@ import { markerElement, useMarkers } from "./useMarkers";
 import { bubbleSize } from "./markerSizes";
 
 /**
- * Ideas too close together to tell apart at this zoom, drawn as one plum
- * bubble with how many there are (laid out by ideaLayout.js): exact spots,
- * plus the ideas of any region badge it would have covered. Solid and
- * round, unlike a region's dashed teal badge; zooming in splits it up.
+ * Exact spots too close together to tell apart at this zoom, drawn as one
+ * plum bubble with how many there are (laid out by ideaLayout.js). Solid
+ * and round, unlike a region's dashed teal badge: a bubble splits into
+ * dots as you zoom in, a region's ideas never do.
  *
  *   clusters  [{ key, lat, lng, count }]
  *   onTap(cluster)

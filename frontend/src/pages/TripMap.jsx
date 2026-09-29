@@ -24,8 +24,8 @@ const FIT_PADDING = { top: 76, right: 28, bottom: 28, left: 28 };
 // tell apart at this zoom become a numbered bubble that zooms in when
 // tapped (components/map/IdeaMarkers.jsx). One without is counted in a
 // teal badge at its region's centre ("2 Cozumel"), because scattering those
-// around the region would suggest a precision nobody has; a badge that
-// would sit on a bubble is counted in the bubble instead. Tapping a dot
+// around the region would suggest a precision nobody has. The badge stays
+// separate from any bubble beside it. Tapping a dot
 // shows the idea with its photo; ✕, a tap on empty map or Esc clears it.
 // Tapping a badge lists the region's ideas,
 // each with "Find on Google" (for an idea Google knows, added without its
@@ -66,7 +66,7 @@ export default function TripMap() {
 
   // What the sheet shows: a summary, one region's ideas, the ideas sharing
   // one spot (a bubble zooming can't split), or one idea.
-  const [selected, setSelected] = useState(null); // { kind: "region", key } | { kind: "pin", id } | { kind: "stack", ids, regionKeys }
+  const [selected, setSelected] = useState(null); // { kind: "region", key } | { kind: "pin", id } | { kind: "stack", ids }
   const [placing, setPlacing] = useState(null); // the pin whose spot the next tap sets
   // A line for the sheet. Can arrive from the "On Google Maps?" review
   // (pages/LinkReview.jsx) in navigation state, which is then cleared so a
@@ -143,24 +143,14 @@ export default function TripMap() {
   }, []);
   const tapStack = useCallback((cluster) => {
     setNotice("");
-    setSelected({ kind: "stack", ids: cluster.pins.map((p) => p.id), regionKeys: cluster.regions.map((r) => r.key) });
+    setSelected({ kind: "stack", ids: cluster.pins.map((p) => p.id) });
   }, []);
 
   const openIdea = (pin) => navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`);
   const selectedRegion = selected?.kind === "region" ? byRegion[selected.key] : null;
   const selectedPin = selected?.kind === "pin" ? pins[selected.id] : null;
-  // A bubble's ideas that share one spot: exact spots, then the ideas of any
-  // region rolled into it, which open their region's list when tapped.
-  const stacked =
-    selected?.kind === "stack"
-      ? [
-          ...selected.ids.map((id) => pins[id]).filter(Boolean).map((pin) => ({ pin, open: () => tapPin(pin) })),
-          ...selected.regionKeys
-            .map((key) => byRegion[key])
-            .filter(Boolean)
-            .flatMap((region) => region.pins.map((pin) => ({ pin, region, open: () => tapRegion(region) }))),
-        ]
-      : null;
+  // A bubble's ideas that share one spot, which zooming can't pull apart.
+  const stackedPins = selected?.kind === "stack" ? selected.ids.map((id) => pins[id]).filter(Boolean) : null;
 
   if (finding) {
     return (
@@ -254,15 +244,14 @@ export default function TripMap() {
                 ))}
               </ul>
             </>
-          ) : stacked ? (
+          ) : stackedPins ? (
             <>
-              <SheetHeader onClear={clearSelection}>{stacked.length} ideas at this spot</SheetHeader>
+              <SheetHeader onClear={clearSelection}>{stackedPins.length} ideas at this spot</SheetHeader>
               <ul aria-label="Ideas at this spot" style={{ listStyle: "none", border: "1px solid var(--hairline)", borderRadius: "var(--radius-lg)", maxHeight: 190, overflowY: "auto" }}>
-                {stacked.map(({ pin, region, open }, i) => (
+                {stackedPins.map((pin, i) => (
                   <li key={pin.id} style={{ borderTop: i ? "1px solid var(--hairline)" : "none" }}>
-                    <button type="button" onClick={open} style={{ width: "100%", padding: "9px 12px", textAlign: "left", display: "flex", alignItems: "baseline", gap: 8 }}>
-                      <span style={{ flex: 1, minWidth: 0, font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>{pin.title}</span>
-                      {region ? <span style={{ flex: "none", font: "400 11.5px var(--font-sans)", color: "var(--text-secondary)" }}>In {region.name}, no exact spot</span> : null}
+                    <button type="button" onClick={() => tapPin(pin)} style={{ width: "100%", padding: "9px 12px", textAlign: "left", font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>
+                      {pin.title}
                     </button>
                   </li>
                 ))}

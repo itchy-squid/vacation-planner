@@ -3,9 +3,9 @@ import { BASE_URL } from "../support/env.js";
 
 // The Map tab when zoomed out and when an idea is selected
 // (pages/TripMap.jsx, components/map/IdeaMarkers.jsx):
-//   - exact spots too close to tell apart merge into a bubble with a count;
-//     a region's badge that would sit on the bubble is counted in it, and
-//     comes back out when zooming in
+//   - exact spots too close to tell apart merge into a bubble with a count,
+//     which counts exact spots only; region-only ideas keep their badge,
+//     even right beside the bubble
 //   - tapping a bubble zooms in just until it breaks up; one whose ideas
 //     share a spot lists them instead
 //   - a selected idea shows its photo, and ✕, a tap on empty map or Esc
@@ -35,12 +35,12 @@ test("zoomed out, nearby ideas share a bubble that zooms in when tapped", async 
   await openMap(page, trip);
   await expect(page.getByText("5 of 5 ideas on the map")).toBeVisible({ timeout: 20_000 });
 
-  // Four: the three spots, plus the catamaran, which has no exact spot and
-  // whose Cozumel badge would sit on the bubble, so the bubble counts it.
-  const bubble = page.getByRole("button", { name: "4 ideas here" });
+  // Three, not four: the catamaran has no exact spot, so it stays in
+  // Cozumel's own badge rather than joining the bubble.
+  const bubble = page.getByRole("button", { name: "3 ideas here" });
   const badge = page.getByRole("button", { name: "Cozumel", exact: true });
   await expect(bubble).toBeVisible({ timeout: 20_000 });
-  await expect(badge).toHaveCount(0);
+  await expect(badge).toBeVisible();
   await expect(page.getByRole("button", { name: MERIDA.title })).toBeVisible();
 
   // Each tap zooms in only until the bubble breaks up, so it can take a

@@ -10,7 +10,7 @@ import { useMapZoom } from "./useMapZoom";
  * The Map tab's ideas on the surrounding MapCanvas, laid out for the
  * current zoom (see ideaLayout.js): plum dots for exact spots, plum bubbles
  * where spots would overlap, and a teal badge per region for ideas with no
- * exact spot, unless it would cover a bubble, which then counts them too.
+ * exact spot, which stays separate from any bubble beside it.
  * Every marker hides Google's labels under it.
  *
  *   pins                 ideas with an exact spot
@@ -26,8 +26,8 @@ import { useMapZoom } from "./useMapZoom";
 export default function IdeaMarkers({ pins, regions, highlightedId, selectedRegionKey, onTapPin, onTapRegion, onTapStack, fitPadding }) {
   const map = useMap();
   const view = useMapZoom();
-  const input = useMemo(() => ({ pins, regions, highlightedId, selectedRegionKey, view }), [pins, regions, highlightedId, selectedRegionKey, view]);
-  const { dots, clusters, badges, compactKeys } = useMemo(() => layoutIdeas(input), [input]);
+  const input = useMemo(() => ({ pins, regions, highlightedId, view }), [pins, regions, highlightedId, view]);
+  const { dots, clusters, compactKeys } = useMemo(() => layoutIdeas(input), [input]);
 
   // Just far enough in for the bubble to break up, centred on it.
   const tapCluster = useCallback(
@@ -46,7 +46,7 @@ export default function IdeaMarkers({ pins, regions, highlightedId, selectedRegi
 
   return (
     <>
-      <RegionAreas regions={badges} showArea={false} compactKeys={compactKeys} selectedKey={selectedRegionKey} onTap={onTapRegion} />
+      <RegionAreas regions={regions} showArea={false} compactKeys={compactKeys} selectedKey={selectedRegionKey} onTap={onTapRegion} />
       <ClusterBubbles clusters={clusters} onTap={tapCluster} />
       <PinDots pins={dots} highlightedId={highlightedId} hidesLabels onTap={onTapPin} />
     </>

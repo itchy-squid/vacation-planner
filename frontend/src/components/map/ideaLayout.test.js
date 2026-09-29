@@ -21,49 +21,39 @@ const cozumel = { key: "cozumel", name: "Cozumel", lat: 20.42, lng: -86.92, coun
 // Inland, clear of every spot above.
 const valladolid = { key: "valladolid", name: "Valladolid", lat: 20.69, lng: -88.2, count: 1 };
 const idsOf = (list) => list.map((p) => p.id).sort();
-const keysOf = (list) => list.map((r) => r.key).sort();
 
-test("before the map has drawn, every spot is a dot and every region a badge", () => {
+test("before the map has drawn, every spot is a dot", () => {
   const out = layoutIdeas({ pins, regions: [cozumel], view: null });
   assert.deepEqual(idsOf(out.dots), [1, 2, 3, 4]);
   assert.deepEqual(out.clusters, []);
-  assert.deepEqual(keysOf(out.badges), ["cozumel"]);
   assert.equal(out.compactKeys.size, 0);
 });
 
-test("zoomed out, nearby spots become a bubble", () => {
-  const { dots, clusters } = layoutIdeas({ pins, regions: [], view: at(8) });
+test("zoomed out, nearby spots become a bubble that counts exact spots only", () => {
+  const { dots, clusters } = layoutIdeas({ pins, regions: [cozumel, valladolid], view: at(8) });
   assert.equal(clusters.length, 1);
   assert.deepEqual(idsOf(clusters[0].pins), [1, 2, 3]);
   assert.equal(clusters[0].count, 3);
   assert.deepEqual(idsOf(dots), [4]);
 });
 
-test("a region badge that would cover a bubble is counted in it", () => {
-  const { clusters, badges } = layoutIdeas({ pins, regions: [cozumel, valladolid], view: at(8) });
-  assert.deepEqual(keysOf(clusters[0].regions), ["cozumel"]);
-  assert.equal(clusters[0].count, 5);
-  assert.deepEqual(keysOf(badges), ["valladolid"]);
-});
-
-test("zoomed in, the region's badge comes back out of the bubble", () => {
-  const { clusters, badges } = layoutIdeas({ pins, regions: [cozumel], view: at(12) });
-  assert.equal(clusters.length, 0);
-  assert.deepEqual(keysOf(badges), ["cozumel"]);
-});
-
-test("a selected region keeps its badge, shrunk to its count", () => {
-  const { clusters, badges, compactKeys } = layoutIdeas({ pins, regions: [cozumel], selectedRegionKey: "cozumel", view: at(8) });
+test("a region badge that would cover a bubble stays separate, shrunk to its count", () => {
+  const { clusters, compactKeys } = layoutIdeas({ pins, regions: [cozumel, valladolid], view: at(8) });
   assert.equal(clusters[0].count, 3);
-  assert.deepEqual(keysOf(badges), ["cozumel"]);
+  assert.ok(compactKeys.has("cozumel"));
+  assert.equal(compactKeys.has("valladolid"), false);
+});
+
+test("zoomed in, the badge has room for its name again", () => {
+  const { clusters, compactKeys } = layoutIdeas({ pins, regions: [cozumel], view: at(12) });
+  assert.equal(clusters.length, 0);
   assert.equal(compactKeys.has("cozumel"), false);
 });
 
 test("a badge that would cover a single dot shows just its count", () => {
   const lone = [{ id: 9, title: "San Miguel pier", lat: 20.42, lng: -86.925 }];
-  const { clusters, badges, compactKeys } = layoutIdeas({ pins: lone, regions: [cozumel], view: at(11) });
+  const { clusters, compactKeys } = layoutIdeas({ pins: lone, regions: [cozumel], view: at(11) });
   assert.equal(clusters.length, 0);
-  assert.deepEqual(keysOf(badges), ["cozumel"]);
   assert.ok(compactKeys.has("cozumel"));
 });
 
