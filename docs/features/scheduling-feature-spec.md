@@ -217,13 +217,14 @@ rather than three.
   and an unplaced ferry buried among twenty pins is one that gets
   forgotten). The region filter lives here, defaulting to the regions
   this day is already about. Tapping a row arms it for placement (enters
-  "Placing <item> — tap the calendar") and closes the sheet. Each row
-  also carries a trailing delete button at `--hit-min` (44px), which
-  deletes the item outright (`DELETE /api/pins/{id}` / `DELETE
+  "Placing <item> — tap the calendar") and closes the sheet. Each travel
+  item (custom event) row also carries a trailing delete button at
+  `--hit-min` (44px), which deletes the item outright (`DELETE
   /api/travel-items/{id}`) with the same double-tap-to-confirm behavior as
   the details sheet's "Delete permanently" — one armed row at a time
   across the list. Deleting the item currently armed for placement also
-  cancels placing mode.
+  cancels placing mode. Pin rows have no delete button: a pin belongs to
+  the ideas board, and that is the only place one is deleted.
 
   The delete badge used to appear only on a card already armed for
   placement. In a list, tapping a row arms placement *and* closes the
@@ -264,13 +265,16 @@ placed/pencilled plans:
   — a plain single tap, no confirmation. The pin/travel item itself is
   untouched and lands back in the unscheduled tray, so this is the
   easily-undone action (place the same item again) and behaves like
-  clearing any other field.
-- **Delete permanently**, its own button below, unplaces and then deletes
-  the underlying pin or travel item itself (`DELETE /api/pins/{id}` /
-  `DELETE /api/travel-items/{id}`) — it's gone from the trip entirely, not
-  just off the calendar. This one still requires a second tap within a few
-  seconds to confirm (armed state reads "confirm?"; a single tap alone
-  does nothing), since it can't be undone from here.
+  clearing any other field. For a pin, the same action also gets its own
+  full-width **Remove from schedule** button at the bottom of the sheet.
+- **Delete permanently** — custom events (travel items) only — is its own
+  button below; it unplaces and then deletes the travel item itself
+  (`DELETE /api/travel-items/{id}`), so it's gone from the trip entirely,
+  not just off the calendar. This one still requires a second tap within
+  a few seconds to confirm (armed state reads "confirm?"; a single tap
+  alone does nothing), since it can't be undone from here. A pin is never
+  deleted from the calendar: it came from the ideas board and stays there,
+  so the calendar only takes it off the schedule.
 
 For a single-item plan (every plan the app creates today), "Duration" on
 this sheet is the same field as "Duration" on the pin's own edit screen

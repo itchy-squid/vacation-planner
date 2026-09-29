@@ -341,8 +341,8 @@ export default function DaySchedule() {
     }
     // Placed/pencilled plans open a details sheet (not a routed page —
     // see components/planner/PlanDetailsSheet.jsx for why) where the date,
-    // time, and duration can be adjusted and the item can be deleted
-    // (double-tap-to-confirm).
+    // time, and duration can be adjusted and the item can be taken off
+    // the schedule (or, for a custom event only, deleted permanently).
     setDetailsPlanId(plan.id);
   }
 

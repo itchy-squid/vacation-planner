@@ -58,15 +58,14 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [error, setError] = useState("");
 
-  // Two ways to lose this plan's placement: a plain single-tap "clear" on
-  // Start time just unplaces (DELETE /api/plans/{id} — the pin/travel item
-  // survives, unscheduled, in the tray), so it needs no confirmation —
-  // it's the easily-undone action, exactly like clearing any other field.
-  // "Delete permanently" actually deletes the pin/travel item itself
-  // (DELETE /api/pins/{id} or /api/travel-items/{id}), unplacing it first
-  // since the backend won't delete something still referenced by a
-  // PlanItem — that one keeps the double-tap-to-confirm treatment because
-  // it can't be undone from here.
+  // Two ways to lose this plan's placement. Unplacing (the ✕ on Start
+  // time, or "Remove from schedule" for a pin) is DELETE /api/plans/{id}:
+  // the pin/custom event survives, unscheduled, in the tray, so it needs
+  // no confirmation. "Delete permanently" — offered for custom events
+  // only — also deletes the event itself (DELETE /api/travel-items/{id}),
+  // so it keeps the double-tap-to-confirm treatment. A pin belongs to the
+  // ideas board: the calendar only ever takes it off the schedule, and
+  // deleting it outright is the board's job.
   const [clearing, setClearing] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -136,6 +135,9 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   const pinId = soleItem?.pinId ?? null;
   const pin = pinId != null ? pins[pinId] : null;
   const pinHref = externalHref(pin?.link);
+  // Only a custom event (a TravelItem, see backend/app/custom_events.py)
+  // can be deleted permanently from here; a pin is only ever unscheduled.
+  const customEventId = soleItem?.pinId == null ? soleItem?.travelItemId ?? null : null;
   const endMinute = startMinute + durationMinutes;
   const timeValue = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
 
@@ -173,8 +175,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   }
 
   // The plan's own duration_minutes-shaped item (pin or travel item) — the
-  // same field pages/EditVisit.jsx edits as "Duration" for a pin, and the
-  // thing "Delete permanently" below actually deletes. Every plan the app
+  // same field pages/EditVisit.jsx edits as "Duration" for a pin. Every plan the app
   // creates today has exactly one item, so this is always resolvable in
   // practice; the null case is just a defensive fallback for a
   // hypothetical multi-item plan, where no single field/item is "the" one.
@@ -238,11 +239,12 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     }
   }
 
-  // The "clear" (x) on Start time — unplaces, no confirmation needed.
-  // The pin or custom event is untouched and lands back in the
-  // unscheduled tray (spec "Moving / unplacing"); you can just place it
-  // again, so this behaves like clearing any other field.
-  function handleClearStart() {
+  // The "clear" (x) on Start time, and a pin's "Remove from schedule" —
+  // unplaces, no confirmation needed. The pin or custom event is untouched
+  // and lands back in the unscheduled tray (spec "Moving / unplacing");
+  // you can just place it again, so this behaves like clearing any other
+  // field.
+  function handleUnplace() {
     if (clearing || deleting || !editable) return;
     setClearing(true);
     setError("");
@@ -270,13 +272,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     }
   }
 
-  // "Delete permanently" — actually deletes the underlying pin or travel
-  // item, not just this scheduling of it. Unplace first: the backend
-  // rejects deleting a pin/travel item that's still referenced by a
-  // PlanItem (backend/app/routers/pins.py, routers/travel_items.py), and
-  // this plan's sole item is exactly that reference.
+  // "Delete permanently" (custom events only) — deletes the underlying
+  // travel item, not just this scheduling of it. Unplace first: the
+  // backend rejects deleting a travel item that's still referenced by a
+  // PlanItem (backend/app/routers/travel_items.py), and this plan's sole
+  // item is exactly that reference.
   function handleDeleteTap() {
-    if (deleting || clearing || !editable) return;
+    if (deleting || clearing || !editable || customEventId == null) return;
     if (!deleteArmed) {
       setDeleteArmed(true);
       clearTimeout(deleteDisarmTimeoutRef.current);
@@ -291,23 +293,13 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   }
 
   async function deletePermanently() {
-    const ref = soleItemRef();
     const unplaceResult = await dispatch({ type: "UNPLACE_PLAN", planId: plan.id });
     if (!unplaceResult.ok) {
       setDeleting(false);
       setError("Couldn't delete this item — try again.");
       return;
     }
-    if (!ref) {
-      // No single underlying item (defensive — every plan the app creates
-      // today has exactly one): unplacing is the best this sheet can do
-      // for a multi-item plan.
-      onClose();
-      return;
-    }
-    const result = await dispatch(
-      ref.kind === "pin" ? { type: "DELETE_PIN", id: ref.id } : { type: "DELETE_TRAVEL_ITEM", id: ref.id }
-    );
+    const result = await dispatch({ type: "DELETE_TRAVEL_ITEM", id: customEventId });
     if (result.ok) {
       onClose();
     } else {
@@ -468,7 +460,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
                 {editable && (
                   <button
                     type="button"
-                    onClick={handleClearStart}
+                    onClick={handleUnplace}
                     disabled={clearing || deleting}
                     aria-label={clearLabel}
                     title={clearLabel}
@@ -511,7 +503,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
         <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 14 }}>
           {pinId != null && (
             // Navigation, not an edit — kept as a neutral full-width button
-            // above the destructive Delete. Routes to pages/EditVisit.jsx,
+            // above the remove/delete action. Routes to pages/EditVisit.jsx,
             // whose default ("schedule") back destination returns to the
             // day this pin is placed on.
             <button
@@ -530,7 +522,29 @@ export default function PlanDetailsSheet({ planId, onClose }) {
               View pin details
             </button>
           )}
-          {canPlan ? (
+          {canPlan && customEventId == null ? (
+            // A pin (or, defensively, a multi-item plan) only ever comes
+            // off the schedule from here — same action as the ✕ above,
+            // given a full-width button so it isn't hidden in a field.
+            <button
+              type="button"
+              onClick={handleUnplace}
+              disabled={clearing || !editable}
+              style={{
+                width: "100%",
+                height: 48,
+                borderRadius: "var(--radius-lg)",
+                background: "var(--surface-page)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-primary)",
+                font: "600 14px var(--font-sans)",
+                opacity: editable ? 1 : 0.6,
+              }}
+            >
+              {clearing ? "Removing…" : "Remove from schedule"}
+            </button>
+          ) : null}
+          {canPlan && customEventId != null ? (
             <div>
               <button
                 type="button"

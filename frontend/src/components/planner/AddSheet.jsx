@@ -261,29 +261,32 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
     );
   }, [pins, filter, order]);
 
+  // Only custom events (travel items) can be deleted from here. Pins
+  // belong to the ideas board, which is where one gets deleted; the
+  // calendar only ever schedules or unschedules them.
+  //
   // One armed slot across the whole list, since only one row can
   // plausibly be mid-confirm at a time — the rule the tray used, kept.
-  const [armedKey, setArmedKey] = useState(null);
+  const [armedId, setArmedId] = useState(null);
   const timeoutRef = useRef(null);
   useEffect(() => () => clearTimeout(timeoutRef.current), []);
 
-  function handleDeleteTap(kind, id) {
-    const key = `${kind}:${id}`;
-    if (armedKey !== key) {
-      setArmedKey(key);
+  function handleDeleteTap(id) {
+    if (armedId !== id) {
+      setArmedId(id);
       clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setArmedKey(null), DELETE_CONFIRM_WINDOW_MS);
+      timeoutRef.current = setTimeout(() => setArmedId(null), DELETE_CONFIRM_WINDOW_MS);
       return;
     }
     clearTimeout(timeoutRef.current);
-    setArmedKey(null);
+    setArmedId(null);
     onError("");
-    dispatch({ type: kind === "pin" ? "DELETE_PIN" : "DELETE_TRAVEL_ITEM", id }).then((result) => {
+    dispatch({ type: "DELETE_TRAVEL_ITEM", id }).then((result) => {
       if (result.ok) {
         // The deleted item may be the one currently armed for placement —
         // clear that too, or the grid would go on trying to place
         // something that no longer exists.
-        if (placing?.kind === kind && placing.refId === id) dispatch({ type: "CANCEL_PLACING" });
+        if (placing?.kind === "travel" && placing.refId === id) dispatch({ type: "CANCEL_PLACING" });
       } else {
         onError("Couldn't delete that item — try again.");
       }
@@ -350,9 +353,9 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
                 title={item.title}
                 meta={`${TRAVEL_KINDS.find((k) => k.value === item.kind)?.label ?? "Other"} · ${item.dur}m`}
                 icon={travelKindIcon(item.kind)}
-                armed={armedKey === `travel:${item.id}`}
+                armed={armedId === item.id}
                 onArm={() => onArm("travel", item.id)}
-                onDelete={() => handleDeleteTap("travel", item.id)}
+                onDelete={() => handleDeleteTap(item.id)}
               />
             ))}
           </>
@@ -369,9 +372,7 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
               title={pin.title}
               meta={`${pin.region} · ${pin.dur}m${heartsSuffix(heartCount(pin))}`}
               photoUrl={pin.photoUrl}
-              armed={armedKey === `pin:${pin.id}`}
               onArm={() => onArm("pin", pin.id)}
-              onDelete={() => handleDeleteTap("pin", pin.id)}
             />
           ))
         ) : (
@@ -388,7 +389,8 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
   );
 }
 
-function PickerRow({ title, meta, photoUrl, icon, armed, onArm, onDelete }) {
+// `onDelete` is optional: pin rows leave it out and get no delete button.
+function PickerRow({ title, meta, photoUrl, icon, armed = false, onArm, onDelete }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 0", borderBottom: "1px solid var(--hairline)" }}>
       <button type="button" onClick={onArm} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, textAlign: "left" }}>
@@ -428,35 +430,37 @@ function PickerRow({ title, meta, photoUrl, icon, armed, onArm, onDelete }) {
       {/* Sized to --hit-min rather than a decorative glyph: it sits beside
           a row whose whole body is also tappable, so the two targets have
           to be separable by thumb. */}
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label={armed ? "Confirm delete" : "Delete permanently"}
-        style={{
-          width: "var(--hit-min, 44px)",
-          height: "var(--hit-min, 44px)",
-          flex: "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={armed ? "Confirm delete" : "Delete permanently"}
           style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
+            width: "var(--hit-min, 44px)",
+            height: "var(--hit-min, 44px)",
+            flex: "none",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: armed ? "var(--danger, #b3261e)" : "transparent",
-            color: armed ? "#fff" : "var(--text-faint)",
-            font: armed ? "700 16px var(--font-sans)" : "400 17px var(--font-sans)",
           }}
         >
-          {armed ? "!" : "×"}
-        </span>
-      </button>
+          <span
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: armed ? "var(--danger, #b3261e)" : "transparent",
+              color: armed ? "#fff" : "var(--text-faint)",
+              font: armed ? "700 16px var(--font-sans)" : "400 17px var(--font-sans)",
+            }}
+          >
+            {armed ? "!" : "×"}
+          </span>
+        </button>
+      )}
     </div>
   );
 }
