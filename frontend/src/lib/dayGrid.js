@@ -27,6 +27,14 @@ export const MIN_SELECTION_MIN = 30;
 // as a drag rather than a tap.
 export const DRAG_THRESHOLD_PX = 5;
 
+// Touch (and pen) can't drag a block straight away: the same vertical
+// swipe is how you scroll the day, and a tall plan covers most of the
+// screen. A finger has to rest on the block this long before it lifts;
+// moving more than the slop first means "scroll", and the browser takes
+// the gesture. Mouse pointers keep the immediate drag.
+export const LONG_PRESS_MS = 350;
+export const LONG_PRESS_SLOP_PX = 10;
+
 export function snapToGrid(rawMinute) {
   return Math.round(rawMinute / SNAP_MIN) * SNAP_MIN;
 }

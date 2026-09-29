@@ -17,6 +17,8 @@ import {
   DAY_END_MIN,
   DAY_START_MIN,
   DRAG_THRESHOLD_PX,
+  LONG_PRESS_MS,
+  LONG_PRESS_SLOP_PX,
   PX_PER_MIN,
   SNAP_MIN,
   contestWindowsFrom,
@@ -361,7 +363,9 @@ export default function DaySchedule() {
   // the details sheet). dragInfoRef holds the in-progress gesture (kept
   // out of state so pointermove doesn't need a state read on every
   // event); dragPreview is the bit of it the render actually needs.
-  const dragInfoRef = useRef(null); // { pointerId, planId, kind, startClientY, originStart, durationMinutes, moved }
+  // `armed` is false for the first LONG_PRESS_MS of a touch: until then the
+  // finger may still be starting a scroll, so nothing is captured or moved.
+  const dragInfoRef = useRef(null); // { pointerId, planId, kind, startClientX, startClientY, originStart, durationMinutes, moved, armed, timer }
   const [dragPreview, setDragPreview] = useState(null); // { planId, previewStart, durationMinutes }
 
   function planPreviewStart(info, clientY) {
@@ -388,21 +392,67 @@ export default function DaySchedule() {
     // isn't on screen, which is not something to reason about mid-drag.
     if (entry?.continuesBefore) return;
     if (e.button != null && e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragInfoRef.current = {
+    if (dragInfoRef.current) clearTimeout(dragInfoRef.current.timer);
+    const target = e.currentTarget;
+    const info = {
       pointerId: e.pointerId,
       planId: plan.id,
       kind,
+      startClientX: e.clientX,
       startClientY: e.clientY,
       originStart: entry.startMin,
       durationMinutes: planDurationMinutes(plan),
       moved: false,
+      armed: e.pointerType === "mouse",
+      timer: null,
     };
+    dragInfoRef.current = info;
+    if (info.armed) {
+      target.setPointerCapture(e.pointerId);
+      return;
+    }
+    info.timer = setTimeout(() => {
+      if (dragInfoRef.current !== info) return;
+      info.armed = true;
+      // The lift is the cue that the block is now movable; the trailing
+      // click after a still long-press shouldn't open the details sheet.
+      suppressClickRef.current = true;
+      setMoveError("");
+      try {
+        target.setPointerCapture(info.pointerId);
+      } catch {
+        // pointer already gone — the up/cancel handler cleans up
+      }
+      window.navigator.vibrate?.(10);
+      setDragPreview({ planId: info.planId, durationMinutes: info.durationMinutes, previewStart: info.originStart });
+    }, LONG_PRESS_MS);
+  }
+
+  // Once a touch drag is armed the page must not scroll under the finger.
+  // touch-action can't change mid-gesture, so the block allows native
+  // vertical panning (for the scroll case) and this listener — which has
+  // to be non-passive to preventDefault — vetoes it after the long-press.
+  useEffect(() => {
+    function vetoScroll(e) {
+      if (dragInfoRef.current?.armed && e.cancelable) e.preventDefault();
+    }
+    document.addEventListener("touchmove", vetoScroll, { passive: false });
+    return () => document.removeEventListener("touchmove", vetoScroll);
+  }, []);
+
+  function endGesture() {
+    if (dragInfoRef.current) clearTimeout(dragInfoRef.current.timer);
+    dragInfoRef.current = null;
   }
 
   function handlePlanPointerMove(e, plan) {
     const info = dragInfoRef.current;
     if (!info || info.pointerId !== e.pointerId || info.planId !== plan.id) return;
+    if (!info.armed) {
+      // Moved before the long-press finished: this is a scroll, not a drag.
+      if (Math.hypot(e.clientX - info.startClientX, e.clientY - info.startClientY) > LONG_PRESS_SLOP_PX) endGesture();
+      return;
+    }
     if (!info.moved) {
       if (Math.abs(e.clientY - info.startClientY) < DRAG_THRESHOLD_PX) return;
       info.moved = true;
@@ -416,11 +466,16 @@ export default function DaySchedule() {
   async function handlePlanPointerUp(e, plan) {
     const info = dragInfoRef.current;
     if (!info || info.pointerId !== e.pointerId || info.planId !== plan.id) return;
-    dragInfoRef.current = null;
+    endGesture();
     if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    if (!info.moved) return; // a plain tap — the click handler opens the item's details page
+    if (!info.moved) {
+      // A plain tap — the click handler opens the item's details page. A
+      // long-press that never moved just puts the block back down.
+      if (info.armed) setDragPreview(null);
+      return;
+    }
 
     const previewStart = planPreviewStart(info, e.clientY);
     setDragPreview(null);
@@ -455,7 +510,8 @@ export default function DaySchedule() {
   function handlePlanPointerCancel(e, plan) {
     const info = dragInfoRef.current;
     if (!info || info.pointerId !== e.pointerId || info.planId !== plan.id) return;
-    dragInfoRef.current = null;
+    endGesture();
+    if (info.armed) suppressClickRef.current = false;
     setDragPreview(null);
   }
 
@@ -820,8 +876,17 @@ export default function DaySchedule() {
                     onPointerMove={(e) => handlePlanPointerMove(e, plan)}
                     onPointerUp={(e) => handlePlanPointerUp(e, plan)}
                     onPointerCancel={(e) => handlePlanPointerCancel(e, plan)}
+                    onContextMenu={(e) => {
+                      // Android raises a context menu on a long-press; here
+                      // the long-press is the drag.
+                      if (dragInfoRef.current?.planId === plan.id) e.preventDefault();
+                    }}
                     style={{
-                      touchAction: draggable ? "none" : undefined,
+                      // pan-y: a swipe on a block scrolls the day until a
+                      // long-press arms the drag (see handlePlanPointerDown).
+                      touchAction: draggable ? "pan-y" : undefined,
+                      userSelect: draggable ? "none" : undefined,
+                      WebkitTouchCallout: draggable ? "none" : undefined,
                       cursor: draggable ? (isDragging ? "grabbing" : "grab") : undefined,
                       opacity: isDragging ? 0.85 : 1,
                     }}
