@@ -117,6 +117,13 @@ function normalizeRegion(r) {
   return { key: regionKey(r.name), id: r.id, name: r.name, lat: r.lat, lng: r.lng, south: r.south, west: r.west, north: r.north, east: r.east };
 }
 
+// Where the group is each day (backend routers/day_places.py), keyed in
+// state by ISO date: { stay: name | null, visits: [name, ...] }. Unset days
+// have no entry (lib/dayPlaces.js placesOn reads them as NO_PLACES).
+function normalizeDayPlaces(list) {
+  return Object.fromEntries(list.map((d) => [d.date, { stay: d.stay ?? null, visits: d.visits ?? [] }]));
+}
+
 function normalizePin(p, contributorsById) {
   const addedBy = p.added_by_id ? contributorsById[p.added_by_id] : null;
   const { cx, cy } = coordsForPin(p);
@@ -334,6 +341,7 @@ function emptyTripView() {
     travelItems: {},
     travelers: [],
     regions: {},
+    dayPlaces: {},
     currentUserId: null,
   };
 }
@@ -347,7 +355,7 @@ async function loadTripView(tripId, trips) {
   rememberLastTripId(trip.id);
   const otherTripRows = trips.filter((t) => t.id !== trip.id);
 
-  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw, splitsRaw, regionsRaw] = await Promise.all([
+  const [contributorsRaw, pinsRaw, plansRaw, travelItemsRaw, travelersRaw, splitsRaw, regionsRaw, dayPlacesRaw] = await Promise.all([
     api.listContributors(trip.id),
     api.listPins(trip.id),
     api.listPlans(trip.id),
@@ -355,6 +363,7 @@ async function loadTripView(tripId, trips) {
     api.listTravelers(trip.id),
     api.listSplits(trip.id),
     api.listRegions(trip.id),
+    api.listDayPlaces(trip.id),
   ]);
   const travelers = travelersRaw.map(normalizeTraveler);
 
@@ -468,6 +477,7 @@ async function loadTripView(tripId, trips) {
     travelItems,
     travelers,
     regions: Object.fromEntries(regionsRaw.map((r) => [regionKey(r.name), normalizeRegion(r)])),
+    dayPlaces: normalizeDayPlaces(dayPlacesRaw),
     currentUserId,
   };
 }
@@ -486,6 +496,7 @@ const initialState = {
   travelItems: {}, // travelItemId -> TravelItem
   travelers: [], // Traveler[], roster order — who is going (see normalizeTraveler)
   regions: {}, // regionKey(name) -> where that region is (see normalizeRegion)
+  dayPlaces: {}, // ISO date -> { stay, visits } (see normalizeDayPlaces)
   currentUserId: null,
   switchingTripId: null, // id of an "also planning" trip currently being opened, or null
 
@@ -536,6 +547,19 @@ function reducer(state, action) {
 
     case "APPLY_REGION":
       return { ...state, regions: { ...state.regions, [action.region.key]: action.region } };
+
+    // `days` is { date: { stay, visits } | null } for the dates that
+    // changed (null clears one); `all` replaces every day, as the server
+    // returns them.
+    case "APPLY_DAY_PLACES": {
+      if (action.all) return { ...state, dayPlaces: action.all };
+      const dayPlaces = { ...state.dayPlaces };
+      Object.entries(action.days).forEach(([date, day]) => {
+        if (day && (day.stay || day.visits.length)) dayPlaces[date] = day;
+        else delete dayPlaces[date];
+      });
+      return { ...state, dayPlaces };
+    }
 
     case "APPLY_TRAVEL_ITEM":
       return { ...state, travelItems: { ...state.travelItems, [action.item.id]: action.item } };
@@ -650,6 +674,7 @@ export function PlannerProvider({ children }) {
     };
   }, []);
 
+  const daySaveCounter = useRef(0);
   const dispatchRef = useRef();
   dispatchRef.current = useMemo(
     () => async (action) => {
@@ -1220,6 +1245,30 @@ export function PlannerProvider({ children }) {
         // Where a region is, stored for the whole trip (components/map/
         // useRegionLocations.js, components/newpin/ByHandForm.jsx). Returns
         // a result for the same reason PATCH_PIN does.
+        // Sets the places on some days: `days` is { date: { stay, visits } }
+        // (no stay and no day trips clears a day). Shown straight away so
+        // tapping through chips doesn't wait on the network; put back if
+        // the save fails. Only the newest save's answer is applied, so a
+        // slow earlier one can't overwrite a later tap.
+        case "SAVE_DAY_PLACES": {
+          const tripId = state.trip.id;
+          const previous = Object.fromEntries(Object.keys(action.days).map((date) => [date, state.dayPlaces[date] ?? null]));
+          const saveId = ++daySaveCounter.current;
+          dispatch({ type: "APPLY_DAY_PLACES", days: action.days });
+          try {
+            const saved = await api.putDayPlaces(
+              tripId,
+              Object.entries(action.days).map(([date, day]) => ({ date, stay: day?.stay ?? null, visits: day?.visits ?? [] }))
+            );
+            if (saveId === daySaveCounter.current) dispatch({ type: "APPLY_DAY_PLACES", all: normalizeDayPlaces(saved) });
+            return { ok: true, previous };
+          } catch (err) {
+            console.error("day places save failed", err);
+            dispatch({ type: "APPLY_DAY_PLACES", days: previous });
+            return { ok: false, error: err.message };
+          }
+        }
+
         case "SAVE_REGION": {
           const { name, lat, lng, south, west, north, east } = action.region;
           try {
@@ -1322,7 +1371,7 @@ export function PlannerProvider({ children }) {
           return;
       }
     },
-    [state.pins, state.travelItems, state.plans, state.placing, state.proposeSheet, state.contributors, state.trip, state.currentUserId]
+    [state.pins, state.travelItems, state.plans, state.placing, state.proposeSheet, state.contributors, state.trip, state.currentUserId, state.dayPlaces]
   );
   // Stable function identity across renders (children never need to
   // re-subscribe just because a background fetch resolved).

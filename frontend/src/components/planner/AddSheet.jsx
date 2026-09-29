@@ -312,6 +312,7 @@ function Picker({ pins, travelItems, dayRegions, allTripRegions, onBack, onArm, 
               <button
                 key={r}
                 type="button"
+                aria-pressed={selected}
                 onClick={() =>
                   r === "All"
                     ? setFilter([])

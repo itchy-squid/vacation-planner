@@ -9,6 +9,7 @@ import PinBoard from "./pages/PinBoard";
 import TripMap from "./pages/TripMap";
 import LinkReview from "./pages/LinkReview";
 import DaySchedule from "./pages/DaySchedule";
+import DayPlaces from "./pages/DayPlaces";
 import CompareSets from "./pages/CompareSets";
 import EditVisit from "./pages/EditVisit";
 import FinalItinerary from "./pages/FinalItinerary";
@@ -91,6 +92,10 @@ function AppRoutes() {
       />
       <Route path="/trips/:tripId/schedule" element={<ScheduleIndexRedirect />} />
       <Route path="/trips/:tripId/schedule/:day" element={<DaySchedule />} />
+      {/* "Where we'll be": the place for each day. Opened from the Plan
+          tab's day header with its own ‹ Plan, so no tab bar. Anyone can
+          look; changing it needs plans:write, checked in the page. */}
+      <Route path="/trips/:tripId/places" element={<DayPlaces />} />
       {/* Steps 2-4 of the proposal flow, as one route: the step lives in
           component state rather than the URL so backing out of "Review"
           returns to the hour selection with the drag intact, which a URL

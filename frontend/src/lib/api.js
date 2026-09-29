@@ -376,6 +376,11 @@ export const api = {
   // Where the trip's regions are on the map (backend routers/regions.py).
   listRegions: (tripId) => request(`/api/trips/${tripId}/regions`),
   putRegion: (tripId, region) => request(`/api/trips/${tripId}/regions`, { method: "PUT", body: region }),
+  // Where the group is each day (backend routers/day_places.py). The PUT
+  // replaces each listed date's places ({ date, stay, visits }; nothing
+  // clears it) and returns every set day.
+  listDayPlaces: (tripId) => request(`/api/trips/${tripId}/day-places`),
+  putDayPlaces: (tripId, days) => request(`/api/trips/${tripId}/day-places`, { method: "PUT", body: { days } }),
   createPin: (tripId, payload) => request(`/api/trips/${tripId}/pins`, { method: "POST", body: payload }),
   getPin: (pinId) => request(`/api/pins/${pinId}`),
   patchPin: (pinId, fields) => request(`/api/pins/${pinId}`, { method: "PATCH", body: fields }),

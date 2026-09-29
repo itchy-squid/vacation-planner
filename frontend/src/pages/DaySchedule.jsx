@@ -7,6 +7,9 @@ import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
 import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
+import DayPlacesSheet from "../components/places/DayPlacesSheet";
+import { DayPlacesLine, DayTripDot, PlacesMismatch } from "../components/places/DayPlacesLine";
+import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, tripDates, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
 import { getTripDays } from "../data/trip";
 import { dayHeaderLabel } from "../data/schedule";
@@ -141,6 +144,17 @@ export default function DaySchedule() {
   }, [pins]);
 
   const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+
+  // Where the group is today ("Where we'll be", lib/dayPlaces.js). Once
+  // set, it's what the header says and what "+ Add" shows first, in place
+  // of the regions guessed from the calendar above.
+  const { dayPlaces } = state;
+  const dates = useMemo(() => tripDates(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const today = placesOn(dayPlaces, dates[dayIndex - 1]);
+  const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, trip.startDate, dayIndex), [plans, pins, trip.startDate, dayIndex]);
+  const addSheetRegions = isSet(today) ? placeNames(today) : dayRegions;
+  const [placesOpenIndex, setPlacesOpenIndex] = useState(null);
+  const addDayTrip = (region) => dispatch({ type: "SAVE_DAY_PLACES", days: { [dates[dayIndex - 1]]: withVisit(today, region) } });
 
   // Day strip marquee (unchanged behaviour from the original screen).
   const dayStripRef = useRef(null);
@@ -539,7 +553,14 @@ export default function DaySchedule() {
       <div style={{ flex: "none", background: "var(--surface-page)", borderBottom: "1px solid var(--hairline)" }}>
         <TripHeader />
         <div style={{ padding: "6px var(--gutter-text) 12px" }}>
-          <div className="mono-caption">Scheduling · {region}</div>
+          <DayPlacesLine
+            day={today}
+            previousStay={stayBefore(dayPlaces, dates, dayIndex - 1)}
+            fallback={`Scheduling · ${region}`}
+            canEdit={canPlan && dates.length > 0}
+            onEdit={() => setPlacesOpenIndex(dayIndex - 1)}
+            onAllDays={dates.length ? () => navigate(`/trips/${trip.id}/places`, { state: { fromDay: dayIndex } }) : null}
+          />
           {/* Kept as this screen's heading: it's the day you're looking at,
               which the header's trip name doesn't say. */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -586,6 +607,7 @@ export default function DaySchedule() {
                   onClick={() => navigate(`/trips/${trip.id}/schedule/${n}`)}
                   style={{
                     flex: "none",
+                    position: "relative",
                     width: 38,
                     padding: "6px 0",
                     borderRadius: "var(--radius-md)",
@@ -597,6 +619,7 @@ export default function DaySchedule() {
                 >
                   <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow}</div>
                   <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
+                  {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
                 </button>
               );
             })}
@@ -668,6 +691,7 @@ export default function DaySchedule() {
       </div>
 
       <div className="screen-scroll" style={{ paddingTop: 12, paddingBottom: 24 }}>
+        <PlacesMismatch day={today} onCalendar={onCalendar} canEdit={canPlan} onAdd={addDayTrip} />
         {moveError && (
           <div style={{ margin: "0 var(--gutter-screen) 12px", padding: "8px 13px", borderRadius: "var(--radius-lg)", background: "var(--warn-tint, #fdf1e6)", font: "500 12px var(--font-sans)", color: "var(--warn, #a15c1a)" }}>
             {moveError}
@@ -937,8 +961,16 @@ export default function DaySchedule() {
           onClose={() => setAddOpen(false)}
           unplacedPins={unplacedPins}
           unplacedTravelItems={unplacedTravelItems}
-          dayRegions={dayRegions}
+          dayRegions={addSheetRegions}
           allTripRegions={allTripRegions}
+        />
+      )}
+
+      {placesOpenIndex != null && (
+        <DayPlacesSheet
+          index={placesOpenIndex}
+          onStep={setPlacesOpenIndex}
+          onClose={() => setPlacesOpenIndex(null)}
         />
       )}
 

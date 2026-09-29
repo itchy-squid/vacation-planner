@@ -84,6 +84,7 @@ class Trip(Base):
         back_populates="trip", cascade="all, delete-orphan", order_by="Traveler.position, Traveler.id"
     )
     regions: Mapped[list["TripRegion"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    day_places: Mapped[list["TripDayPlace"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
 
 
 class Contributor(Base):
@@ -160,6 +161,41 @@ class TripRegion(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     trip: Mapped[Trip] = relationship(back_populates="regions")
+
+
+class TripDayPlace(Base):
+    """One place the group is in on one day of the trip ("Where we'll be").
+
+    A day has at most one place it's staying in (where the group sleeps
+    that night) and any number of day trips (there and back the same day,
+    in the order they're gone to). Places are region names, the same
+    free-text names pins use, matched on `name_key` whatever the case.
+
+    Days are stored by date rather than day number, like plans, so a place
+    stays on its day when the trip's dates change; one outside the trip's
+    dates is kept but not shown.
+
+    `position` 0 is the stay and 1.. are the day trips in order, which is
+    what lets the database hold "one stay per day" (the unique position per
+    date plus the check below) without a partial index."""
+
+    __tablename__ = "trip_day_places"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "date", "position", name="uq_trip_day_place_position"),
+        UniqueConstraint("trip_id", "date", "name_key", name="uq_trip_day_place_name"),
+        CheckConstraint("kind IN ('stay', 'visit')", name="ck_trip_day_place_kind"),
+        CheckConstraint("(kind = 'stay') = (position = 0)", name="ck_trip_day_place_stay_first"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    date: Mapped[date] = mapped_column(Date)
+    name: Mapped[str] = mapped_column(String(120))
+    name_key: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(8))
+    position: Mapped[int] = mapped_column(Integer)
+
+    trip: Mapped[Trip] = relationship(back_populates="day_places")
 
 
 class Traveler(Base):

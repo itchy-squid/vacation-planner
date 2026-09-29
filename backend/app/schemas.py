@@ -374,6 +374,52 @@ class TripRegionOut(BaseModel):
     east: float
 
 
+# --- where we'll be (app/models.py TripDayPlace) ----------------------------------
+
+def _place_name(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("A place needs a name")
+    return value
+
+
+PlaceName = Annotated[str, Field(max_length=120), AfterValidator(_place_name)]
+
+
+class DayPlaces(BaseModel):
+    """The places for one date: where the group stays that night, and its
+    day trips in the order they're gone to. No stay and no day trips means
+    the day isn't set."""
+
+    date: date
+    stay: PlaceName | None = None
+    visits: list[PlaceName] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def _each_place_once(self) -> "DayPlaces":
+        keys = [name.lower() for name in self.visits]
+        if len(set(keys)) != len(keys):
+            raise ValueError("A day trip is listed twice")
+        if self.stay is not None and self.stay.lower() in keys:
+            raise ValueError("A day can't have a day trip to where it's staying")
+        return self
+
+
+class DayPlacesUpdate(BaseModel):
+    """PUT /api/trips/{id}/day-places: replaces the places on each listed
+    date; a day with no stay and no day trips is cleared. Dates not listed
+    are left alone."""
+
+    days: list[DayPlaces] = Field(min_length=1, max_length=366)
+
+    @model_validator(mode="after")
+    def _each_date_once(self) -> "DayPlacesUpdate":
+        dates = [day.date for day in self.days]
+        if len(set(dates)) != len(dates):
+            raise ValueError("A date is listed twice")
+        return self
+
+
 class PinOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
