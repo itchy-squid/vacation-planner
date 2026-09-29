@@ -3,10 +3,11 @@
 // on Google once and then stored for the trip (backend routers/regions.py).
 import { importMapsLibrary } from "./googleMaps";
 
-/** How pins are matched to a region: "Cozumel" and " cozumel" are one. */
-export function regionKey(name) {
-  return (name ?? "").trim().toLowerCase();
-}
+// Kept in its own module so pure helpers (lib/tripPlaces.js) can use it
+// without loading Google Maps.
+import { regionKey } from "./regionKey";
+
+export { regionKey };
 
 // Per page load, so the same name isn't looked up twice (each lookup is
 // billed). Values are promises, so two callers asking at once share one.

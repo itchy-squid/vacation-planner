@@ -1,5 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl } from "../support/calendar.js";
+import { ok } from "../support/api.js";
 import { dayDate, dayPlacesOf, placePlan, setDayPlaces } from "../support/seed.js";
 
 // "Where we'll be" (backend routers/day_places.py): the place the group
@@ -127,6 +128,42 @@ test.describe("where we'll be", () => {
     await expect(page.getByText("Cleared all 4 days.")).toBeVisible();
     await expect(page.getByText("0 of 4 days set")).toBeVisible();
     await expect.poll(() => dayPlacesOf(api, trip)).toEqual([]);
+  });
+
+  test("drops a place once no idea and no day uses it", async ({ page, api, seed }) => {
+    const trip = await seed({
+      pins: [
+        { title: "Taroko Gorge", region: "Hualien" },
+        { title: "Chihkan Tower", region: "Tainan" },
+      ],
+    });
+    // Where Hualien is on the map, stored for the trip. It outlives the
+    // idea that made it, but mustn't keep the place alive.
+    await ok(
+      api.put(`/api/trips/${trip.id}/regions`, {
+        data: { name: "Hualien", lat: 23.99, lng: 121.6, south: 23.9, west: 121.5, north: 24.1, east: 121.7 },
+      }),
+      "store Hualien's location"
+    );
+    await setDayPlaces(api, trip, { [dayDate(1)]: { stay: "Kenting" } });
+
+    const choices = async () => {
+      await page.goto(placesUrl(trip));
+      await dayRow(page, 2).click();
+      return page.getByRole("dialog", { name: "Day 2 places" }).getByRole("group", { name: /Staying in/ });
+    };
+    let stayIn = await choices();
+    for (const place of ["Hualien", "Tainan", "Kenting"]) {
+      await expect(stayIn.getByRole("button", { name: place, exact: true })).toBeVisible();
+    }
+
+    await ok(api.delete(`/api/pins/${trip.pins["Taroko Gorge"]}`), "delete Taroko Gorge");
+    await setDayPlaces(api, trip, { [dayDate(1)]: {} });
+
+    stayIn = await choices();
+    await expect(stayIn.getByRole("button", { name: "Tainan", exact: true })).toBeVisible();
+    await expect(stayIn.getByRole("button", { name: "Hualien", exact: true })).toHaveCount(0);
+    await expect(stayIn.getByRole("button", { name: "Kenting", exact: true })).toHaveCount(0);
   });
 
   test("offers the calendar's place for a day that isn't set", async ({ page, api, seed }) => {

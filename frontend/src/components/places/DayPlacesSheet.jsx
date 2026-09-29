@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import BottomSheet from "../core/BottomSheet";
 import PlaceChips from "./PlaceChips";
-import { usePlaceChoices } from "./usePlaceChoices";
+import { useKnownRegions } from "../map/useKnownRegions";
 import { usePlannerDispatch, usePlannerState } from "../../state/PlannerContext";
 import { tripDayTitle } from "../../data/trip";
 import {
@@ -32,7 +32,7 @@ import {
 export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
   const dispatch = usePlannerDispatch();
   const { dayPlaces, plans, pins, trip } = usePlannerState();
-  const names = usePlaceChoices();
+  const names = useKnownRegions();
   const [error, setError] = useState("");
 
   const dates = useMemo(() => tripDates(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);

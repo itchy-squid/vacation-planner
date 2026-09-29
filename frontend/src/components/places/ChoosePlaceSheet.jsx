@@ -1,13 +1,13 @@
 import BottomSheet from "../core/BottomSheet";
 import PlaceChips from "./PlaceChips";
-import { usePlaceChoices } from "./usePlaceChoices";
+import { useKnownRegions } from "../map/useKnownRegions";
 
 /**
  * Picks one place for several days at once ("Where we'll be" in Select):
  * the place they stay in, or a day trip to add. Picking closes it.
  */
 export default function ChoosePlaceSheet({ title, subtitle, kind, hint, onPick, onClose }) {
-  const names = usePlaceChoices();
+  const names = useKnownRegions();
   return (
     <BottomSheet label={title} onClose={onClose}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 18px 12px", borderBottom: "1px solid var(--hairline)", flex: "none" }}>

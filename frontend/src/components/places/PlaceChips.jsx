@@ -7,7 +7,7 @@ import { regionKey } from "../../lib/regions";
  * uses yet. `kind` is how a chosen chip looks: "stay" fills solid (one per
  * day), "visit" is dashed and numbered in order (day trips).
  *
- *   names      the places to offer (usePlaceChoices)
+ *   names      the places to offer (map/useKnownRegions)
  *   chosen     the chosen ones, in order
  *   isDisabled a place that can't be picked here, with why (a tooltip)
  *   onPick     a chip was tapped, or a new place was added
