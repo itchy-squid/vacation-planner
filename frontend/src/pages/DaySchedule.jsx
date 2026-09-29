@@ -7,7 +7,6 @@ import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
 import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
-import DayPlacesSheet from "../components/places/DayPlacesSheet";
 import { DayPlacesLine, DayTripDot, PlacesMismatch, StayBar } from "../components/places/DayPlacesLine";
 import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDates, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
@@ -153,7 +152,6 @@ export default function DaySchedule() {
   const today = placesOn(dayPlaces, dates[dayIndex - 1]);
   const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, trip.startDate, dayIndex), [plans, pins, trip.startDate, dayIndex]);
   const addSheetRegions = isSet(today) ? placeNames(today) : dayRegions;
-  const [placesOpenIndex, setPlacesOpenIndex] = useState(null);
   const addDayTrip = (region) => dispatch({ type: "SAVE_DAY_PLACES", days: { [dates[dayIndex - 1]]: withVisit(today, region) } });
 
   // Day strip marquee (unchanged behaviour from the original screen).
@@ -557,8 +555,6 @@ export default function DaySchedule() {
             day={today}
             previousStay={stayBefore(dayPlaces, dates, dayIndex - 1)}
             fallback={`Scheduling · ${region}`}
-            canEdit={canPlan && dates.length > 0}
-            onEdit={() => setPlacesOpenIndex(dayIndex - 1)}
             onAllDays={dates.length ? () => navigate(`/trips/${trip.id}/places`, { state: { fromDay: dayIndex } }) : null}
           />
           {/* Kept as this screen's heading: it's the day you're looking at,
@@ -968,14 +964,6 @@ export default function DaySchedule() {
           unplacedTravelItems={unplacedTravelItems}
           dayRegions={addSheetRegions}
           allTripRegions={allTripRegions}
-        />
-      )}
-
-      {placesOpenIndex != null && (
-        <DayPlacesSheet
-          index={placesOpenIndex}
-          onStep={setPlacesOpenIndex}
-          onClose={() => setPlacesOpenIndex(null)}
         />
       )}
 

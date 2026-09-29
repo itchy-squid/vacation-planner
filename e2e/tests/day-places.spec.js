@@ -3,14 +3,14 @@ import { dayUrl } from "../support/calendar.js";
 import { dayDate, dayPlacesOf, placePlan, setDayPlaces } from "../support/seed.js";
 
 // "Where we'll be" (backend routers/day_places.py): the place the group
-// stays in each day, plus any day trips. Set from the Plan tab's day
-// header or the whole-trip list, several days at once, and cleared with
-// Undo.
+// stays in each day, plus any day trips. Set from the whole-trip list
+// (reached from the Plan tab's "All days ›"), one day or several at once,
+// and cleared with Undo.
 const placesUrl = (trip) => `/trips/${trip.id}/places`;
 const dayRow = (page, day) => page.getByRole("button", { name: new RegExp(`^Day ${day},`) });
 
 test.describe("where we'll be", () => {
-  test("sets a day's stay and day trips from the Plan tab", async ({ page, api, seed }) => {
+  test("sets a day's stay and day trips via the Plan tab's All days", async ({ page, api, seed }) => {
     const trip = await seed({
       pins: [
         { title: "Yehliu Geopark", region: "North Coast" },
@@ -22,13 +22,18 @@ test.describe("where we'll be", () => {
     await placePlan(api, trip, { day: 2, from: "15:00", to: "17:00", pin: trip.pins["Jiufen Old Street"] });
     await page.goto(dayUrl(trip, 2));
 
-    await page.getByRole("button", { name: "Set places" }).click();
+    // Places are edited from "Where we'll be", not the day header.
+    await expect(page.getByRole("button", { name: /^(Set|Edit) places$/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "All days ›" }).click();
+    await dayRow(page, 2).click();
     const sheet = page.getByRole("dialog", { name: "Day 2 places" });
     await sheet.getByRole("group", { name: /Staying in/ }).getByRole("button", { name: "Taipei", exact: true }).click();
     await sheet.getByRole("group", { name: /Day trips/ }).getByRole("button", { name: "North Coast", exact: true }).click();
     // A day trip can't be to where you're staying.
     await expect(sheet.getByRole("group", { name: /Day trips/ }).getByRole("button", { name: "Taipei", exact: true })).toBeDisabled();
     await sheet.getByRole("button", { name: "Done" }).click();
+    // "‹ Plan" goes back to the day it came from.
+    await page.getByRole("button", { name: "‹ Plan" }).click();
 
     await expect(page.getByText("Staying in Taipei · Day trip to North Coast")).toBeVisible();
     // Jiufen is on the calendar but not one of the day's places.

@@ -4,33 +4,16 @@ import { describeDay, includesPlace, isSet, placeNames } from "../../lib/dayPlac
  * The Plan tab's line above the day title (pages/DaySchedule.jsx): the
  * places set for the day ("Staying in Taipei · Day trip to North Coast"),
  * or, when none are, what the calendar suggests (`fallback`, the old
- * "Scheduling · Taipei"). Planners get Edit / Set places; everyone gets
- * "All days", the whole trip in "Where we'll be".
+ * "Scheduling · Taipei"), and "All days", the whole trip in "Where we'll
+ * be", which is where places are set and edited.
  */
-export function DayPlacesLine({ day, previousStay, fallback, canEdit, onEdit, onAllDays }) {
+export function DayPlacesLine({ day, previousStay, fallback, onAllDays }) {
   const set = isSet(day);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div className="mono-caption" style={{ flex: 1, minWidth: 0, lineHeight: 1.4, color: set ? "var(--geo)" : undefined }}>
         {set ? describeDay(day, previousStay) : fallback}
       </div>
-      {canEdit ? (
-        <button
-          type="button"
-          onClick={onEdit}
-          style={{
-            flex: "none",
-            padding: "3px 10px",
-            borderRadius: "var(--radius-pill)",
-            border: "1px solid var(--border)",
-            background: "var(--surface-card)",
-            font: "600 11px var(--font-sans)",
-            color: "var(--accent)",
-          }}
-        >
-          {set ? "Edit places" : "Set places"}
-        </button>
-      ) : null}
       {onAllDays ? (
         <button type="button" onClick={onAllDays} style={{ flex: "none", font: "500 11.5px var(--font-sans)", color: "var(--accent)" }}>
           All days ›
