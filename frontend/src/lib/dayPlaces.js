@@ -2,16 +2,18 @@
 // (backend routers/day_places.py). A day has at most one place it's
 // staying in (where the group sleeps) and any number of day trips, in the
 // order they're gone to. Places are region names, matched like pins'
-// regions whatever the case (lib/regions.js regionKey).
+// regions whatever the case (lib/regions.js regionKey). A stay can also
+// name the idea the group sleeps at (`lodgingPinId`, the hotel), which is
+// where trips planned on the map start and end (lib/tripPlan.js).
 //
 // Everything here is pure: the page (pages/DayPlaces.jsx), the day sheet
 // (components/places/DayPlacesSheet.jsx) and the Plan tab
 // (pages/DaySchedule.jsx) all read and change days through it.
-import { parseISODate } from "./format";
-import { regionKey } from "./regions";
-import { plansOnDay } from "./dayGrid";
+import { parseISODate } from "./format.js";
+import { regionKey } from "./regionKey.js";
+import { plansOnDay } from "./dayGrid.js";
 
-export const NO_PLACES = Object.freeze({ stay: null, visits: Object.freeze([]) });
+export const NO_PLACES = Object.freeze({ stay: null, lodgingPinId: null, visits: Object.freeze([]) });
 
 /**
  * The ISO date ("YYYY-MM-DD") of each day of the trip, in order. A trip
@@ -50,19 +52,44 @@ export function includesPlace(names, name) {
   return names.some((n) => samePlace(n, name));
 }
 
-/** The day staying in `name` (null clears it). A day trip there is dropped. */
+/**
+ * The day staying in `name` (null clears it). A day trip there is dropped.
+ * The place it's staying at goes with a change of town, and stays when
+ * the town is the same.
+ */
 export function withStay(day, name) {
-  return { stay: name || null, visits: name ? day.visits.filter((v) => !samePlace(v, name)) : day.visits };
+  return {
+    stay: name || null,
+    lodgingPinId: name && samePlace(day.stay, name) ? day.lodgingPinId ?? null : null,
+    visits: name ? day.visits.filter((v) => !samePlace(v, name)) : day.visits,
+  };
+}
+
+/** The day staying at idea `pinId` (null clears it). Needs a stay. */
+export function withLodging(day, pinId) {
+  return { ...day, lodgingPinId: day.stay ? pinId ?? null : null };
 }
 
 /** Adds a day trip to the end, unless it's already there or it's the stay. */
 export function withVisit(day, name) {
   if (samePlace(day.stay, name) || includesPlace(day.visits, name)) return day;
-  return { stay: day.stay, visits: [...day.visits, name] };
+  return { ...day, visits: [...day.visits, name] };
 }
 
 export function withoutVisit(day, name) {
-  return { stay: day.stay, visits: day.visits.filter((v) => !samePlace(v, name)) };
+  return { ...day, visits: day.visits.filter((v) => !samePlace(v, name)) };
+}
+
+/**
+ * Where a trip on day `index` starts and ends: the lodging of the night
+ * before (that's where the group wakes up), else that day's, and that
+ * day's own lodging (where they sleep). Either is null when not set, and
+ * then the trip builder simply doesn't offer a hotel at that end.
+ */
+export function lodgingFor(dayPlaces, dates, index) {
+  const tonight = placesOn(dayPlaces, dates[index]).lodgingPinId ?? null;
+  const lastNight = index > 0 ? placesOn(dayPlaces, dates[index - 1]).lodgingPinId ?? null : null;
+  return { start: lastNight ?? tonight, end: tonight };
 }
 
 /**
@@ -122,10 +149,11 @@ export function joinNames(names) {
  * North Coast", or "Moving to Hualien from Taipei" on a moving day. Empty
  * for a day that isn't set.
  */
-export function describeDay(day, previousStay = null) {
+export function describeDay(day, previousStay = null, lodgingTitle = null) {
   const parts = [];
   if (day.stay) {
-    parts.push(previousStay && !samePlace(previousStay, day.stay) ? `Moving to ${day.stay} from ${previousStay}` : `Staying in ${day.stay}`);
+    const at = lodgingTitle ? ` at ${lodgingTitle}` : "";
+    parts.push(previousStay && !samePlace(previousStay, day.stay) ? `Moving to ${day.stay}${at} from ${previousStay}` : `Staying in ${day.stay}${at}`);
   }
   if (day.visits.length) parts.push(`Day trip to ${joinNames(day.visits)}`);
   return parts.join(" · ");

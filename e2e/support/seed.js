@@ -135,8 +135,9 @@ export async function plansOf(api, trip) {
   return ok(api.get(`/api/trips/${trip.id}/plans`), "list plans");
 }
 
-// "Where we'll be": { "2026-10-03": { stay, visits } } for the dates to set
-// (backend routers/day_places.py). dayDate(n) is day n's date.
+// "Where we'll be": { "2026-10-03": { stay, lodging, visits } } for the
+// dates to set (backend routers/day_places.py); `lodging` is the id of the
+// pin the group is staying at. dayDate(n) is day n's date.
 export function dayDate(day) {
   const d = new Date(`${TRIP_START}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + day - 1);
@@ -144,7 +145,12 @@ export function dayDate(day) {
 }
 
 export async function setDayPlaces(api, trip, days) {
-  const body = Object.entries(days).map(([date, day]) => ({ date, stay: day.stay ?? null, visits: day.visits ?? [] }));
+  const body = Object.entries(days).map(([date, day]) => ({
+    date,
+    stay: day.stay ?? null,
+    lodging_pin_id: day.lodging ?? null,
+    visits: day.visits ?? [],
+  }));
   return ok(api.put(`/api/trips/${trip.id}/day-places`, { data: { days: body } }), "set day places");
 }
 

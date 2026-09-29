@@ -118,10 +118,13 @@ function normalizeRegion(r) {
 }
 
 // Where the group is each day (backend routers/day_places.py), keyed in
-// state by ISO date: { stay: name | null, visits: [name, ...] }. Unset days
-// have no entry (lib/dayPlaces.js placesOn reads them as NO_PLACES).
+// state by ISO date: { stay: name | null, lodgingPinId: pin id | null,
+// visits: [name, ...] }. Unset days have no entry (lib/dayPlaces.js
+// placesOn reads them as NO_PLACES).
 function normalizeDayPlaces(list) {
-  return Object.fromEntries(list.map((d) => [d.date, { stay: d.stay ?? null, visits: d.visits ?? [] }]));
+  return Object.fromEntries(
+    list.map((d) => [d.date, { stay: d.stay ?? null, lodgingPinId: d.lodging_pin_id ?? null, visits: d.visits ?? [] }])
+  );
 }
 
 function normalizePin(p, contributorsById) {
@@ -175,6 +178,10 @@ function normalizeTravelItem(t, contributorsById) {
     tripId: t.trip_id,
     title: t.title,
     kind: t.kind,
+    // How a ride planned on the Map tab goes ("car" | "bus" | "train" |
+    // "walk"), and how far; null for anything typed in by hand.
+    mode: t.mode ?? null,
+    distanceMeters: t.distance_meters ?? null,
     dur: t.duration_minutes,
     cost: dollarsOrNull(t.cost_cents),
     costCents: t.cost_cents ?? null,
@@ -193,6 +200,7 @@ function normalizePlanItem(it) {
     pinId: it.pin?.id ?? null,
     travelItemId: it.travel_item?.id ?? null,
     title: source?.title ?? "Untitled",
+    mode: it.travel_item?.mode ?? null,
     // What this placement is actually as long as — the trim if there is
     // one, the item's own duration otherwise. Same resolution order as
     // backend/app/derive.py's item_duration.
@@ -1111,6 +1119,45 @@ export function PlannerProvider({ children }) {
           }
         }
 
+        // A trip planned on the Map tab (pages/PlanTrip.jsx, lib/tripPlan.js).
+        // Its rides are made first, as travel items, because every way of
+        // putting the trip on the calendar refers to them by id:
+        //   as "rides"    each ride placed straight on the calendar
+        //   as "proposal" one block of stops and rides, sent to a vote
+        //   as "draft"    the same block, kept private
+        // `body(rideIds)` builds what's sent — a list of placements for
+        // "rides", one block otherwise. If any step fails, whatever this
+        // made is taken back off, so a half-added trip never lingers.
+        case "SUBMIT_TRIP": {
+          if (!state.trip) return { ok: false };
+          const tripId = state.trip.id;
+          const rideIds = [];
+          const planIds = [];
+          try {
+            for (const ride of action.rides) rideIds.push((await api.createTravelItem(tripId, ride)).id);
+            const body = action.body(rideIds);
+            let contestId = null;
+            if (action.as === "rides") {
+              for (const placement of body) planIds.push((await api.createPlan(tripId, placement)).id);
+            } else if (action.as === "draft") {
+              planIds.push((await api.createPlan(tripId, { ...body, status: "draft" })).id);
+            } else {
+              contestId = (await api.proposeBlock(tripId, body)).id;
+            }
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, contestId };
+          } catch (err) {
+            // Plans first: a ride can't be deleted while a plan holds it.
+            for (const id of planIds) await api.deletePlan(id).catch(() => {});
+            for (const id of rideIds) await api.deleteTravelItem(id).catch(() => {});
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" }).catch(() => {});
+            const conflict = proposalConflict(err);
+            if (conflict) return { ok: false, ...conflict, error: conflict.message };
+            console.error("submit trip failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
         case "CREATE_TRAVEL_ITEM": {
           const created = await api.createTravelItem(state.trip.id, action.payload);
           const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
@@ -1262,7 +1309,12 @@ export function PlannerProvider({ children }) {
           try {
             const saved = await api.putDayPlaces(
               tripId,
-              Object.entries(action.days).map(([date, day]) => ({ date, stay: day?.stay ?? null, visits: day?.visits ?? [] }))
+              Object.entries(action.days).map(([date, day]) => ({
+                date,
+                stay: day?.stay ?? null,
+                lodging_pin_id: day?.stay ? day?.lodgingPinId ?? null : null,
+                visits: day?.visits ?? [],
+              }))
             );
             if (saveId === daySaveCounter.current) dispatch({ type: "APPLY_DAY_PLACES", all: normalizeDayPlaces(saved) });
             return { ok: true, previous };

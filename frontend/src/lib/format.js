@@ -65,3 +65,12 @@ export function formatDateRange(startDate, endDate) {
   }
   return `${formatOneDate(start)} – ${formatOneDate(end)}`;
 }
+
+/** "45m", "2h", "1h 5m": a length of time in minutes, as the calendar says it. */
+export function formatDuration(minutes) {
+  const total = Math.max(0, Math.round(minutes ?? 0));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}

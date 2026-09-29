@@ -8,6 +8,7 @@ import TripSettings from "./pages/TripSettings";
 import PinBoard from "./pages/PinBoard";
 import TripMap from "./pages/TripMap";
 import LinkReview from "./pages/LinkReview";
+import PlanTrip from "./pages/PlanTrip";
 import DaySchedule from "./pages/DaySchedule";
 import DayPlaces from "./pages/DayPlaces";
 import CompareSets from "./pages/CompareSets";
@@ -87,6 +88,16 @@ function AppRoutes() {
         element={
           <RequireScope scope="ideas:add">
             <LinkReview />
+          </RequireScope>
+        }
+      />
+      {/* Planning a trip between places on the map: rides straight onto
+          the calendar, or a proposal. Its own ‹ Map, so no tab bar. */}
+      <Route
+        path="/trips/:tripId/map/trip"
+        element={
+          <RequireScope scope="plans:propose">
+            <PlanTrip />
           </RequireScope>
         }
       />

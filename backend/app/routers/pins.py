@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import photo_storage
 from ..db import SessionLocal, get_db
 from ..events import bus
-from ..models import AvailabilityOverride, AvailabilityRule, Pin, PinHeart, PlanItem
+from ..models import AvailabilityOverride, AvailabilityRule, Pin, PinHeart, PlanItem, TripDayPlace
 from ..permissions import IDEAS_ADD, IDEAS_READ, VOTES_WRITE, Access, require
 from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import (
@@ -150,9 +150,17 @@ def delete_pin(pin_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Se
         raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, referenced, "pin"))
 
     trip_id = pin.trip_id
+    # The days staying at it lose their place to stay at, but keep the
+    # town. Done here rather than left to the foreign key's SET NULL, which
+    # SQLite only honours with foreign keys switched on.
+    lodging_days = db.scalars(select(TripDayPlace).where(TripDayPlace.pin_id == pin_id)).all()
+    for stay in lodging_days:
+        stay.pin_id = None
     db.delete(pin)
     db.commit()
     bus.publish(trip_id, "pin.removed", {"pin_id": pin_id})
+    if lodging_days:
+        bus.publish(trip_id, "day_places.updated", {"dates": sorted({d.date.isoformat() for d in lodging_days})})
     return None
 
 

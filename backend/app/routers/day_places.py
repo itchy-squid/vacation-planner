@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..events import bus
-from ..models import Trip, TripDayPlace
+from ..models import Pin, Trip, TripDayPlace
 from ..permissions import PLANS_READ, PLANS_WRITE, Access, require
 from ..schemas import DayPlaces, DayPlacesUpdate
 from .regions import region_key
@@ -38,6 +38,7 @@ def _days_of(db: Session, trip_id: int) -> list[DayPlaces]:
         day = by_date.setdefault(row.date, DayPlaces(date=row.date))
         if row.kind == STAY:
             day.stay = row.name
+            day.lodging_pin_id = row.pin_id
         else:
             day.visits.append(row.name)
     return list(by_date.values())
@@ -69,11 +70,17 @@ def set_day_places(
             detail=f"{outside[0].isoformat()} isn't one of the trip's days ({first.isoformat()} to {last.isoformat()})",
         )
 
+    for day in payload.days:
+        if day.lodging_pin_id is not None:
+            _ensure_lodging(db, trip_id, day.lodging_pin_id)
+
     dates = [day.date for day in payload.days]
     db.execute(delete(TripDayPlace).where(TripDayPlace.trip_id == trip_id, TripDayPlace.date.in_(dates)))
     for day in payload.days:
         if day.stay is not None:
-            db.add(_row(trip_id, day.date, day.stay, STAY, 0))
+            stay = _row(trip_id, day.date, day.stay, STAY, 0)
+            stay.pin_id = day.lodging_pin_id
+            db.add(stay)
         for position, name in enumerate(day.visits, start=1):
             db.add(_row(trip_id, day.date, name, VISIT, position))
     db.commit()
@@ -83,3 +90,15 @@ def set_day_places(
 
 def _row(trip_id: int, on: date, name: str, kind: str, position: int) -> TripDayPlace:
     return TripDayPlace(trip_id=trip_id, date=on, name=name, name_key=region_key(name), kind=kind, position=position)
+
+
+def _ensure_lodging(db: Session, trip_id: int, pin_id: int) -> None:
+    """The place a day is staying at has to be one of this trip's ideas,
+    and one with an exact spot: a trip from the map starts and ends there,
+    and a route needs somewhere to start from. An idea on another trip is
+    refused the same way as one that doesn't exist."""
+    pin = db.get(Pin, pin_id)
+    if pin is None or pin.trip_id != trip_id:
+        raise HTTPException(status_code=422, detail="That place isn't one of this trip's ideas")
+    if pin.lat is None or pin.lng is None:
+        raise HTTPException(status_code=422, detail=f"Pin {pin.title} on the map before staying there")

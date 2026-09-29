@@ -185,6 +185,7 @@ class TripDayPlace(Base):
         UniqueConstraint("trip_id", "date", "name_key", name="uq_trip_day_place_name"),
         CheckConstraint("kind IN ('stay', 'visit')", name="ck_trip_day_place_kind"),
         CheckConstraint("(kind = 'stay') = (position = 0)", name="ck_trip_day_place_stay_first"),
+        CheckConstraint("pin_id IS NULL OR kind = 'stay'", name="ck_trip_day_place_lodging_on_stay"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -194,6 +195,12 @@ class TripDayPlace(Base):
     name_key: Mapped[str] = mapped_column(String(120))
     kind: Mapped[str] = mapped_column(String(8))
     position: Mapped[int] = mapped_column(Integer)
+    # The idea the group is staying at that night — the hotel — on the
+    # stay row only. It's where a trip planned from the map starts and
+    # ends (frontend lib/tripPlan.js), so it has to be an exact spot, not
+    # just the town the stay names. Deleting the idea clears it
+    # (routers/pins.py delete_pin; SET NULL is the backstop).
+    pin_id: Mapped[int | None] = mapped_column(ForeignKey("pins.id", ondelete="SET NULL"), nullable=True)
 
     trip: Mapped[Trip] = relationship(back_populates="day_places")
 
@@ -388,6 +395,13 @@ class TravelItem(Base):
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")  # as Pin.cost_basis
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
+    # A ride planned between two places from the Map tab's trip builder
+    # (car/bus/train/walk — schemas.py TravelMode). NULL for everything
+    # typed in by hand. Only a "travel" item has one; `distance_meters` is
+    # the route's length as Google measured it, kept so a ride can say how
+    # far it goes without asking Google again.
+    mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    distance_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
     added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

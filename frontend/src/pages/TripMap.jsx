@@ -10,7 +10,7 @@ import { useKnownRegions } from "../components/map/useKnownRegions";
 import FindOnGoogle from "../components/newpin/FindOnGoogle";
 import TripHeader from "../components/core/TripHeader";
 import Button from "../components/core/Button";
-import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useIdeaAccess, useCan } from "../state/PlannerContext";
 import { areaQueriesForTrip } from "../lib/mapArea";
 import { regionKey } from "../lib/regions";
 import { otherTripRegion } from "../lib/places";
@@ -44,6 +44,9 @@ export default function TripMap() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
   const ideaAccess = useIdeaAccess();
+  const can = useCan();
+  // Trips between places end up on the calendar or in a vote.
+  const canPlanTrips = can("plans:propose");
   const { trip, pins, regions } = usePlannerState();
   const pinList = useMemo(() => Object.values(pins), [pins]);
 
@@ -274,9 +277,16 @@ export default function TripMap() {
                   </button>
                 </div>
               ) : null}
-              <Button variant="secondary" size="sm" onClick={() => openIdea(selectedPin)}>
-                Open idea
-              </Button>
+              <div style={{ display: "flex", gap: 8 }}>
+                {canPlanTrips && selectedPin.lat != null ? (
+                  <Button size="sm" onClick={() => navigate(`/trips/${trip.id}/map/trip?to=${selectedPin.id}`)}>
+                    Directions
+                  </Button>
+                ) : null}
+                <Button variant="secondary" size="sm" onClick={() => openIdea(selectedPin)}>
+                  Open idea
+                </Button>
+              </div>
             </>
           ) : (
             <>
@@ -289,6 +299,11 @@ export default function TripMap() {
                     ? summary(exact.length, areas.length ? pinList.length - unplaced - exact.length : 0, unplaced)
                     : "Ideas you add show up here, at their spot or in their region.")}
               </SheetText>
+              {canPlanTrips && exact.length > 1 ? (
+                <Button size="sm" onClick={() => navigate(`/trips/${trip.id}/map/trip`)}>
+                  Plan a trip
+                </Button>
+              ) : null}
               {reviewable ? (
                 <Button variant="secondary" size="sm" onClick={() => navigate(`/trips/${trip.id}/map/review`)}>
                   {reviewable === 1 ? "1 idea might be on Google Maps · Review" : `${reviewable} ideas might be on Google Maps · Review`}
