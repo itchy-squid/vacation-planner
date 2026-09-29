@@ -148,14 +148,15 @@ def test_moving_a_groups_plan_only_meets_its_own_group(client, trip):
     assert out_of_split.status_code == 409
 
 
-def test_unplacing_a_groups_plan_removes_it_and_keeps_the_group(client, trip, db):
+def test_unplacing_a_groups_plan_removes_it_and_keeps_the_group_and_event(client, trip, db):
     gorge, _ = trip.split(("ana", "lin"), ("mei", "jae"), start=480, end=720)
     ferry = trip.place(start=540, end=720, travel_item="ferry", branch=gorge)
     ferry_id, item_id, gorge_id = ferry.id, trip.travel_items["ferry"].id, gorge.id
     assert client.delete(f"/api/plans/{ferry_id}", headers=MEI).status_code == 204
     reload(db)
     assert db.get(Plan, ferry_id) is None
-    assert db.get(TravelItem, item_id) is None
+    # The event goes back to the unplaced list, like a pin.
+    assert db.get(TravelItem, item_id) is not None
     # The group is still there to plan for again.
     assert db.get(SplitBranch, gorge_id) is not None
     assert place(client, trip, start=540, end=720, pin="tide", branch=db.get(SplitBranch, gorge_id)).status_code == 201
