@@ -64,10 +64,13 @@ tab says the map isn't switched on. See "Google Maps" below.
 The frontend needs a **browser key** baked in at build time:
 
 1. In Google Cloud, enable the **Maps JavaScript API**, the **Geocoding
-   API** and **Places API (New)** on a project with billing. Places is the
-   search behind adding a pin (`frontend/src/lib/places.js`); without it
-   the search says it isn't working, and adding by hand still works.
-2. Create an API key. Restrict it to those three APIs, and to HTTP referrers:
+   API**, **Places API (New)** and the **Routes API** on a project with
+   billing. Places is the search behind adding a pin
+   (`frontend/src/lib/places.js`); without it the search says it isn't
+   working, and adding by hand still works. Routes times the rides in a
+   trip planned from the Map tab (`frontend/src/lib/routeEstimates.js`);
+   without it each ride says it couldn't get times from Google.
+2. Create an API key. Restrict it to those four APIs, and to HTTP referrers:
    `http://localhost:5173/*` plus each environment's frontend URL (e.g.
    `https://vacations.dev.amandasanti.com/*`). The key ships in the built
    JS, as every Maps JS key does, so these restrictions are what protect it.

@@ -163,6 +163,7 @@ export default function DayPlaces() {
                 run={stayRun(dayPlaces, dates, i)}
                 timeline={timelineAt(dayPlaces, dates, i)}
                 previousStay={stayBefore(dayPlaces, dates, i)}
+                lodging={pins[placesOn(dayPlaces, date).lodgingPinId]?.title ?? null}
                 suggestion={suggestions[i]}
                 canEdit={canEdit}
                 selecting={selecting}
@@ -225,9 +226,9 @@ export default function DayPlaces() {
   );
 }
 
-function DayRow({ number, label, title, day, run, timeline, previousStay, suggestion, canEdit, selecting, selected, onOpen, onUse }) {
+function DayRow({ number, label, title, day, run, timeline, previousStay, lodging, suggestion, canEdit, selecting, selected, onOpen, onUse }) {
   const set = isSet(day);
-  const summary = set ? describeDay(day, previousStay) : "Not set";
+  const summary = set ? describeDay(day, previousStay, lodging) : "Not set";
   const offerUse = canEdit && !selecting && !set && suggestion.length > 0;
   const Main = canEdit ? "button" : "div";
 
@@ -251,6 +252,7 @@ function DayRow({ number, label, title, day, run, timeline, previousStay, sugges
             </span>
           ) : null}
           {day.stay ? <span style={{ font: "600 13.5px var(--font-sans)", color: "var(--text-primary)" }}>{day.stay}</span> : null}
+          {day.stay && lodging ? <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)" }}>at {lodging}</span> : null}
           {day.visits.map((v) => (
             <span key={v} style={visitChip}>
               + {v}

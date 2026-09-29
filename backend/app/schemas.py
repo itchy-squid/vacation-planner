@@ -392,6 +392,9 @@ class DayPlaces(BaseModel):
 
     date: date
     stay: PlaceName | None = None
+    # The idea the group is staying at that night (the hotel), when one
+    # has been picked. Only a day with a stay can have one.
+    lodging_pin_id: int | None = None
     visits: list[PlaceName] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")
@@ -401,6 +404,8 @@ class DayPlaces(BaseModel):
             raise ValueError("A day trip is listed twice")
         if self.stay is not None and self.stay.lower() in keys:
             raise ValueError("A day can't have a day trip to where it's staying")
+        if self.lodging_pin_id is not None and self.stay is None:
+            raise ValueError("Say where you're staying before choosing the place you're staying at")
         return self
 
 
@@ -490,6 +495,14 @@ class AvailabilityOverrideToggle(BaseModel):
 # event form writes.
 TravelItemKind = Literal["travel", "lodging", "other"]
 
+# How a ride planned on the Map tab gets there (models.py TravelItem.mode).
+TravelMode = Literal["car", "bus", "train", "walk"]
+
+
+def _mode_needs_travel(kind: str | None, mode: str | None) -> None:
+    if mode is not None and kind is not None and kind != "travel":
+        raise ValueError("Only a travel item can have a travel mode")
+
 
 class TravelItemCreate(BaseModel):
     title: str
@@ -499,9 +512,20 @@ class TravelItemCreate(BaseModel):
     cost_basis: CostBasis = "per_head"
     notes: str = ""
     link: WebLink = ""
+    mode: TravelMode | None = None
+    distance_meters: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _mode_only_on_travel(self) -> "TravelItemCreate":
+        _mode_needs_travel(self.kind, self.mode)
+        return self
 
 
 class TravelItemUpdate(BaseModel):
+    """A mode can't be set here without the kind: which kind the item
+    already is lives in the database, so routers/travel_items.py checks
+    the pair once the two are merged."""
+
     title: str | None = None
     kind: TravelItemKind | None = None
     duration_minutes: int | None = None
@@ -509,6 +533,8 @@ class TravelItemUpdate(BaseModel):
     cost_basis: CostBasis | None = None
     notes: str | None = None
     link: WebLink | None = None
+    mode: TravelMode | None = None
+    distance_meters: int | None = Field(default=None, ge=0)
 
 
 class TravelItemOut(BaseModel):
@@ -522,6 +548,8 @@ class TravelItemOut(BaseModel):
     cost_basis: str = "per_head"
     notes: str
     link: str
+    mode: str | None = None
+    distance_meters: int | None = None
     added_by_id: int | None
     added_at: datetime
 

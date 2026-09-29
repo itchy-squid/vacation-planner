@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import BottomSheet from "../core/BottomSheet";
 import PlaceChips from "./PlaceChips";
+import LodgingChips from "./LodgingChips";
 import { useKnownRegions } from "../map/useKnownRegions";
 import { usePlannerDispatch, usePlannerState } from "../../state/PlannerContext";
 import { tripDayTitle } from "../../data/trip";
@@ -14,6 +15,7 @@ import {
   samePlace,
   stayRun,
   tripDates,
+  withLodging,
   withStay,
   withVisit,
   withoutVisit,
@@ -92,6 +94,15 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
           ) : null}
           {movedFrom ? <Note>Day {index} was in {movedFrom}, so this is a moving day.</Note> : null}
         </div>
+
+        {day.stay ? (
+          <LodgingChips
+            day={day}
+            pins={pins}
+            lastNight={samePlace(yesterday.stay, day.stay) ? pins[yesterday.lodgingPinId] ?? null : null}
+            onPick={(pinId) => save(withLodging(day, pinId))}
+          />
+        ) : null}
 
         <PlaceChips
           label="Day trips"

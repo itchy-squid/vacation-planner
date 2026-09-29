@@ -47,8 +47,16 @@ def update_travel_item(
     access.ensure_may_edit_idea(item.added_by_id)
     fields = payload.model_dump(exclude_unset=True)
     ensure_may_set_costs(access, fields, item.added_by_id)
+    kind = fields.get("kind", item.kind)
+    if fields.get("mode") is not None and kind != "travel":
+        raise HTTPException(status_code=422, detail="Only a travel item can have a travel mode")
     for field, value in fields.items():
         setattr(item, field, value)
+    if item.kind != "travel":
+        # A ride turned into something else isn't a ride any more: how it
+        # got there and how far it went no longer describe it.
+        item.mode = None
+        item.distance_meters = None
     db.commit()
     db.refresh(item)
     bus.publish(item.trip_id, "travel_item.updated", {"travel_item_id": item.id})
