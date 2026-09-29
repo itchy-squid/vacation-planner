@@ -1,4 +1,4 @@
-import { parseISODate } from "./format";
+import { parseISODate } from "./format.js";
 
 // Plan.starts_at/ends_at come back from the API as ISO datetimes, but
 // they're not real UTC instants — the backend has nowhere to store a

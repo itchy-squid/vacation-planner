@@ -17,8 +17,8 @@
 // refusing it, so the grid feels like it's holding the edge for you
 // (feature spec §6.5).
 
-import { DAY_END_MIN, DAY_START_MIN } from "./dayGrid";
-import { splitAt } from "./splits";
+import { DAY_END_MIN, DAY_START_MIN } from "./dayGrid.js";
+import { splitAt } from "./splits.js";
 
 // Which group a drag starting at `anchorMin` is for. Outside any split it's
 // everyone. Inside one it's `preferredBranchId` if that group is part of
@@ -68,6 +68,15 @@ export function clipFromAnchor(anchor, moving, bounds) {
     else lo = Math.max(lo, span.end);
   }
   return { startMin: lo, endMin: Math.max(lo, hi) };
+}
+
+// How much a tap claims. On a touch screen a swipe over the grid scrolls
+// it, so a tap is how a claim starts there: an hour from the tapped slot,
+// clipped like any drag, and then the handles set it exactly.
+export const TAP_CLAIM_MIN = 60;
+
+export function claimFromTap(minute, bounds, lengthMin = TAP_CLAIM_MIN) {
+  return clipFromAnchor(minute, minute + lengthMin, bounds);
 }
 
 // An existing selection re-fitted to another group's limits (switching

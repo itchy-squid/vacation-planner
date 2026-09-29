@@ -10,7 +10,7 @@
 // "where this bundle's chrome differs from the real app, the real app
 // wins" rule, the app's gutter is what stays.
 
-import { dayIndexForDate } from "./planTime";
+import { dayIndexForDate } from "./planTime.js";
 
 export const PX_PER_MIN = 1;
 export const DAY_START_MIN = 0; // 00:00 — the grid always shows the full midnight-to-midnight day

@@ -96,3 +96,21 @@ export async function openPlan(page, title) {
 export function dayUrl(trip, day = 1) {
   return `/trips/${trip.id}/schedule/${day}`;
 }
+
+// A finger on the screen, for the touch-only gestures (a swipe that
+// scrolls, a handle held at the pane's edge). Playwright's page.mouse
+// sends mouse pointers even on a touch device, and page.touchscreen only
+// taps, so this drives Chromium's touch input directly. Moves in steps,
+// then holds at the end for `holdMs` before lifting.
+export async function touchDrag(page, from, to, { steps = 10, holdMs = 0 } = {}) {
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  await touch("touchStart", [from]);
+  for (let i = 1; i <= steps; i++) {
+    await touch("touchMove", [{ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps }]);
+    await page.waitForTimeout(16);
+  }
+  if (holdMs) await page.waitForTimeout(holdMs);
+  await touch("touchEnd", []);
+  await cdp.detach();
+}

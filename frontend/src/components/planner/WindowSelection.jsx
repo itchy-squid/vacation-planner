@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import DayGrid from "./DayGrid";
 import { clockLabel } from "../../lib/planTime";
 import { fmtMin } from "../../data/derive";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
+  DRAG_THRESHOLD_PX,
   clampToDay,
   layoutDayPlans,
   minuteFromOffsetY,
@@ -14,7 +15,12 @@ import {
   topForMinute,
 } from "../../lib/dayGrid";
 import { branchName } from "../../lib/splits";
-import { claimBounds, clipFromAnchor, scopeForAnchor } from "../../lib/windowClaim";
+import { claimBounds, claimFromTap, clipFromAnchor, scopeForAnchor } from "../../lib/windowClaim";
+import { edgeScrollStep, scrollParentOf } from "../../lib/edgeAutoScroll";
+
+// Where the grid opens when there's nothing claimed and nothing planned:
+// the grid runs from midnight, and the small hours are rarely the point.
+const DEFAULT_FIRST_HOUR_MIN = 8 * 60;
 
 // Step 2 of the proposal flow: drag over the hours your plan should
 // replace. Renders the real calendar grid (components/planner/DayGrid.jsx)
@@ -35,6 +41,13 @@ import { claimBounds, clipFromAnchor, scopeForAnchor } from "../../lib/windowCla
 // (the ferry, the handoff's gangway times), and the whole "stops pack end
 // to end inside the block" guarantee depends on there being nothing
 // immovable in the middle of the window (feature spec §6.5).
+//
+// On a touch screen the grid is much taller than the screen, so a swipe
+// over it scrolls (touch-action: pan-y) rather than claiming hours: a tap
+// claims an hour from the tapped slot (lib/windowClaim.js claimFromTap),
+// and the handles set the edges. Holding a handle — or, with a mouse,
+// a drag — near the top or bottom of the scrolling pane scrolls it, so
+// a claim can reach hours that start off-screen (lib/edgeAutoScroll.js).
 export default function WindowSelection({
   dayEntries,
   daySplits,
@@ -46,8 +59,12 @@ export default function WindowSelection({
   contestWindows,
 }) {
   const surfaceRef = useRef(null);
-  const dragRef = useRef(null); // { anchorMin, mode: "new" | "start" | "end", branchId, bounds }
+  const dragRef = useRef(null); // { anchorMin, mode: "new" | "start" | "end", branchId, bounds, clientY }
+  const tapRef = useRef(null); // { pointerId, clientX, clientY } — a touch on the grid that may yet be a tap
   const [dragging, setDragging] = useState(false);
+  // The auto-scroll loop outlives the render that started it.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const lanes = useMemo(() => splitLanes(daySplits), [daySplits]);
   const laidOut = useMemo(() => layoutDayPlans(dayEntries, lanes), [dayEntries, lanes]);
@@ -61,6 +78,12 @@ export default function WindowSelection({
 
   function beginDrag(e, mode) {
     if (e.button != null && e.button !== 0) return;
+    if (mode === "new" && e.pointerType !== "mouse") {
+      // Not yet a claim: if the finger moves, the browser scrolls the grid
+      // and cancels this pointer; if it lifts in place, it was a tap.
+      tapRef.current = { pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY };
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     const minute = minuteAt(e.clientY);
@@ -69,25 +92,86 @@ export default function WindowSelection({
     // of the selection keeps the audience it already has.
     const scope = mode === "new" ? scopeForAnchor(daySplits, minute, branchId, myTravelerId) : branchId;
     const bounds = claimBounds(dayEntries, daySplits, scope);
-    dragRef.current = { anchorMin: anchor, mode, branchId: scope, bounds };
+    dragRef.current = { anchorMin: anchor, mode, branchId: scope, bounds, clientY: e.clientY };
     setDragging(true);
     e.currentTarget.setPointerCapture?.(e.pointerId);
     if (mode === "new") onChange(clipFromAnchor(anchor, minute, bounds), scope);
   }
 
   function moveDrag(e) {
+    const tap = tapRef.current;
+    if (tap && tap.pointerId === e.pointerId) {
+      const moved = Math.hypot(e.clientX - tap.clientX, e.clientY - tap.clientY);
+      if (moved >= DRAG_THRESHOLD_PX) tapRef.current = null;
+      return;
+    }
     const info = dragRef.current;
     if (!info) return;
     e.preventDefault();
+    info.clientY = e.clientY;
     onChange(clipFromAnchor(info.anchorMin, minuteAt(e.clientY), info.bounds), info.branchId);
   }
 
   function endDrag(e) {
+    const tap = tapRef.current;
+    if (tap && tap.pointerId === e.pointerId) {
+      tapRef.current = null;
+      const minute = minuteAt(tap.clientY);
+      const scope = scopeForAnchor(daySplits, minute, branchId, myTravelerId);
+      onChange(claimFromTap(minute, claimBounds(dayEntries, daySplits, scope)), scope);
+      return;
+    }
     if (!dragRef.current) return;
     dragRef.current = null;
     setDragging(false);
     e.currentTarget.releasePointerCapture?.(e.pointerId);
   }
+
+  // The browser took the gesture (a swipe became a scroll): nothing is
+  // claimed, and a drag already under way keeps what it had.
+  function cancelDrag(e) {
+    if (tapRef.current?.pointerId === e.pointerId) {
+      tapRef.current = null;
+      return;
+    }
+    endDrag(e);
+  }
+
+  // Edge auto-scroll while a drag or handle is held. Each frame: scroll
+  // the pane if the pointer is near its edge, then re-read the minute
+  // under the (unmoved) pointer, since the grid moved beneath it.
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const scroller = scrollParentOf(surfaceRef.current);
+    if (!scroller) return undefined;
+    let frame = window.requestAnimationFrame(function tick() {
+      const info = dragRef.current;
+      if (info) {
+        const pane = scroller.getBoundingClientRect();
+        const step = edgeScrollStep(info.clientY, pane.top, pane.bottom);
+        const before = scroller.scrollTop;
+        if (step !== 0) scroller.scrollTop = before + step;
+        if (scroller.scrollTop !== before) {
+          onChangeRef.current(clipFromAnchor(info.anchorMin, minuteAt(info.clientY), info.bounds), info.branchId);
+        }
+      }
+      frame = window.requestAnimationFrame(tick);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [dragging]);
+
+  // Open on the hours that matter: the claim if there is one, else the
+  // day's first plan, else the morning. Once, before first paint.
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    const scroller = scrollParentOf(surface);
+    if (!surface || !scroller) return;
+    const firstPlan = dayEntries.reduce((m, e) => Math.min(m, Math.max(e.startMin, DAY_START_MIN)), Infinity);
+    const minute = selection ? selection.startMin : Number.isFinite(firstPlan) ? firstPlan : DEFAULT_FIRST_HOUR_MIN;
+    const offset = surface.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTop += offset + topForMinute(minute) - 24;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const hasSelection = selection && selection.endMin > selection.startMin;
   const selectionMinutes = hasSelection ? selection.endMin - selection.startMin : 0;
@@ -101,8 +185,8 @@ export default function WindowSelection({
       onPointerDown={(e) => beginDrag(e, "new")}
       onPointerMove={moveDrag}
       onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      surfaceStyle={{ touchAction: "none" }}
+      onPointerCancel={cancelDrag}
+      surfaceStyle={{ touchAction: "pan-y" }}
     >
       {/* Each group's lane over its split's hours, named, with the lane
           this block is for picked out. */}
@@ -265,14 +349,14 @@ export default function WindowSelection({
             onPointerDown={(e) => beginDrag(e, "start")}
             onPointerMove={moveDrag}
             onPointerUp={endDrag}
-            onPointerCancel={endDrag}
+            onPointerCancel={cancelDrag}
           />
           <Handle
             position="end"
             onPointerDown={(e) => beginDrag(e, "end")}
             onPointerMove={moveDrag}
             onPointerUp={endDrag}
-            onPointerCancel={endDrag}
+            onPointerCancel={cancelDrag}
           />
         </div>
       )}
@@ -280,8 +364,13 @@ export default function WindowSelection({
   );
 }
 
+// The dot is 18px; the thing a finger has to land on is the app's minimum
+// hit target, centred on it.
+const HANDLE_DOT_PX = 18;
+
 function Handle({ position, ...handlers }) {
   const isStart = position === "start";
+  const inset = `calc(var(--hit-min) / -2)`;
   return (
     <div
       role="slider"
@@ -290,18 +379,32 @@ function Handle({ position, ...handlers }) {
       aria-valuemax={DAY_END_MIN}
       style={{
         position: "absolute",
-        [isStart ? "top" : "bottom"]: -9,
-        [isStart ? "left" : "right"]: -9,
-        width: 18,
-        height: 18,
-        borderRadius: "50%",
-        background: "var(--surface-card)",
-        border: "3px solid var(--accent)",
+        [isStart ? "top" : "bottom"]: inset,
+        [isStart ? "left" : "right"]: inset,
+        width: "var(--hit-min)",
+        height: "var(--hit-min)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         cursor: "ns-resize",
         touchAction: "none",
+        zIndex: 1,
       }}
       {...handlers}
-    />
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: HANDLE_DOT_PX,
+          height: HANDLE_DOT_PX,
+          boxSizing: "border-box",
+          borderRadius: "50%",
+          background: "var(--surface-card)",
+          border: "3px solid var(--accent)",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
   );
 }
 

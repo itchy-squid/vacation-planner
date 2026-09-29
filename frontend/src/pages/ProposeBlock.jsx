@@ -1071,6 +1071,10 @@ function ModalHeader({ left, title, right }) {
   );
 }
 
+// Whether the main input is a finger rather than a mouse — read once; it
+// only picks the wording of step 2's instruction.
+const COARSE_POINTER = typeof window !== "undefined" && Boolean(window.matchMedia?.("(pointer: coarse)").matches);
+
 function StepTwo({
   dayLabel,
   tripDays,
@@ -1105,7 +1109,12 @@ function StepTwo({
       />
       <div style={{ flex: "none", padding: "0 var(--gutter-text) 10px" }}>
         <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)" }}>
-          Drag over the hours your plan should replace.
+          {/* A swipe scrolls the grid on a touch screen, so there a
+              claim starts with a tap (components/planner/
+              WindowSelection.jsx). */}
+          {COARSE_POINTER
+            ? "Tap the hour your plan should start, then drag the handles to set its hours."
+            : "Drag over the hours your plan should replace."}
         </div>
         {/* The day strip repeats, disabled: a proposal is one day, and
             showing where you are without offering to move is clearer than
