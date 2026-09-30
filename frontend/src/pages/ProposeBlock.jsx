@@ -79,6 +79,8 @@ const DISCARD_EDITS_PROMPT = {
 
 const STOP_STEP_MIN = 15;
 const MIN_STOP_MIN = 15;
+// How long "Withdraw this proposal" stays armed for its second tap.
+const WITHDRAW_CONFIRM_WINDOW_MS = 3000;
 
 let stopKeySeed = 0;
 function nextStopKey() {
@@ -868,6 +870,9 @@ export default function ProposeBlock() {
             setError("");
             setStep(4);
           }}
+          editing={editing}
+          votesAtStake={editedOption?.vote_count ?? 0}
+          onWithdraw={withdraw}
         />
       )}
 
@@ -906,7 +911,6 @@ export default function ProposeBlock() {
           onBack={() => setStep(3)}
           onSaveDraft={saveDraft}
           onDiscardDraft={discardDraft}
-          onWithdraw={withdraw}
           onSend={sendToVote}
         />
       )}
@@ -1339,7 +1343,30 @@ function StepThree({
   error,
   canReview,
   onReview,
+  editing = false,
+  votesAtStake = 0,
+  onWithdraw,
 }) {
+  // Abandoning a set you proposed: tap once to arm, again within
+  // WITHDRAW_CONFIRM_WINDOW_MS to withdraw — the same double-tap the
+  // plan sheet's "Delete permanently" uses. Offered here, on the screen
+  // "Edit this set" opens, so it is found without walking through Review.
+  const [withdrawArmed, setWithdrawArmed] = useState(false);
+  const disarmRef = useRef(null);
+  useEffect(() => () => clearTimeout(disarmRef.current), []);
+
+  function handleWithdrawTap() {
+    if (busy) return;
+    clearTimeout(disarmRef.current);
+    if (!withdrawArmed) {
+      setWithdrawArmed(true);
+      disarmRef.current = setTimeout(() => setWithdrawArmed(false), WITHDRAW_CONFIRM_WINDOW_MS);
+      return;
+    }
+    setWithdrawArmed(false);
+    onWithdraw();
+  }
+
   return (
     <>
       <ModalHeader
@@ -1451,6 +1478,36 @@ function StepThree({
         </div>
 
         {error && <div style={{ font: "500 12px var(--font-sans)", color: "var(--warn)" }}>{error}</div>}
+
+        {editing && (
+          <div>
+            <button
+              type="button"
+              onClick={handleWithdrawTap}
+              disabled={busy}
+              style={{
+                width: "100%",
+                height: 44,
+                borderRadius: "var(--radius-md)",
+                background: withdrawArmed ? "var(--danger, #b3261e)" : "var(--surface-card)",
+                border: withdrawArmed ? "none" : "1px solid var(--border-strong)",
+                color: withdrawArmed ? "#fff" : "var(--danger, #b3261e)",
+                font: "600 14px var(--font-sans)",
+                opacity: busy ? 0.6 : 1,
+                transition: "background var(--dur-base, .15s) var(--ease-standard, ease)",
+              }}
+            >
+              {busy ? "Withdrawing…" : withdrawArmed ? "Tap again to withdraw" : "Withdraw this proposal"}
+            </button>
+            {withdrawArmed && (
+              <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingTop: 8 }}>
+                It comes out of the vote
+                {votesAtStake > 0 ? `, along with the ${votesAtStake} ${votesAtStake === 1 ? "vote" : "votes"} for it` : ""}.
+                This can&apos;t be undone.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ flex: "none", background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "14px 16px 22px" }}>
@@ -1620,10 +1677,8 @@ function StepFour({
   onBack,
   onSaveDraft,
   onDiscardDraft,
-  onWithdraw,
   onSend,
 }) {
-  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   return (
     <>
       <ModalHeader
@@ -1757,58 +1812,6 @@ function StepFour({
           </button>
         )}
 
-        {/* Abandoning a set you proposed. Two taps, because it takes the
-            set and every vote for it out of the decision; the edit screen
-            is the only place it is offered, so it can't be hit by
-            accident while browsing the vote. */}
-        {editing && !confirmingWithdraw && (
-          <button
-            type="button"
-            onClick={() => setConfirmingWithdraw(true)}
-            disabled={busy}
-            style={{ alignSelf: "flex-start", font: "600 12px var(--font-sans)", color: "var(--warn)" }}
-          >
-            Withdraw this proposal
-          </button>
-        )}
-        {editing && confirmingWithdraw && (
-          <div
-            style={{
-              border: "1px solid var(--warn)",
-              borderRadius: "var(--radius-md)",
-              padding: "11px 13px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              font: "400 12px/1.5 var(--font-sans)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <span>
-              Withdraw this set? It comes out of the vote
-              {votesAtStake > 0 ? `, along with the ${votesAtStake} ${votesAtStake === 1 ? "vote" : "votes"} for it` : ""}.
-              This can&apos;t be undone.
-            </span>
-            <div style={{ display: "flex", gap: 14 }}>
-              <button
-                type="button"
-                onClick={onWithdraw}
-                disabled={busy}
-                style={{ font: "600 12.5px var(--font-sans)", color: "var(--warn)" }}
-              >
-                {busy ? "Withdrawing…" : "Withdraw"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingWithdraw(false)}
-                disabled={busy}
-                style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-secondary)" }}
-              >
-                Keep it
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <div style={{ flex: "none", background: "var(--surface-card)", borderTop: "1px solid var(--hairline)", padding: "14px 16px 22px", display: "flex", gap: 10 }}>
