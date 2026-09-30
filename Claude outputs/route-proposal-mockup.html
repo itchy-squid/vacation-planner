@@ -202,6 +202,13 @@
   .whenrow { display: flex; justify-content: space-between; align-items: center; }
   .whenrow b { font: 600 15px var(--font-sans); }
   .whenrow button { font: 500 12px var(--font-sans); color: var(--accent); }
+  .costline { display: flex; justify-content: space-between; align-items: flex-end; padding-top: 8px; border-top: 1px solid var(--hairline); }
+  .costline b { font: 600 14px var(--font-sans); }
+  .card .costline { border-top: 0; padding-top: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { padding: 6px 12px; border-radius: 14px; border: 1px solid var(--border); font: 600 12px var(--font-sans); color: var(--text-secondary); background: var(--surface-card); }
+  .chips button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-quiet); color: var(--accent); }
+  .grp { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: var(--radius-md); background: var(--surface-page); }
   .new-tag { font: 600 9px var(--font-mono); color: var(--accent); background: var(--accent-quiet); padding: 1px 5px; border-radius: 99px; margin-left: 4px; vertical-align: 1px; letter-spacing: .04em; }
 </style>
 
@@ -340,7 +347,7 @@
 
       <div class="col">
         <h2><span class="n">11</span> Review</h2>
-        <p>The existing trip review, with the start time shown up top. Change goes back to the planner with the time sheet open. Custom events are listed with the other stops.</p>
+        <p>The existing trip review, with the start time up top and the cost carried over. Change goes back to the planner with the time sheet open. Custom events are listed with the other stops.</p>
         <div class="phone">
           <div class="rvhead"><button class="back" type="button">‹ Route</button><span class="t">Review</span><span class="cap" style="justify-self:end">Day 3</span></div>
           <div class="rv">
@@ -350,10 +357,47 @@
               <span class="cap">The block</span>
               <div class="tl" id="f11-tl"></div>
             </div>
+            <div class="card" id="f11-cost"></div>
             <div class="card"><span class="cap">Why this?</span><div style="color:var(--text-muted);font-size:12.5px">Sunset from the lookout, then dinner…</div></div>
           </div>
           <div class="foot" style="padding:10px 16px 16px;border-top:1px solid var(--hairline);background:var(--surface-card)"><button class="cta" type="button">Send to a vote</button></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Costs and split days</h2>
+    <p>Stop costs carry over from the old block screen. On a day when the group splits up, the proposal is for one of the groups. It starts with the group you're viewing on the calendar, and you can switch it in the planner.</p>
+    <div class="row">
+      <div class="col">
+        <h2><span class="n">12</span> Editing a stop <span class="tag">live</span></h2>
+        <p>Tap <b>Edit</b> on any stop. Length and cost live here, with the same per person / for the group switch as the cost field today. A pin's cost starts from what's saved on the pin. Changing it here only affects this proposal.</p>
+        <div class="phone">
+          <div class="map" style="flex:1"><svg class="bg" viewBox="0 0 340 330" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="340" height="330" fill="var(--map-land)"/><path d="M0 150 H340 M80 0 V330 M190 0 V330" stroke="var(--map-road)" stroke-width="7"/></svg></div>
+          <div class="scrim"><div class="sheet" style="display:flex;flex-direction:column;gap:12px">
+            <div class="grab" style="margin-bottom:0"></div>
+            <div><div class="cap">Stop 2 · 14:19–15:19</div><div style="font:400 19px var(--font-serif);margin-top:3px">Taipei 101 observatory</div></div>
+            <div class="field"><span class="cap">How long</span><div class="stepper2"><button type="button" id="se-dn" aria-label="Shorter">−</button><span id="se-len">1h</span><button type="button" id="se-up" aria-label="Longer">+</button></div></div>
+            <div class="field"><span class="cap">Cost</span>
+              <div class="input" style="justify-content:space-between"><span>$ <span id="se-amt">20</span></span><span class="cap" id="se-hint">× 5 people = $100</span></div>
+              <div class="chips" id="se-basis"><button type="button" data-b="per_head" aria-pressed="true">Per person</button><button type="button" data-b="group" aria-pressed="false">For the group</button></div>
+            </div>
+            <div style="display:flex;gap:8px"><button class="ghost" type="button" style="flex:1;color:var(--warn);border:1px solid var(--border)">Remove stop</button><button class="cta" type="button" style="flex:1">Done</button></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">13</span> On a split day <span class="tag">live</span></h2>
+        <p>Day 4 splits 09:00–17:00. Opened from Mei &amp; Jae's column, so it starts as theirs. Switching groups changes who votes, which plans it's checked against, and the headcount for costs.</p>
+        <div class="phone" id="f13"></div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">14</span> Running past the split</h2>
+        <p>The group can only be split during the split's hours. If the route runs past them, the planner says so before review instead of the server refusing it on send.</p>
+        <div class="phone" id="f14"></div>
       </div>
     </div>
   </section>
@@ -365,6 +409,8 @@
         <li><b>Entry points.</b> AddSheet, the draft tray on <code>DaySchedule</code> and the Add a set / Edit buttons on <code>CompareSets</code> all go to <code>/map/trip</code>. They pass <code>day</code>, and a draft, a vote to join, or a set to edit. Back and Cancel return to where you came from.</li>
         <li><b>ProposeBlock retires.</b> Its work moves into <code>PlanTrip</code>: loading a draft or set, the discard prompts, save-in-place, withdraw, and cleaning up custom events on abandon.</li>
         <li><b>Starts.</b> Replaces the − / + leave-time row with a field next to the day, shown from the first stop. <code>DEFAULT_LEAVE_MIN</code> becomes a fallback for when no open slot fits.</li>
+        <li><b>Costs.</b> Each stop keeps its cost and per person / for the group basis, edited from the stop sheet (frame 12). The planner and review show a per-person total that includes ride fares.</li>
+        <li><b>Groups.</b> The planner takes the group from the calendar column it was opened from, or from the draft or vote. It shows the chips whenever the route's hours fall inside a split (frame 13).</li>
         <li><b>Stops without a location.</b> <code>buildTrip</code> needs to accept a stop with no coordinates. It borrows the location of the stop before it, so no ride is added.</li>
       </ul>
     </section>
@@ -379,8 +425,7 @@
     <section>
       <h3>Still open</h3>
       <ul>
-        <li><b>Splits.</b> ProposeBlock lets you pick which group a block is for when the day is split. Where does that go in the planner: a chip row under the day, or taken from the day view you came from?</li>
-        <li><b>Costs.</b> ProposeBlock shows a budget strip and per-stop costs. The trip review shows fares only. Should stop costs carry over?</li>
+        <li><b>A route that starts before the split.</b> If a route starts while everyone's together and runs into the split, is it for everyone (and so blocked), or should the planner offer to trim it? The mockup only covers running past the end.</li>
       </ul>
     </section>
   </div>
@@ -393,17 +438,17 @@
   ];
   const BASE = [
     { kind: "stop", id: "H", title: "Ximending hotel", lodge: true },
-    { kind: "ride", label: "MRT · 22 min", min: 22 },
+    { kind: "ride", label: "MRT · 22 min", min: 22, fare: 100 },
     { kind: "stop", id: "1", title: "Elephant Mountain lookout", stay: 90 },
     { kind: "ride", label: "Walk · 12 min", min: 12 },
-    { kind: "stop", id: "2", title: "Taipei 101 observatory", stay: 60 },
-    { kind: "ride", label: "MRT · 18 min", min: 18 },
+    { kind: "stop", id: "2", title: "Taipei 101 observatory", stay: 60, cost: 2000 },
+    { kind: "ride", label: "MRT · 18 min", min: 18, fare: 100 },
     { kind: "stop", id: "H", title: "Ximending hotel", lodge: true, end: true },
   ];
   const WITH_LUNCH = [
     BASE[0], BASE[1], BASE[2],
     { kind: "ride", none: true, label: "Same place · no ride", min: 0 },
-    { kind: "stop", id: "·", title: "Lunch", stay: 45, custom: true, where: "at Elephant Mountain" },
+    { kind: "stop", id: "·", title: "Lunch", stay: 45, custom: true, where: "at Elephant Mountain", cost: 1200 },
     BASE[3], BASE[4], BASE[5], BASE[6],
   ];
   const total = (legs) => legs.reduce((n, l) => n + (l.min || 0) + (l.stay || 0), 0);
@@ -422,16 +467,28 @@
   const clashes = (s, e) => BUSY.filter((b) => s < b.end && e > b.start);
   const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}` : `${m}m`);
 
-  function timeline(legs, s, { editable = false } = {}) {
+  const money = (c) => `$${(c / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  function costMeta(l, heads) {
+    if (!l.cost) return l.custom || l.lodge ? "" : " · free";
+    return l.group ? ` · ${money(l.cost)} for the group` : ` · ${money(l.cost)} × ${heads}`;
+  }
+  function perHead(legs, heads) {
+    return legs.reduce((n, l) => n + (l.fare || 0) + (l.cost ? (l.group ? l.cost / heads : l.cost) : 0), 0);
+  }
+  function costLine(legs, heads) {
+    const each = perHead(legs, heads);
+    return `<div class="costline"><span><span class="cap">Cost</span><br><b>About ${money(Math.round(each))} each</b></span><span class="cap" style="text-align:right">${heads} people<br>${money(Math.round(each * heads))} total</span></div>`;
+  }
+  function timeline(legs, s, { editable = false, heads = 5 } = {}) {
     let t = s, html = "";
     legs.forEach((l) => {
-      if (l.kind === "ride") { html += `<div class="ride ${l.none ? "none" : ""}">${l.label}</div>`; t += l.min; return; }
+      if (l.kind === "ride") { html += `<div class="ride ${l.none ? "none" : ""}">${l.label}${l.fare ? ` · ${money(l.fare)} each` : ""}</div>`; t += l.min; return; }
       let sub;
       if (l.lodge && !l.end) sub = `leave ${clock(t)}`;
       else if (l.end) sub = `back ${clock(t)}`;
-      else { sub = `${clock(t)}–${clock(t + l.stay)} · ${dur(l.stay)}${l.where ? ` · ${l.where}` : ""}${l.booked ? " · on the calendar" : ""}`; t += l.stay; }
+      else { sub = `${clock(t)}–${clock(t + l.stay)} · ${dur(l.stay)}${l.where ? ` · ${l.where}` : ""}${l.booked ? " · on the calendar" : costMeta(l, heads)}`; t += l.stay; }
       const cls = l.lodge ? "lodge" : l.custom ? "custom" : l.booked ? "anch" : "";
-      html += `<div class="stop"><span class="dot ${cls}">${l.id}</span><span class="tx"><b>${l.title}${l.custom ? '<span class="new-tag">CUSTOM</span>' : ""}</b><small>${sub}</small></span>${editable && l.custom ? '<button class="edit" type="button">Edit</button>' : ""}</div>`;
+      html += `<div class="stop"><span class="dot ${cls}">${l.id}</span><span class="tx"><b>${l.title}${l.custom ? '<span class="new-tag">CUSTOM</span>' : ""}</b><small>${sub}</small></span>${editable && !l.lodge && !l.booked ? '<button class="edit" type="button">Edit</button>' : ""}</div>`;
     });
     return html;
   }
@@ -445,7 +502,7 @@
     <div class="map-pin" style="left:77%;top:36%"><svg width="24" height="30" viewBox="0 0 24 30"><path d="M12 0a12 12 0 0 0-12 12c0 9 12 18 12 18s12-9 12-18A12 12 0 0 0 12 0z" fill="var(--accent)"/><text x="12" y="16" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" font-family="Libre Franklin, sans-serif">1</text></svg></div>
     <div class="map-pin" style="left:68%;top:46%"><svg width="24" height="30" viewBox="0 0 24 30"><path d="M12 0a12 12 0 0 0-12 12c0 9 12 18 12 18s12-9 12-18A12 12 0 0 0 12 0z" fill="var(--accent)"/><text x="12" y="16" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" font-family="Libre Franklin, sans-serif">2</text></svg></div>`;
 
-  // One planner frame. o: { banner, back, name, legs, start, time: "edit"|"locked"|"step", timeSub, win, note, foot }
+  // One planner frame. o: { banner, back, name, legs, start, time, win, note, foot, heads, group, costs }
   function planner(o) {
     const s = o.start, e = s + total(o.legs);
     const timeBox = o.time === "locked"
@@ -463,8 +520,9 @@
       <div class="map">${MAP}<div class="topcard"><button class="back" type="button">${o.back}</button><div style="flex:1;min-width:0"><div class="nm">${o.name}</div><div class="sb">${o.legs.filter((l) => l.kind === "stop").length} stops · ${clock(s)}–${clock(e)}</div></div></div></div>
       <div class="panel"><div class="scroll">
         <div class="when"><div class="daypill"><span class="l"><small>DAY</small><b>Day 3 · Tue</b></span><span class="ar">${o.win ? "🔒" : "‹ ›"}</span></div>${timeBox}</div>
-        ${stripHtml}${note}
-        <div class="tl">${timeline(o.legs, s, { editable: true })}</div>
+        ${o.group || ""}${stripHtml}${note}
+        <div class="tl">${timeline(o.legs, s, { editable: true, heads: o.heads ?? 5 })}</div>
+        ${o.costs === false ? "" : costLine(o.legs, o.heads ?? 5)}
         <button class="addstop" type="button">+ Add a stop</button>
       </div><div class="foot">${typeof o.foot === "function" ? o.foot(over) : o.foot}</div></div>`;
   }
@@ -525,6 +583,7 @@
       { kind: "ride", label: "Taxi · 26 min", min: 26 },
       { kind: "stop", id: "2", title: "Raohe Night Market", stay: 150, booked: true },
     ],
+    costs: false,
     note: '<div class="note geo">Timed to reach <b>Raohe Night Market</b> by 18:30, when it\'s booked. Remove it to pick your own start.</div>',
     foot: '<button class="cta" type="button">Review proposal</button>',
   });
@@ -556,9 +615,9 @@
       legs: [
         { kind: "stop", id: "H", title: "Ximending hotel", lodge: true },
         { kind: "ride", label: "MRT + gondola · 55 min", min: 55 },
-        { kind: "stop", id: "1", title: "Maokong tea house", stay: 90 },
+        { kind: "stop", id: "1", title: "Maokong tea house", stay: 90, cost: 1500 },
         { kind: "ride", none: true, label: "Same place · no ride", min: 0 },
-        { kind: "stop", id: "·", title: "Tea tasting class", stay: 60, custom: true, where: "at Maokong" },
+        { kind: "stop", id: "·", title: "Tea tasting class", stay: 60, custom: true, where: "at Maokong", cost: 9000, group: true },
         { kind: "ride", label: "Gondola + MRT · 50 min", min: 50 },
         { kind: "stop", id: "H", title: "Ximending hotel", lodge: true, end: true },
       ],
@@ -568,6 +627,56 @@
   }
 
   document.getElementById("f11-tl").innerHTML = timeline(WITH_LUNCH, 735);
+  document.getElementById("f11-cost").innerHTML = costLine(WITH_LUNCH, 5);
 
+  // Frame 12: stop edit
+  const se = { len: 60, amt: 20, basis: "per_head" };
+  function renderSe() {
+    document.getElementById("se-len").textContent = dur(se.len);
+    document.getElementById("se-amt").textContent = se.amt;
+    document.getElementById("se-hint").textContent = se.basis === "group" ? `÷ 5 people = ${money(se.amt * 20)} each` : `× 5 people = ${money(se.amt * 500)}`;
+    document.querySelectorAll("#se-basis button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.b === se.basis));
+  }
+  document.getElementById("se-dn").onclick = () => { se.len = Math.max(15, se.len - 15); renderSe(); };
+  document.getElementById("se-up").onclick = () => { se.len = Math.min(480, se.len + 15); renderSe(); };
+  document.getElementById("se-basis").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { se.basis = b.dataset.b; renderSe(); } });
+
+  // Frames 13-14: split day
+  const SPLIT = { start: 540, end: 1020 };
+  const GROUPS = [
+    { id: "a", name: "Mei & Jae", heads: 2, busy: [{ title: "Gorge trail", start: 540, end: 660 }] },
+    { id: "b", name: "Ana, Sam & Lee", heads: 3, busy: [{ title: "Lake loop", start: 780, end: 900 }] },
+  ];
+  const HUALIEN = [
+    { kind: "stop", id: "H", title: "Hualien guesthouse", lodge: true },
+    { kind: "ride", label: "Taxi · 35 min", min: 35, fare: 1400 },
+    { kind: "stop", id: "1", title: "Qingshui Cliffs", stay: 60 },
+    { kind: "ride", label: "Taxi · 25 min", min: 25, fare: 1000 },
+    { kind: "stop", id: "2", title: "Qixingtan Beach", stay: 90 },
+    { kind: "ride", none: true, label: "Same place · no ride", min: 0 },
+    { kind: "stop", id: "·", title: "Seafood lunch", stay: 60, custom: true, where: "at Qixingtan", cost: 3000, group: true },
+    { kind: "ride", label: "Taxi · 15 min", min: 15, fare: 600 },
+    { kind: "stop", id: "H", title: "Hualien guesthouse", lodge: true, end: true },
+  ];
+  let grp = "a";
+  function groupChips(active, extra = "") {
+    return `<div class="grp"><span class="cap">The group is split up ${clock(SPLIT.start)}–${clock(SPLIT.end)}. This is for</span><div class="chips">${GROUPS.map((g) => `<button type="button" data-g="${g.id}" aria-pressed="${g.id === active}">${g.name}</button>`).join("")}</div>${extra}</div>`;
+  }
+  function renderSplit(el, start, overNote) {
+    const g = GROUPS.find((x) => x.id === grp);
+    const saved = BUSY.splice(0, BUSY.length, ...g.busy);
+    el.innerHTML = planner({
+      back: "‹ Day 4", name: "Qingshui Cliffs &amp; Qixingtan", legs: HUALIEN, start, time: "edit", heads: g.heads,
+      group: groupChips(grp),
+      note: overNote,
+      foot: overNote ? '<button class="cta" type="button" disabled style="opacity:.4">Fix the time to review</button>' : '<button class="cta" type="button">Review proposal</button>',
+    }).replace(/Day 3 · Tue/g, "Day 4 · Wed");
+    BUSY.splice(0, BUSY.length, ...saved);
+    el.querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => { grp = b.dataset.g; render13(); render14(); }));
+  }
+  const render13 = () => renderSplit(document.getElementById("f13"), 690);
+  const render14 = () => renderSplit(document.getElementById("f14"), 840, `<div class="note warn">Ends at ${clock(840 + total(HUALIEN))}, after the group comes back together at ${clock(SPLIT.end)}. Start by ${clock(SPLIT.end - total(HUALIEN))}, or take out a stop.</div>`);
+
+  renderSe(); render13(); render14();
   renderCalendar(); render2(); renderSheet(); renderCe(); render9(); render10();
 </script>
