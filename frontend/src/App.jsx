@@ -15,7 +15,6 @@ import CompareSets from "./pages/CompareSets";
 import EditVisit from "./pages/EditVisit";
 import FinalItinerary from "./pages/FinalItinerary";
 import Expenses from "./pages/Expenses";
-import ProposeBlock from "./pages/ProposeBlock";
 import JoinTrip from "./pages/JoinTrip";
 import DeleteAccount from "./pages/DeleteAccount";
 import BottomNav from "./components/core/BottomNav";
@@ -28,6 +27,11 @@ import BottomNav from "./components/core/BottomNav";
 function ScheduleIndexRedirect() {
   const { tripId } = useParams();
   return <Navigate to={`/trips/${tripId}/schedule/1`} replace />;
+}
+
+function ProposeRedirect() {
+  const { tripId, day } = useParams();
+  return <Navigate to={`/trips/${tripId}/map/trip?day=${Number(day) || 1}&from=schedule`} replace />;
 }
 
 // A screen that only makes sense with `scope` (adding a pin, proposing a
@@ -91,8 +95,10 @@ function AppRoutes() {
           </RequireScope>
         }
       />
-      {/* Planning a trip between places on the map: rides straight onto
-          the calendar, or a proposal. Its own ‹ Map, so no tab bar. */}
+      {/* Planning a route between places on the map: rides straight onto
+          the calendar, or a proposal — every proposal, whether it starts
+          from the map, a day's "+ Add", a draft, or a running vote. Its
+          own Back, so no tab bar. */}
       <Route
         path="/trips/:tripId/map/trip"
         element={
@@ -107,19 +113,9 @@ function AppRoutes() {
           tab's day header with its own ‹ Plan, so no tab bar. Anyone can
           look; changing it needs plans:write, checked in the page. */}
       <Route path="/trips/:tripId/places" element={<DayPlaces />} />
-      {/* Steps 2-4 of the proposal flow, as one route: the step lives in
-          component state rather than the URL so backing out of "Review"
-          returns to the hour selection with the drag intact, which a URL
-          step would throw away (see pages/ProposeBlock.jsx). Modal-style,
-          so it deliberately stays out of BottomNav's MAIN_SCREEN_PATHS. */}
-      <Route
-        path="/trips/:tripId/schedule/:day/propose"
-        element={
-          <RequireScope scope="plans:propose">
-            <ProposeBlock />
-          </RequireScope>
-        }
-      />
+      {/* Proposals are built on the map now (pages/PlanTrip.jsx); an old
+          link to the day's propose screen lands there on the same day. */}
+      <Route path="/trips/:tripId/schedule/:day/propose" element={<ProposeRedirect />} />
       <Route path="/trips/:tripId/contests/:contestId" element={<CompareSets />} />
       <Route
         path="/trips/:tripId/expenses"

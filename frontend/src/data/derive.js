@@ -1,9 +1,9 @@
 // Pure formatting helpers shared by the compare, itinerary and proposal
 // screens. Set/plan totals themselves (duration, cost, slack) come from
 // the backend for real plans — see backend/app/derive.py — so nothing here
-// computes totals anymore. The one exception is the proposal flow's local
-// draft, which has no server-side plan to ask yet; it does its own
-// arithmetic in pages/ProposeBlock.jsx, deliberately by the same rules.
+// computes totals anymore. The one exception is a proposal still being
+// built, which has no server-side plan to ask yet; lib/tripPlan.js
+// tripMoney does its own arithmetic, deliberately by the same rules.
 
 export function fmtMin(totalMinutes) {
   const sign = totalMinutes < 0 ? "−" : "";

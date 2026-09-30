@@ -6,7 +6,11 @@ import {
   blockingProblem,
   buildTrip,
   dayCalendar,
+  openSlots,
   proposalBody,
+  rideLegsOf,
+  splitEdgeProblem,
+  tripMoney,
   rideItem,
   ridePlacements,
   stopLetter,
@@ -172,7 +176,7 @@ test("a later stop reached after it starts is flagged", () => {
 test("passing the same place twice is just a waypoint, under its first letter", () => {
   const t = trip({ stops: [HOTEL, COBA, HOTEL, CENOTE, HOTEL], legs: [110, 110, 50, 50] });
   assert.deepEqual(roles(t).map((r) => r[2]), [false, true, false, true, false]);
-  assert.deepEqual(t.stops.map((s) => stopLetter(t, s)), ["A", "B", "A", "D", "A"]);
+  assert.deepEqual(t.stops.map((s) => stopLetter(t, s)), ["A", "B", "A", "C", "A"]);
 });
 
 test("a trip still waiting on a ride's time isn't ready", () => {
@@ -211,4 +215,73 @@ test("drafts and split-group plans aren't on the day; proposals are busy but not
   const cal = dayCalendar([draft, proposed, { ...plan(CENOTE, 700, 760), forEveryone: false }], START, DAY);
   assert.deepEqual(cal.busy.map((b) => b.id), [proposed.id]);
   assert.equal(cal.stops.size, 0);
+});
+
+const LUNCH = { id: "t9", travelItemId: 9, title: "Lunch", dur: 45, located: false, costCents: 1200, costBasis: "per_head" };
+
+test("a stop with no place happens where the group is, with no ride to it", () => {
+  const stops = [HOTEL, COBA, LUNCH, CENOTE];
+  assert.deepEqual(rideLegsOf(stops).map((r) => [r.from.title, r.to.title, r.toIndex]), [
+    ["Our hotel", "Cobá Ruins", 1],
+    ["Cobá Ruins", "Cenote Dos Ojos", 3],
+  ]);
+  const t = trip({ stops, legs: [110, 55] });
+  assert.deepEqual(times(t), [
+    ["Our hotel", 540, 540],
+    ["→ Cobá Ruins", 540, 650],
+    ["Cobá Ruins", 650, 800],
+    ["Lunch", 800, 845],
+    ["→ Cenote Dos Ojos", 845, 900],
+    ["Cenote Dos Ojos", 900, 1020],
+  ]);
+  assert.deepEqual(t.stops.map((s) => stopLetter(t, s)), ["A", "B", "•", "C"]);
+  const body = proposalBody(t, [71, 72], { startDate: START, dayIndex: DAY });
+  assert.deepEqual(body.items[2], { travel_item_id: 9, offset_minutes: 260 });
+});
+
+test("one stop with no ride is a proposal of its own", () => {
+  const t = trip({ stops: [LUNCH], lodging: [], legs: [] });
+  assert.equal(t.ready, true);
+  assert.equal(blockingProblem(t), null);
+  assert.equal(t.windowEnd - t.windowStart, 45);
+});
+
+test("a set joining a vote spans the vote's hours, with the trip inside them", () => {
+  const t = trip({ stops: [HOTEL, COBA], legs: [30], leave: 780 });
+  const body = proposalBody(t, [71], { startDate: START, dayIndex: DAY, window: { start: 720, end: 1020 } });
+  assert.equal(body.starts_at, isoForDayMinute(START, DAY, 720));
+  assert.equal(body.ends_at, isoForDayMinute(START, DAY, 1020));
+  assert.deepEqual(body.items.map((it) => it.offset_minutes), [60, 90]);
+});
+
+test("the block's cost counts new stops and fares, not what's already booked", () => {
+  const coba = { ...COBA, costCents: 2000, costBasis: "per_head" };
+  const van = { ...CENOTE, costCents: 9000, costBasis: "group" };
+  const t = trip({ stops: [HOTEL, coba, van], legs: [30, 30] });
+  const money = tripMoney(t, [150, null], [1, 2, 3]);
+  assert.equal(money.totalCents, 2000 * 3 + 9000 + 150 * 3);
+  assert.equal(money.perHeadCents, Math.round(money.totalCents / 3));
+  assert.equal(money.unknownFares, 1);
+});
+
+test("open slots skip what's booked and round starts to the quarter hour", () => {
+  const busy = [
+    { startMin: 600, endMin: 720, title: "Museum" },
+    { startMin: 1110, endMin: 1260, title: "Night market" },
+  ];
+  assert.deepEqual(openSlots(busy, 200, { from: 480, to: 1440 }), [
+    { start: 720, end: 1110, after: "Museum" },
+  ]);
+  assert.deepEqual(openSlots(busy, 60, { from: 480, to: 1440 }).map((s) => s.start), [480, 720, 1260]);
+});
+
+test("a block for one group has to sit inside its split", () => {
+  const daySplits = [{ startMin: 540, endMin: 1020, split: { branches: [{ id: 7 }, { id: 8 }] } }];
+  const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const ask = (branchId, start, end) => splitEdgeProblem({ daySplits, branchId, start, end, groupName: () => "Mei & Jae", clock });
+  assert.equal(ask(7, 600, 900), null);
+  assert.match(ask(7, 840, 1125), /runs past the split.*ends at 17:00.*Start by 12:15/);
+  assert.match(ask(7, 480, 765), /starts before the split.*Start at 09:00 or later/);
+  assert.match(ask(null, 480, 600), /runs into the split/);
+  assert.equal(ask(null, 1020, 1100), null);
 });

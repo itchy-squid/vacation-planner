@@ -1,9 +1,6 @@
 // The calendar grid's geometry and the plan-positioning rules that go with
-// it, shared by pages/DaySchedule.jsx and the proposal flow's hour picker
-// (pages/ProposeBlock.jsx). They render the *same* grid — one with plan
-// blocks on it, one with a selection layer over it — so the constants and
-// the layout sweep live here rather than being copied into the second
-// screen and drifting.
+// it, for pages/DaySchedule.jsx and anything else that has to agree with
+// it about where a plan sits (the route planner, pages/PlanTrip.jsx).
 //
 // The handoff specifies 60px per hour and a 56px time gutter; the app was
 // already at 60px per hour (PX_PER_MIN = 1) with a 44px gutter, and on the

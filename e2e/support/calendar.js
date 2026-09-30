@@ -27,23 +27,6 @@ export async function tapLane(page, groupName, clock) {
   await page.mouse.click(laneBox.x + 4, labelBox.y + labelBox.height / 2 + 4);
 }
 
-// Drag over the proposal hour picker from one hour to another, starting in
-// whichever lane `x` (0..1 across the grid) falls in.
-export async function dragHours(page, from, to, x = 0.25) {
-  const start = page.getByText(from, { exact: true }).first();
-  await start.scrollIntoViewIfNeeded();
-  const a = await start.boundingBox();
-  const b = await page.getByText(to, { exact: true }).first().boundingBox();
-  const grid = page.getByTestId("day-grid-surface");
-  const g = await grid.boundingBox();
-  const px = g.x + g.width * x;
-  await page.mouse.move(px, a.y + a.height / 2 + 2);
-  await page.mouse.down();
-  await page.mouse.move(px, (a.y + b.y) / 2, { steps: 4 });
-  await page.mouse.move(px, b.y + b.height / 2 + 2, { steps: 4 });
-  await page.mouse.up();
-}
-
 // Drag one edge of a split ("starts" or "ends") from the hour it's at to
 // another, by its grip (components/planner/SplitEdgeHandle.jsx). The grip
 // sits just off its hour line, so move it by the distance between the two

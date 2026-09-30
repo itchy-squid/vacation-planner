@@ -1,9 +1,8 @@
 import { useCallback, useState } from "react";
 
 // Ordering ideas by how many people have hearted them (backend/app/
-// models.py PinHeart), for the two places a pin gets picked: the "+ Add"
-// sheet's list of unplaced pins (components/planner/AddSheet.jsx) and the
-// propose screen's "Pull in" chips (pages/ProposeBlock.jsx).
+// models.py PinHeart), for the "+ Add" sheet's list of unplaced pins
+// (components/planner/AddSheet.jsx).
 //
 // "Suggested" is each screen's own order, unchanged — the day's regions
 // first, and so on. "Most hearted" re-sorts that by heart count, and

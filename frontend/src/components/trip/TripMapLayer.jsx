@@ -17,7 +17,7 @@ const FIT_PADDING = { top: 80, right: 40, bottom: 40, left: 40 };
  * bus, a railway for the train, dots on foot.
  *
  *   pins      every idea with a spot
- *   stops     buildTrip(...).stops
+ *   stops     buildTrip(...).stops, each with its `letter` (lib/tripPlan.js stopLetter)
  *   rides     [{ key, mode, path, open }] — path from lib/routes.js readRoute
  *   onTapPin  (pin)
  */
@@ -26,7 +26,7 @@ export default function TripMapLayer({ pins, stops, rides, onTapPin }) {
     const byPin = new Map();
     // A place passed twice is one marker, under its first letter (lib/tripPlan.js stopLetter).
     stops.forEach((s) => {
-      if (!byPin.has(s.pin.id)) byPin.set(s.pin.id, { role: s.role, letter: String.fromCharCode(65 + s.index) });
+      if (s.pin.located !== false && !byPin.has(s.pin.id)) byPin.set(s.pin.id, { role: s.role, letter: s.letter });
     });
     return pins.map((p) => {
       const stop = byPin.get(p.id);

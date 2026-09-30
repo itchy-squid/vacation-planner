@@ -48,8 +48,7 @@ export function bandForMinuteOfDay(minuteOfDay) {
 
 // Every band a [startMin, endMin) range touches, in AM/PM/EVE order — the
 // band-shaped question ("which of this pin's bands are in play?") asked of
-// a minute-shaped window, which is what pages/ProposeBlock.jsx's claimed
-// hours are. Half-open on both sides, so a block ending exactly at 18:00
+// a minute-shaped window, such as a proposal's hours. Half-open on both sides, so a block ending exactly at 18:00
 // is PM alone and not PM+EVE.
 //
 // The ranges above start at 06:00, so a window lying entirely before then

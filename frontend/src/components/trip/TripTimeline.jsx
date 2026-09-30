@@ -2,6 +2,7 @@ import { MIN_VISIT_MIN, VISIT_STEP_MIN, stopLetter } from "../../lib/tripPlan";
 import { MODES, MODE_LABELS } from "../../lib/routes";
 import { clockLabel } from "../../lib/planTime";
 import { formatDuration } from "../../lib/format";
+import { formatMoney } from "../../data/expenses";
 import ModeIcon from "./ModeIcon";
 
 const ROLE_COLOURS = { new: "var(--accent)", anchor: "var(--geo)", lodging: "var(--surface-inverse)" };
@@ -9,13 +10,15 @@ const ROLE_COLOURS = { new: "var(--accent)", anchor: "var(--geo)", lodging: "var
 /**
  * The trip as a timeline: each stop with its time and what it is, and the
  * ride to the next stop between them. A ride opens to show every way of
- * making it; a new stop has − / + for how long to stay.
+ * making it; a new stop has − / + for how long to stay, and Edit for the
+ * rest (its cost, or taking it out). A stop with no place on the map — a
+ * custom event — has no ride to it: it happens where the group already is.
  *
  *   trip        buildTrip(...)
  *   dayIndex    the day, for "On Day 3 · 11:00–14:00"
  *   rides       per ride, in order: { estimate, choice, open } —
  *               estimate from useRideEstimates, choice the chosen readRoute()
- *   onStop      { visit(pinId, minutes), remove(index), changeStart() }
+ *   onStop      { visit(stopId, minutes), remove(index), edit(stop), removable(stop), changeStart() }
  *   onRide      { toggle(index), pick(index, mode), retry() }
  */
 export default function TripTimeline({ trip, dayIndex, rides, onStop, onRide, choosingStart }) {
@@ -40,7 +43,16 @@ export default function TripTimeline({ trip, dayIndex, rides, onStop, onRide, ch
   );
 }
 
+function costLine(pin) {
+  if (!pin.costCents) return "";
+  return pin.costBasis === "group" ? ` · ${formatMoney(pin.costCents)} for the group` : ` · ${formatMoney(pin.costCents)} each`;
+}
+
 function roleLine(stop, dayIndex, last) {
+  if (stop.pin.located === false) {
+    const what = stop.pin.travelItemId != null ? "Custom event" : "No map spot";
+    return `${what} · where you already are${costLine(stop.pin)}`;
+  }
   if (stop.role === "lodging") {
     if (stop.index === 0) return "Where you’re staying · you start here";
     return last ? "Where you’re staying · you end here" : "Where you’re staying";
@@ -50,20 +62,33 @@ function roleLine(stop, dayIndex, last) {
     const when = `On Day ${dayIndex} · ${clockLabel(stop.anchor.startMin)}–${clockLabel(stop.anchor.endMin)}`;
     return stop.inBlock ? `${when} · keeps its time` : when;
   }
-  return last && stop.index > 0 ? "New stop · proposed · ends here" : "New stop · proposed";
+  return `${last && stop.index > 0 ? "New stop · proposed · ends here" : "New stop · proposed"}${costLine(stop.pin)}`;
 }
 
 function StopRow({ item, letter, last, dayIndex, onStop, choosingStart }) {
   const { stop } = item;
   const isNew = stop.role === "new" && !stop.repeat;
-  const first = stop.index === 0;
+  const first = stop.index === 0 && stop.pin.located !== false;
+  const placeless = stop.pin.located === false;
   return (
     <li style={{ display: "flex", alignItems: "stretch" }}>
       <Time inBlock={item.inBlock}>{clockLabel(item.start)}</Time>
       <Rail below={!last}>
         <span
           aria-hidden="true"
-          style={{ width: 22, height: 22, marginTop: 10, borderRadius: "50%", background: ROLE_COLOURS[stop.role], color: "#fff", font: "700 11px var(--font-sans)", display: "grid", placeItems: "center", flex: "none" }}
+          style={{
+            width: 22,
+            height: 22,
+            marginTop: 10,
+            borderRadius: "50%",
+            background: placeless ? "var(--surface-card)" : ROLE_COLOURS[stop.role],
+            border: placeless ? "1.5px dashed var(--text-muted)" : "none",
+            color: placeless ? "var(--text-secondary)" : "#fff",
+            font: "700 11px var(--font-sans)",
+            display: "grid",
+            placeItems: "center",
+            flex: "none",
+          }}
         >
           {letter}
         </span>
@@ -97,7 +122,16 @@ function StopRow({ item, letter, last, dayIndex, onStop, choosingStart }) {
             </MiniButton>
           </span>
         ) : null}
-        {!first && onStop.removable(stop) ? (
+        {isNew && stop.inBlock ? (
+          <button
+            type="button"
+            aria-label={`Edit ${stop.pin.title}`}
+            onClick={() => onStop.edit(stop)}
+            style={{ flex: "none", height: 40, padding: "0 4px", font: "600 12px var(--font-sans)", color: "var(--accent)" }}
+          >
+            Edit
+          </button>
+        ) : !first && onStop.removable(stop) ? (
           <button type="button" aria-label={`Remove ${stop.pin.title}`} onClick={() => onStop.remove(stop.index)} style={{ flex: "none", width: 32, height: 40, color: "var(--text-muted)", font: "400 16px var(--font-sans)" }}>
             ✕
           </button>

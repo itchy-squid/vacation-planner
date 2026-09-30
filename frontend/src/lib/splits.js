@@ -96,6 +96,19 @@ export function splitAt(daySplits, minute) {
   return daySplits.find((s) => minute >= s.startMin && minute < s.endMin) ?? null;
 }
 
+// Which group a block starting at `anchorMin` is for. Outside any split it's
+// everyone. Inside one it's `preferredBranchId` if that group is part of
+// this split — so a group picked once stays picked as the block moves —
+// else the viewer's own group there, else the split's first group.
+export function scopeForAnchor(daySplits, anchorMin, preferredBranchId, myTravelerId) {
+  const hit = splitAt(daySplits, anchorMin);
+  if (!hit) return null;
+  const { branches } = hit.split;
+  if (branches.some((b) => b.id === preferredBranchId)) return preferredBranchId;
+  const mine = branches.find((b) => myTravelerId != null && b.travelerIds.includes(myTravelerId));
+  return (mine ?? branches[0]).id;
+}
+
 // Why a split can't take these hours on this day, if it can't — the same
 // refusals, in the same words, as backend/app/splits.py retime_split, so
 // a dragged edge that won't hold says what's in the way without a round

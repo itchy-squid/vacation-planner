@@ -50,6 +50,7 @@ test("hotel → two new places → hotel goes to a vote as one block", async ({ 
   await expect(page.getByRole("checkbox", { name: `End at ${HOTEL.title}` })).toBeChecked();
 
   await page.getByRole("button", { name: "+ Add a stop" }).click();
+  await page.getByRole("button", { name: /^Tap a place on the map/ }).click();
   await page.getByRole("button", { name: `Add ${CENOTE.title}` }).click();
 
   const review = page.getByRole("button", { name: "Review proposal" });

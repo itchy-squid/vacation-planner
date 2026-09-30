@@ -22,8 +22,7 @@ import { useKnownRegions } from "../components/map/useKnownRegions";
 //            and also ends back on the board. It's the only way without a
 //            Maps key.
 //
-// The step lives in component state rather than the URL, like the
-// proposal flow (pages/ProposeBlock.jsx), so "‹ Search" from the form
+// The step lives in component state rather than the URL, so "‹ Search" from the form
 // returns to the same results rather than a fresh, re-billed search.
 //
 // ?mode=link opens the link form (the empty board's "Paste a link");

@@ -1139,6 +1139,9 @@ export function PlannerProvider({ children }) {
         //   as "rides"    each ride placed straight on the calendar
         //   as "proposal" one block of stops and rides, sent to a vote
         //   as "draft"    the same block, kept private
+        //   as "edit"     rewrites `planId`, a set in a running vote
+        // `replaceDraftId` is the draft this was reopened from, deleted
+        // once the new copy is saved.
         // `body(rideIds)` builds what's sent — a list of placements for
         // "rides", one block otherwise. If any step fails, whatever this
         // made is taken back off, so a half-added trip never lingers.
@@ -1155,9 +1158,17 @@ export function PlannerProvider({ children }) {
               for (const placement of body) planIds.push((await api.createPlan(tripId, placement)).id);
             } else if (action.as === "draft") {
               planIds.push((await api.createPlan(tripId, { ...body, status: "draft" })).id);
+            } else if (action.as === "edit") {
+              // The set keeps its hours; the rides it no longer uses are
+              // forgotten server side (backend/app/custom_events.py).
+              contestId = (await api.updateProposal(action.planId, body)).id ?? null;
             } else {
               contestId = (await api.proposeBlock(tripId, body)).id;
             }
+            // A reopened draft is replaced by what was just saved or sent.
+            // Deleted after, not before: deleting it forgets any custom
+            // event nothing else holds, and the new copy holds them now.
+            if (action.replaceDraftId && action.as !== "rides") await api.deletePlan(action.replaceDraftId).catch(() => {});
             await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
             return { ok: true, contestId };
           } catch (err) {
