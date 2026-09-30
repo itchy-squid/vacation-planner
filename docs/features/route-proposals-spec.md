@@ -61,7 +61,7 @@ A group's route that starts before its split or runs past it isn't
 blocked: the group stays apart longer (`splitStretch`). The planner warns,
 e.g. "This runs past the split. Sending it keeps the group apart until
 13:00 instead of 12:00. Gorge's time apart runs longer too.", and sending
-the proposal moves the split's edge first (`PATCH /api/splits/{id}`),
+the proposal moves the split's edge first (`PUT /api/splits/{id}/hours`),
 putting it back if the proposal then fails. A draft doesn't move it. It is
 blocked, with the reason, when:
 
