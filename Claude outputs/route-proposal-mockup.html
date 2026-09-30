@@ -1,0 +1,573 @@
+<title>Route Proposals from the Calendar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a row of phone frames, one per step of the flow, with notes under a short intro. Tokens mirror frontend/src/styles/tokens. */
+  :root {
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-sunken: #eceaee; --surface-inverse: #1b1a1f;
+    --ground: #e9e7ec;
+    --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95; --text-faint: #a3a1ab;
+    --accent: #8f4478; --accent-quiet: #f6edf3; --accent-strong-tint: #ecd8e6;
+    --geo: #3d8a9c; --geo-quiet: #e6f2f4; --warn: #b4532a; --warn-quiet: #fbeee7;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.16);
+    --scrim: rgba(0,0,0,.4);
+    --map-land: #ecefe6; --map-water: #cfe1e6; --map-road: #ffffff; --map-park: #dde8d2;
+    --busy: #c9c6d0; --stone-250: #dcdae0; --on-inverse: #ffffff;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-pill: 999px;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --surface-page: #1f1e24; --surface-card: #28272e; --surface-sunken: #333239; --surface-inverse: #f2f1f4;
+    --ground: #17161b;
+    --text-primary: #f2f1f4; --text-secondary: #b3b0bb; --text-muted: #8f8c98; --text-faint: #6f6c78;
+    --accent: #d796c3; --accent-quiet: #3a2735; --accent-strong-tint: #4d3046;
+    --geo: #7cc2d2; --geo-quiet: #213438; --warn: #e79a74; --warn-quiet: #3b2a22;
+    --hairline: rgba(255,255,255,.08); --border: rgba(255,255,255,.12); --border-strong: rgba(255,255,255,.18);
+    --scrim: rgba(0,0,0,.55);
+    --map-land: #2b2e2a; --map-water: #22343a; --map-road: #3b3d41; --map-park: #2f3a2b;
+    --busy: #4a4852; --stone-250: #4a4852; --on-inverse: #1b1a1f;
+    color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --surface-page: #1f1e24; --surface-card: #28272e; --surface-sunken: #333239; --surface-inverse: #f2f1f4;
+    --ground: #17161b;
+    --text-primary: #f2f1f4; --text-secondary: #b3b0bb; --text-muted: #8f8c98; --text-faint: #6f6c78;
+    --accent: #d796c3; --accent-quiet: #3a2735; --accent-strong-tint: #4d3046;
+    --geo: #7cc2d2; --geo-quiet: #213438; --warn: #e79a74; --warn-quiet: #3b2a22;
+    --hairline: rgba(255,255,255,.08); --border: rgba(255,255,255,.12); --border-strong: rgba(255,255,255,.18);
+    --scrim: rgba(0,0,0,.55);
+    --map-land: #2b2e2a; --map-water: #22343a; --map-road: #3b3d41; --map-park: #2f3a2b;
+    --busy: #4a4852; --stone-250: #4a4852; --on-inverse: #1b1a1f;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--text-primary); font: 400 14px/1.45 var(--font-sans); font-variant-numeric: tabular-nums; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .page { padding-inline: 16px; padding-block: 28px 56px; max-width: 1560px; margin: 0 auto; }
+  h1 { font: 500 28px/1.15 var(--font-serif); margin: 0 0 8px; text-wrap: balance; }
+  .intro { max-width: 68ch; color: var(--text-secondary); margin: 0 0 28px; }
+  .intro b { color: var(--text-primary); }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .col { width: 340px; max-width: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .col h2 { font: 600 14px var(--font-sans); margin: 0; display: flex; align-items: baseline; gap: 8px; }
+  .col h2 .n { font: 500 11px var(--font-mono); color: var(--accent); }
+  .col > p { margin: 0; font-size: 12.5px; color: var(--text-secondary); min-height: 72px; }
+  .tag { font: 600 9.5px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-quiet); padding: 2px 7px; border-radius: var(--radius-pill); }
+  .tag.gone { color: var(--text-muted); background: var(--surface-sunken); text-decoration: line-through; }
+
+  .phone { position: relative; height: 640px; border-radius: 28px; overflow: hidden; background: var(--surface-page); box-shadow: 0 0 0 1px var(--border), 0 10px 30px rgba(0,0,0,.08); display: flex; flex-direction: column; }
+
+  /* ---------- calendar frame ---------- */
+  .cal-head { padding: 16px 16px 10px; background: var(--surface-card); border-bottom: 1px solid var(--hairline); }
+  .cal-head .t { font: 500 20px var(--font-serif); }
+  .cal-head .s { font: 400 11px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .grid { flex: 1; position: relative; overflow: hidden; }
+  .hr { position: absolute; left: 0; right: 0; border-top: 1px solid var(--hairline); }
+  .hr span { position: absolute; left: 10px; top: -7px; font: 400 10px var(--font-mono); color: var(--text-faint); background: var(--surface-page); padding-right: 4px; }
+  .blk { position: absolute; left: 54px; right: 14px; border-radius: var(--radius-md); background: var(--surface-card); border: 1px solid var(--border); padding: 6px 10px; font-size: 12px; }
+  .blk b { display: block; font-weight: 600; }
+  .blk small { color: var(--text-secondary); font: 400 10px var(--font-mono); }
+  .fab { position: absolute; right: 16px; bottom: 20px; height: 44px; padding: 0 18px; border-radius: var(--radius-pill); background: var(--surface-inverse); color: var(--on-inverse); font: 600 13px var(--font-sans); box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+  .scrim { position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end; z-index: 5; }
+  .sheet { width: 100%; background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 12px 18px 26px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 14px; }
+  .mrow { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hairline); width: 100%; text-align: left; }
+  .mrow:last-child { border-bottom: 0; }
+  .mrow .ic { width: 38px; height: 38px; flex: none; border-radius: var(--radius-md); display: grid; place-items: center; }
+  .mrow .ic svg { width: 18px; height: 18px; }
+  .mrow b { display: block; font: 600 13.5px var(--font-sans); }
+  .mrow small { display: block; font: 400 11.5px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .mrow .chev { margin-left: auto; color: var(--text-faint); font-size: 16px; }
+  .mrow.new { background: var(--accent-quiet); margin: 2px -10px; padding: 11px 10px; border-radius: var(--radius-lg); width: calc(100% + 20px); border-bottom-color: transparent; }
+  .was { font: 400 10.5px var(--font-mono); color: var(--text-muted); margin: 4px 0 8px; }
+  .was s { color: var(--text-faint); }
+
+  /* ---------- map planner ---------- */
+  .map { position: relative; flex: 1; min-height: 0; background: var(--map-land); }
+  .map svg.bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .topcard { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: 0 1px 4px rgba(0,0,0,.08); z-index: 2; }
+  .topcard .back { font: 500 13px var(--font-sans); color: var(--accent); white-space: nowrap; }
+  .topcard .nm { font: 400 16px/1.2 var(--font-serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topcard .sb { font: 400 11px var(--font-sans); color: var(--text-secondary); }
+  .panel { flex: none; background: var(--surface-card); border-top: 1px solid var(--hairline); display: flex; flex-direction: column; max-height: 62%; }
+  .panel .scroll { overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .panel .foot { padding: 10px 16px 16px; border-top: 1px solid var(--hairline); }
+  .cta { width: 100%; height: 46px; border-radius: var(--radius-lg); background: var(--surface-inverse); color: var(--on-inverse); font: 600 13.5px var(--font-sans); }
+
+  .when { display: flex; gap: 8px; }
+  .daypill { flex: 1; min-width: 0; height: 46px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+  .daypill .l, .timepill .l { display: flex; flex-direction: column; text-align: left; line-height: 1.15; }
+  .daypill .l b, .timepill .l b { font: 600 14px var(--font-sans); }
+  .daypill .l small, .timepill .l small { font: 400 10px var(--font-mono); color: var(--text-muted); }
+  .daypill .ar { color: var(--text-faint); font-size: 16px; }
+  .timepill { flex: 1; min-width: 0; height: 46px; border-radius: var(--radius-lg); border: 1.5px solid var(--accent); background: var(--accent-quiet); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+  .timepill .l b { color: var(--accent); }
+  .timepill .ar { color: var(--accent); font-size: 12px; }
+  .timepill.locked { border: 1px solid var(--border-strong); background: var(--surface-sunken); cursor: default; }
+  .timepill.locked .l b { color: var(--text-primary); }
+  .timepill.locked .ar { color: var(--text-muted); }
+
+  .strip { position: relative; height: 26px; border-radius: 6px; background: var(--surface-sunken); overflow: hidden; }
+  .strip .b { position: absolute; top: 0; bottom: 0; background: var(--busy); }
+  .strip .w { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; background: var(--accent); opacity: .9; }
+  .strip .w.clash { background: var(--warn); }
+  .ticks { display: flex; justify-content: space-between; font: 400 9px var(--font-mono); color: var(--text-faint); margin-top: 3px; }
+
+  .tl { display: flex; flex-direction: column; }
+  .stop { display: flex; gap: 10px; align-items: flex-start; }
+  .stop .dot { width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--accent); color: #fff; font: 600 10.5px var(--font-sans); display: grid; place-items: center; margin-top: 1px; }
+  .stop .dot.lodge { background: var(--geo); }
+  .stop .dot.anch { background: var(--surface-inverse); color: var(--on-inverse); }
+  .stop .tx { flex: 1; min-width: 0; }
+  .stop .tx b { font: 600 13px var(--font-sans); display: block; }
+  .stop .tx small { font: 400 10.5px var(--font-mono); color: var(--text-secondary); }
+  .ride { margin-left: 10px; border-left: 2px dashed var(--border-strong); padding: 6px 0 6px 20px; font: 400 11px var(--font-sans); color: var(--text-secondary); }
+  .note { padding: 8px 10px; border-radius: var(--radius-md); font: 400 12px/1.4 var(--font-sans); }
+  .note.warn { background: var(--warn-quiet); color: var(--warn); }
+  .note.geo { background: var(--geo-quiet); color: var(--geo); }
+  .addstop { min-height: 40px; border-radius: var(--radius-md); border: 1px dashed var(--border-strong); color: var(--text-secondary); font: 500 13px var(--font-sans); }
+
+  /* ---------- time sheet ---------- */
+  .tsheet .hd { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .tsheet .hd .t { font: 400 19px var(--font-serif); }
+  .tsheet .hd .big { font: 600 24px var(--font-sans); color: var(--accent); }
+  .sug { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 14px; }
+  .sug button { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--radius-md); border: 1px solid var(--border); text-align: left; font-size: 12.5px; }
+  .sug button b { font: 600 13px var(--font-sans); min-width: 44px; }
+  .sug button span { flex: 1; color: var(--text-secondary); }
+  .sug button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-quiet); }
+  .sug button[aria-pressed="true"] span { color: var(--accent); }
+  .hours { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin: 6px 0 10px; }
+  .hours button { height: 32px; border-radius: 8px; background: var(--surface-page); border: 1px solid var(--border); font: 600 12px var(--font-sans); position: relative; }
+  .hours button.busy::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 4px; height: 2px; border-radius: 2px; background: var(--busy); }
+  .hours button[aria-pressed="true"] { background: var(--surface-inverse); color: var(--on-inverse); border-color: var(--surface-inverse); }
+  .mins { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; margin-top: 6px; }
+  .mins button { height: 36px; font: 600 13px var(--font-sans); border-right: 1px solid var(--hairline); }
+  .mins button:last-child { border-right: 0; }
+  .mins button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .done { margin-top: 16px; }
+
+  .map-pin { position: absolute; transform: translate(-50%, -100%); z-index: 1; }
+
+  /* ---------- notes ---------- */
+  .notes { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; max-width: 1200px; }
+  .notes section { min-width: 0; }
+  .notes h3 { font: 500 18px var(--font-serif); margin: 0 0 8px; }
+  .notes ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+  .notes li b { color: var(--text-primary); font-weight: 600; }
+  code { font: 400 12px var(--font-mono); background: var(--surface-sunken); padding: 1px 5px; border-radius: 4px; color: var(--text-primary); }
+  @media (prefers-reduced-motion: no-preference) { .strip .w { transition: left .2s ease, width .2s ease; } }
+</style>
+
+<style>
+  .sec { margin-top: 44px; }
+  .sec:first-of-type { margin-top: 0; }
+  .sec > h2 { font: 500 21px var(--font-serif); margin: 0 0 4px; }
+  .sec > p { margin: 0 0 18px; color: var(--text-secondary); max-width: 70ch; font-size: 13px; }
+  .stop .dot.custom { background: var(--surface-card); color: var(--text-secondary); border: 1.5px dashed var(--text-muted); }
+  .stop .edit { font: 500 11.5px var(--font-sans); color: var(--accent); align-self: center; }
+  .ride.none { border-left-style: dotted; color: var(--text-muted); }
+  .banner { padding: 8px 12px; background: var(--surface-inverse); color: var(--on-inverse); font: 500 11.5px var(--font-sans); display: flex; justify-content: space-between; gap: 8px; }
+  .banner b { font-weight: 600; }
+  .foot2 { display: flex; flex-direction: column; gap: 8px; }
+  .ghost { height: 38px; border-radius: var(--radius-lg); font: 600 12.5px var(--font-sans); color: var(--warn); }
+  .ghost.armed { background: var(--warn); color: #fff; }
+  .opts { display: flex; flex-direction: column; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .input { height: 44px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); padding: 0 12px; display: flex; align-items: center; font: 500 14px var(--font-sans); }
+  .input.focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-quiet); }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; }
+  .seg button { padding: 8px 10px; text-align: left; font-size: 12px; border-right: 1px solid var(--hairline); }
+  .seg button:last-child { border-right: 0; }
+  .seg button b { display: block; font: 600 12.5px var(--font-sans); }
+  .seg button small { color: var(--text-secondary); font-size: 10.5px; }
+  .seg button[aria-pressed="true"] { background: var(--accent-quiet); }
+  .seg button[aria-pressed="true"] b { color: var(--accent); }
+  .stepper2 { display: flex; align-items: center; height: 44px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); overflow: hidden; }
+  .stepper2 button { width: 44px; height: 100%; font-size: 18px; color: var(--text-secondary); }
+  .stepper2 span { flex: 1; text-align: center; font: 600 14px var(--font-sans); }
+  .fit { display: flex; flex-direction: column; gap: 4px; }
+  .fit .strip .win { position: absolute; top: 0; bottom: 0; border: 1.5px dashed var(--accent); border-radius: 6px; background: var(--accent-quiet); }
+  .fit .lbl { display: flex; justify-content: space-between; font: 400 10.5px var(--font-mono); color: var(--text-secondary); }
+  .rv { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .rvhead { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 16px 16px 12px; border-bottom: 1px solid var(--hairline); background: var(--surface-card); }
+  .rvhead .back { font: 500 13px var(--font-sans); color: var(--accent); justify-self: start; }
+  .rvhead .t { font: 400 18px var(--font-serif); }
+  .card { background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .card .nm { font: 400 19px var(--font-serif); border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
+  .whenrow { display: flex; justify-content: space-between; align-items: center; }
+  .whenrow b { font: 600 15px var(--font-sans); }
+  .whenrow button { font: 500 12px var(--font-sans); color: var(--accent); }
+  .new-tag { font: 600 9px var(--font-mono); color: var(--accent); background: var(--accent-quiet); padding: 1px 5px; border-radius: 99px; margin-left: 4px; vertical-align: 1px; letter-spacing: .04em; }
+</style>
+
+<div class="page">
+  <h1>Route proposals from the calendar</h1>
+  <p class="intro">Every proposal is now built in the map planner, including the calendar's <b>+ Add</b>, reopened drafts, adding a set to a vote and editing a set. The old <b>Propose a block</b> screens (pick hours, fill them, review) go away. Each proposal has a <b>Starts</b> time you set directly. Custom events can be stops even when they have no place on the map. Frames marked <span class="tag">live</span> respond to taps.</p>
+
+  <section class="sec">
+    <h2>Starting a proposal</h2>
+    <p>From a day's <b>+ Add</b> sheet, straight into the planner on that day.</p>
+    <div class="row">
+      <div class="col">
+        <h2><span class="n">1</span> Day view · + Add</h2>
+        <p>First row of the sheet swapped. Companions still see only this row. The planner decides whether a route goes straight on the calendar or to a vote, same as today.</p>
+        <div class="phone">
+          <div class="cal-head"><div class="t">Day 3 · Tue, Oct 20</div><div class="s">Taipei · staying at Ximending</div></div>
+          <div class="grid" id="cal"></div>
+          <div class="scrim"><div class="sheet">
+            <div class="grab"></div>
+            <div class="cap">Add to day 3</div>
+            <div class="was"><s>Propose a block · Pick hours, then fill them</s></div>
+            <button class="mrow new" type="button">
+              <span class="ic" style="background:var(--accent-strong-tint);color:var(--accent)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="15" r="2.2"/><circle cx="15" cy="5" r="2.2"/><path d="M7 15h5a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h5"/></svg></span>
+              <span><b>Propose a route</b><small>Build it on the map, then send it to a vote</small></span><span class="chev">›</span>
+            </button>
+            <button class="mrow" type="button"><span class="ic" style="background:var(--geo-quiet);color:var(--geo)"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 0 0-6 6c0 4.5 6 10 6 10s6-5.5 6-10a6 6 0 0 0-6-6zm0 8.2A2.2 2.2 0 1 1 10 5.8a2.2 2.2 0 0 1 0 4.4z"/></svg></span><span><b>Add a pin</b><small>4 unplaced items</small></span></button>
+            <button class="mrow" type="button"><span class="ic" style="background:var(--surface-sunken);color:var(--text-secondary)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg></span><span><b>Custom event</b><small>Something that isn't a pin</small></span></button>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">2</span> Planner, opened from Day 3 <span class="tag">live</span></h2>
+        <p>Opens on Day 3 from the hotel. <b>Starts</b> sits next to the day from the first frame and defaults to the first open slot the route fits, not 09:00. The strip shows the route against what's booked. Back returns to Day 3.</p>
+        <div class="phone" id="f2"></div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">3</span> Starts · time sheet <span class="tag">live</span></h2>
+        <p>Tapping <b>Starts</b> opens this. Quick picks come from open slots on the day. Booked hours are underlined. Minutes snap to 15, the calendar's grid. Frame 2 follows along.</p>
+        <div class="phone">
+          <div class="map" style="flex:1"><svg class="bg" viewBox="0 0 340 330" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="340" height="330" fill="var(--map-land)"/><path d="M0 150 H340 M80 0 V330 M190 0 V330" stroke="var(--map-road)" stroke-width="7"/></svg></div>
+          <div class="scrim"><div class="sheet tsheet">
+            <div class="grab"></div>
+            <div class="hd"><span class="t">Proposal starts at</span><span class="big" id="s-big">12:15</span></div>
+            <div class="cap">Open on Day 3</div>
+            <div class="sug" id="s-sug"></div>
+            <div class="cap">Hour</div>
+            <div class="hours" id="s-hours"></div>
+            <div class="cap">Minute</div>
+            <div class="mins" id="s-mins"></div>
+            <button class="cta done" type="button">Done · ends <span id="s-end">15:37</span></button>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>What goes in it</h2>
+    <p><b>+ Add a stop</b> offers three sources. Anything without a map location sits at the stop before it, so no ride is added for it.</p>
+    <div class="row">
+      <div class="col">
+        <h2><span class="n">4</span> + Add a stop</h2>
+        <p>Tap on the map stays the fast path. The ideas list covers pins and travel items with no location. Custom event opens frame 5.</p>
+        <div class="phone">
+          <div class="map" style="flex:1"><svg class="bg" viewBox="0 0 340 330" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="340" height="330" fill="var(--map-land)"/><path d="M0 150 H340 M80 0 V330 M190 0 V330" stroke="var(--map-road)" stroke-width="7"/></svg></div>
+          <div class="scrim"><div class="sheet">
+            <div class="grab"></div>
+            <div class="cap">Add a stop after Taipei 101</div>
+            <div class="opts" style="margin-top:6px">
+              <button class="mrow" type="button"><span class="ic" style="background:var(--geo-quiet);color:var(--geo)"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 0 0-6 6c0 4.5 6 10 6 10s6-5.5 6-10a6 6 0 0 0-6-6zm0 8.2A2.2 2.2 0 1 1 10 5.8a2.2 2.2 0 0 1 0 4.4z"/></svg></span><span><b>Tap a place on the map</b><small>Pins with a location</small></span><span class="chev">›</span></button>
+              <button class="mrow" type="button"><span class="ic" style="background:var(--surface-sunken);color:var(--text-secondary)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5h12M4 10h12M4 15h8"/></svg></span><span><b>From the ideas list</b><small>7 ideas, 3 with no location</small></span><span class="chev">›</span></button>
+              <button class="mrow" type="button"><span class="ic" style="background:var(--surface-sunken);color:var(--text-secondary)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg></span><span><b>Custom event</b><small>Lunch, a rest, anything that isn't a pin</small></span><span class="chev">›</span></button>
+            </div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">5</span> Custom event <span class="tag">live</span></h2>
+        <p>Name, length, and where. Where defaults to the stop before it, so there's no ride. Pick on the map when it's somewhere else, and rides are timed to it like any stop. Like today, it's deleted if the proposal is abandoned.</p>
+        <div class="phone">
+          <div class="map" style="flex:1"><svg class="bg" viewBox="0 0 340 330" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="340" height="330" fill="var(--map-land)"/><path d="M0 150 H340 M80 0 V330 M190 0 V330" stroke="var(--map-road)" stroke-width="7"/></svg></div>
+          <div class="scrim"><div class="sheet" style="display:flex;flex-direction:column;gap:12px">
+            <div class="grab" style="margin-bottom:0"></div>
+            <div style="font:400 19px var(--font-serif)">Custom event</div>
+            <div class="field"><span class="cap">What</span><div class="input focus">Lunch</div></div>
+            <div class="field"><span class="cap">How long</span><div class="stepper2"><button type="button" id="ce-dn" aria-label="Shorter">−</button><span id="ce-len">45m</span><button type="button" id="ce-up" aria-label="Longer">+</button></div></div>
+            <div class="field"><span class="cap">Where</span>
+              <div class="seg" id="ce-where">
+                <button type="button" data-w="here" aria-pressed="true"><b>At Elephant Mountain</b><small>The stop before · no ride</small></button>
+                <button type="button" data-w="map" aria-pressed="false"><b>Somewhere else</b><small>Pick on the map</small></button>
+              </div>
+            </div>
+            <button class="cta" type="button" id="ce-add">Add after Elephant Mountain</button>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">6</span> Planner with a custom event</h2>
+        <p>The event shows with a dashed marker and no pin on the map. A dotted line in place of a ride means no travel. Tap <b>Edit</b> to change its length or where it is.</p>
+        <div class="phone" id="f6"></div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">7</span> A stop that's already booked</h2>
+        <p>The planner times the route around a stop already on the calendar, as now. <b>Starts</b> stays visible but locked and names the stop setting it.</p>
+        <div class="phone" id="f7"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Other ways in</h2>
+    <p>Drafts, adding a set and editing a set all open the same planner. A bar at the top says which job it's doing, and the footer changes to match.</p>
+    <div class="row">
+      <div class="col">
+        <h2><span class="n">8</span> Reopening a draft</h2>
+        <p>From the draft tray on the day view. Stops, start time, name and reasons come back as saved. Delete draft sits below the main button.</p>
+        <div class="phone" id="f8"></div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">9</span> Adding a set to a vote <span class="tag">live</span></h2>
+        <p>From <b>+ Add a set for these hours</b>. The vote's hours are fixed, so the strip shows them as a dashed frame. <b>Starts</b> can move only inside that frame, and only to times where the route still fits. Try the − / +.</p>
+        <div class="phone" id="f9"></div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">10</span> Editing Set B</h2>
+        <p>From a set's Edit on the vote screen. Same fixed hours as frame 9. Save changes updates the set in place. Withdraw keeps the tap-again confirm it has now.</p>
+        <div class="phone" id="f10"></div>
+      </div>
+
+      <div class="col">
+        <h2><span class="n">11</span> Review</h2>
+        <p>The existing trip review, with the start time shown up top. Change goes back to the planner with the time sheet open. Custom events are listed with the other stops.</p>
+        <div class="phone">
+          <div class="rvhead"><button class="back" type="button">‹ Route</button><span class="t">Review</span><span class="cap" style="justify-self:end">Day 3</span></div>
+          <div class="rv">
+            <div class="card"><span class="cap">Name this proposal</span><div class="nm">Elephant Mountain &amp; Taipei 101</div></div>
+            <div class="card"><div class="whenrow"><span><span class="cap">Starts</span><br><b>Tue, Oct 20 · 12:15–16:22</b></span><button type="button">Change</button></div></div>
+            <div class="card">
+              <span class="cap">The block</span>
+              <div class="tl" id="f11-tl"></div>
+            </div>
+            <div class="card"><span class="cap">Why this?</span><div style="color:var(--text-muted);font-size:12.5px">Sunset from the lookout, then dinner…</div></div>
+          </div>
+          <div class="foot" style="padding:10px 16px 16px;border-top:1px solid var(--hairline);background:var(--surface-card)"><button class="cta" type="button">Send to a vote</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="notes">
+    <section>
+      <h3>What changes</h3>
+      <ul>
+        <li><b>Entry points.</b> AddSheet, the draft tray on <code>DaySchedule</code> and the Add a set / Edit buttons on <code>CompareSets</code> all go to <code>/map/trip</code>. They pass <code>day</code>, and a draft, a vote to join, or a set to edit. Back and Cancel return to where you came from.</li>
+        <li><b>ProposeBlock retires.</b> Its work moves into <code>PlanTrip</code>: loading a draft or set, the discard prompts, save-in-place, withdraw, and cleaning up custom events on abandon.</li>
+        <li><b>Starts.</b> Replaces the − / + leave-time row with a field next to the day, shown from the first stop. <code>DEFAULT_LEAVE_MIN</code> becomes a fallback for when no open slot fits.</li>
+        <li><b>Stops without a location.</b> <code>buildTrip</code> needs to accept a stop with no coordinates. It borrows the location of the stop before it, so no ride is added.</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Rules for a vote's fixed hours</h3>
+      <ul>
+        <li>A set joins a vote only if its hours match exactly. So in frames 9 and 10 the block is the vote's hours, and the route sits inside them with spare time at either end.</li>
+        <li>If the route runs past the vote's hours, the button is disabled with a note saying how far over it is. Removing a stop or shortening one fixes it.</li>
+        <li>Start and end lodging stay outside the block, as in the current review.</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Still open</h3>
+      <ul>
+        <li><b>Splits.</b> ProposeBlock lets you pick which group a block is for when the day is split. Where does that go in the planner: a chip row under the day, or taken from the day view you came from?</li>
+        <li><b>Costs.</b> ProposeBlock shows a budget strip and per-stop costs. The trip review shows fares only. Should stop costs carry over?</li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<script>
+  const BUSY = [
+    { title: "National Palace Museum", start: 600, end: 720 },
+    { title: "Raohe Night Market", start: 1110, end: 1260 },
+  ];
+  const BASE = [
+    { kind: "stop", id: "H", title: "Ximending hotel", lodge: true },
+    { kind: "ride", label: "MRT · 22 min", min: 22 },
+    { kind: "stop", id: "1", title: "Elephant Mountain lookout", stay: 90 },
+    { kind: "ride", label: "Walk · 12 min", min: 12 },
+    { kind: "stop", id: "2", title: "Taipei 101 observatory", stay: 60 },
+    { kind: "ride", label: "MRT · 18 min", min: 18 },
+    { kind: "stop", id: "H", title: "Ximending hotel", lodge: true, end: true },
+  ];
+  const WITH_LUNCH = [
+    BASE[0], BASE[1], BASE[2],
+    { kind: "ride", none: true, label: "Same place · no ride", min: 0 },
+    { kind: "stop", id: "·", title: "Lunch", stay: 45, custom: true, where: "at Elephant Mountain" },
+    BASE[3], BASE[4], BASE[5], BASE[6],
+  ];
+  const total = (legs) => legs.reduce((n, l) => n + (l.min || 0) + (l.stay || 0), 0);
+  const TOTAL = total(BASE);
+  const SUGGEST = [
+    { min: 540, why: "Morning, before the museum" },
+    { min: 735, why: "After National Palace Museum (ends 12:00)" },
+    { min: 1275, why: "After Raohe Night Market" },
+  ];
+  const state = { leave: 735, joinLeave: 780 };
+  const JOIN = { start: 720, end: 1020, title: "Afternoon on Day 3" }; // vote's hours 12:00–17:00
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const clock = (m) => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+  const pct = (m) => Math.max(0, Math.min(100, ((m - 360) / (1440 - 360)) * 100));
+  const clashes = (s, e) => BUSY.filter((b) => s < b.end && e > b.start);
+  const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}` : `${m}m`);
+
+  function timeline(legs, s, { editable = false } = {}) {
+    let t = s, html = "";
+    legs.forEach((l) => {
+      if (l.kind === "ride") { html += `<div class="ride ${l.none ? "none" : ""}">${l.label}</div>`; t += l.min; return; }
+      let sub;
+      if (l.lodge && !l.end) sub = `leave ${clock(t)}`;
+      else if (l.end) sub = `back ${clock(t)}`;
+      else { sub = `${clock(t)}–${clock(t + l.stay)} · ${dur(l.stay)}${l.where ? ` · ${l.where}` : ""}${l.booked ? " · on the calendar" : ""}`; t += l.stay; }
+      const cls = l.lodge ? "lodge" : l.custom ? "custom" : l.booked ? "anch" : "";
+      html += `<div class="stop"><span class="dot ${cls}">${l.id}</span><span class="tx"><b>${l.title}${l.custom ? '<span class="new-tag">CUSTOM</span>' : ""}</b><small>${sub}</small></span>${editable && l.custom ? '<button class="edit" type="button">Edit</button>' : ""}</div>`;
+    });
+    return html;
+  }
+  function strip(s, e, win) {
+    const hit = !win && clashes(s, e).length;
+    const over = win && (s < win.start || e > win.end);
+    return `<div class="strip">${win ? `<div class="win" style="left:${pct(win.start)}%;width:${pct(win.end) - pct(win.start)}%"></div>` : ""}${BUSY.filter((b) => !win || b.end <= win.start || b.start >= win.end).map((b) => `<div class="b" style="left:${pct(b.start)}%;width:${pct(b.end) - pct(b.start)}%"></div>`).join("")}<div class="w ${hit || over ? "clash" : ""}" style="left:${pct(s)}%;width:${pct(e) - pct(s)}%"></div></div><div class="ticks"><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span></div>`;
+  }
+  const MAP = `<svg class="bg" viewBox="0 0 340 330" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="340" height="330" fill="var(--map-land)"/><path d="M-10 250 C 60 230, 90 290, 170 270 S 300 230, 360 260 L 360 340 L -10 340 Z" fill="var(--map-water)"/><ellipse cx="260" cy="120" rx="60" ry="38" fill="var(--map-park)"/><path d="M0 150 H340 M0 205 H340 M80 0 V330 M190 0 V330 M270 0 V330" stroke="var(--map-road)" stroke-width="7"/><path d="M0 95 L340 60 M30 330 L150 0" stroke="var(--map-road)" stroke-width="4"/><path d="M70 205 C 120 200, 150 150, 190 150 S 250 128, 262 118" fill="none" stroke="var(--accent)" stroke-width="3.5"/><path d="M262 118 L 232 152" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="4 4"/><path d="M232 152 C 200 170, 120 190, 70 205" fill="none" stroke="var(--accent)" stroke-width="3.5" opacity=".55"/></svg>
+    <div class="map-pin" style="left:20.5%;top:62%"><svg width="24" height="30" viewBox="0 0 24 30"><path d="M12 0a12 12 0 0 0-12 12c0 9 12 18 12 18s12-9 12-18A12 12 0 0 0 12 0z" fill="var(--geo)"/><circle cx="12" cy="12" r="4.5" fill="#fff"/></svg></div>
+    <div class="map-pin" style="left:77%;top:36%"><svg width="24" height="30" viewBox="0 0 24 30"><path d="M12 0a12 12 0 0 0-12 12c0 9 12 18 12 18s12-9 12-18A12 12 0 0 0 12 0z" fill="var(--accent)"/><text x="12" y="16" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" font-family="Libre Franklin, sans-serif">1</text></svg></div>
+    <div class="map-pin" style="left:68%;top:46%"><svg width="24" height="30" viewBox="0 0 24 30"><path d="M12 0a12 12 0 0 0-12 12c0 9 12 18 12 18s12-9 12-18A12 12 0 0 0 12 0z" fill="var(--accent)"/><text x="12" y="16" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" font-family="Libre Franklin, sans-serif">2</text></svg></div>`;
+
+  // One planner frame. o: { banner, back, name, legs, start, time: "edit"|"locked"|"step", timeSub, win, note, foot }
+  function planner(o) {
+    const s = o.start, e = s + total(o.legs);
+    const timeBox = o.time === "locked"
+      ? `<div class="timepill locked" aria-disabled="true"><span class="l"><small>STARTS</small><b>${clock(s)}</b></span><span class="ar">🔒</span></div>`
+      : o.time === "step"
+        ? `<div class="timepill" style="padding:0 4px 0 12px"><span class="l"><small>STARTS</small><b>${clock(s)}</b></span><span style="display:flex;gap:2px"><button type="button" class="js-dn" aria-label="Start 15 minutes earlier" style="width:30px;height:30px;color:var(--accent);font-size:17px">−</button><button type="button" class="js-up" aria-label="Start 15 minutes later" style="width:30px;height:30px;color:var(--accent);font-size:17px">+</button></span></div>`
+        : `<button class="timepill" type="button"><span class="l"><small>STARTS</small><b>${clock(s)}</b></span><span class="ar">▾</span></button>`;
+    const stripHtml = o.win
+      ? `<div class="fit">${strip(s, e, o.win)}<div class="lbl"><span>Vote's hours ${clock(o.win.start)}–${clock(o.win.end)}</span><span style="color:${e > o.win.end ? "var(--warn)" : "var(--geo)"}">${e > o.win.end ? `${e - o.win.end} min over` : `${o.win.end - e} min to spare`}</span></div></div>`
+      : `<div>${strip(s, e)}</div>`;
+    const hit = !o.win && clashes(s, e);
+    const note = o.note ?? (hit && hit.length ? `<div class="note warn">Overlaps ${hit.map((b) => b.title).join(" and ")}. If this goes to a vote, what's on the board now joins it.</div>` : "");
+    const over = o.win && e > o.win.end;
+    return `${o.banner ? `<div class="banner">${o.banner}</div>` : ""}
+      <div class="map">${MAP}<div class="topcard"><button class="back" type="button">${o.back}</button><div style="flex:1;min-width:0"><div class="nm">${o.name}</div><div class="sb">${o.legs.filter((l) => l.kind === "stop").length} stops · ${clock(s)}–${clock(e)}</div></div></div></div>
+      <div class="panel"><div class="scroll">
+        <div class="when"><div class="daypill"><span class="l"><small>DAY</small><b>Day 3 · Tue</b></span><span class="ar">${o.win ? "🔒" : "‹ ›"}</span></div>${timeBox}</div>
+        ${stripHtml}${note}
+        <div class="tl">${timeline(o.legs, s, { editable: true })}</div>
+        <button class="addstop" type="button">+ Add a stop</button>
+      </div><div class="foot">${typeof o.foot === "function" ? o.foot(over) : o.foot}</div></div>`;
+  }
+
+  function renderCalendar() {
+    const el = document.getElementById("cal");
+    const top = (m) => 14 + (m - 480) * 0.62;
+    let html = "";
+    for (let h = 8; h <= 22; h += 2) html += `<div class="hr" style="top:${top(h * 60)}px"><span>${pad(h)}:00</span></div>`;
+    BUSY.forEach((b) => (html += `<div class="blk" style="top:${top(b.start)}px;height:${(b.end - b.start) * 0.62}px"><b>${b.title}</b><small>${clock(b.start)}–${clock(b.end)}</small></div>`));
+    el.innerHTML = html + `<button class="fab" type="button">+ Add</button>`;
+  }
+
+  function render2() {
+    document.getElementById("f2").innerHTML = planner({ back: "‹ Day 3", name: "Elephant Mountain &amp; Taipei 101", legs: BASE, start: state.leave, time: "edit", foot: '<button class="cta" type="button">Review proposal</button>' });
+    document.getElementById("f2").querySelector(".timepill").onclick = () => document.getElementById("s-big").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  function renderSheet() {
+    const s = state.leave, h = Math.floor(s / 60), m = s % 60;
+    document.getElementById("s-big").textContent = clock(s);
+    document.getElementById("s-end").textContent = clock(s + TOTAL);
+    document.getElementById("s-sug").innerHTML = SUGGEST.map((g) => {
+      const e = g.min + TOTAL, ok = !clashes(g.min, e).length && e <= 1440;
+      return `<button type="button" data-min="${g.min}" aria-pressed="${g.min === s}"><b>${clock(g.min)}</b><span>${g.why}</span><small class="cap" style="color:${ok ? "var(--geo)" : "var(--warn)"}">${ok ? `fits · to ${clock(e)}` : "overlaps"}</small></button>`;
+    }).join("");
+    let hrs = "";
+    for (let x = 6; x <= 23; x++) {
+      const busy = BUSY.some((b) => x * 60 < b.end && x * 60 + 60 > b.start);
+      hrs += `<button type="button" data-h="${x}" class="${busy ? "busy" : ""}" aria-pressed="${x === h}" aria-label="${pad(x)}:00${busy ? ", partly booked" : ""}">${pad(x)}</button>`;
+    }
+    document.getElementById("s-hours").innerHTML = hrs;
+    document.getElementById("s-mins").innerHTML = [0, 15, 30, 45].map((x) => `<button type="button" data-m="${x}" aria-pressed="${x === m}">:${pad(x)}</button>`).join("");
+  }
+  function set(min) { state.leave = Math.max(0, Math.min(1425, min)); render2(); renderSheet(); }
+  document.getElementById("s-sug").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) set(+b.dataset.min); });
+  document.getElementById("s-hours").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) set(+b.dataset.h * 60 + (state.leave % 60)); });
+  document.getElementById("s-mins").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) set(Math.floor(state.leave / 60) * 60 + +b.dataset.m); });
+
+  // Frame 5: custom event form
+  const ce = { len: 45, where: "here" };
+  function renderCe() {
+    document.getElementById("ce-len").textContent = dur(ce.len);
+    document.querySelectorAll("#ce-where button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.w === ce.where));
+    document.getElementById("ce-add").textContent = ce.where === "here" ? "Add after Elephant Mountain" : "Pick the spot on the map";
+  }
+  document.getElementById("ce-dn").onclick = () => { ce.len = Math.max(15, ce.len - 15); renderCe(); };
+  document.getElementById("ce-up").onclick = () => { ce.len = Math.min(480, ce.len + 15); renderCe(); };
+  document.getElementById("ce-where").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { ce.where = b.dataset.w; renderCe(); } });
+
+  document.getElementById("f6").innerHTML = planner({ back: "‹ Day 3", name: "Elephant Mountain &amp; Taipei 101", legs: WITH_LUNCH, start: 735, time: "edit", foot: '<button class="cta" type="button">Review proposal</button>' });
+
+  document.getElementById("f7").innerHTML = planner({
+    back: "‹ Day 3", name: "Longshan Temple &amp; Raohe", start: 1015, time: "locked",
+    legs: [
+      { kind: "stop", id: "H", title: "Ximending hotel", lodge: true },
+      { kind: "ride", label: "MRT · 9 min", min: 9 },
+      { kind: "stop", id: "1", title: "Longshan Temple", stay: 60 },
+      { kind: "ride", label: "Taxi · 26 min", min: 26 },
+      { kind: "stop", id: "2", title: "Raohe Night Market", stay: 150, booked: true },
+    ],
+    note: '<div class="note geo">Timed to reach <b>Raohe Night Market</b> by 18:30, when it\'s booked. Remove it to pick your own start.</div>',
+    foot: '<button class="cta" type="button">Review proposal</button>',
+  });
+
+  document.getElementById("f8").innerHTML = planner({
+    banner: "<span><b>Draft</b> · saved yesterday</span><span>only you can see it</span>",
+    back: "‹ Day 3", name: "Elephant Mountain &amp; Taipei 101", legs: WITH_LUNCH, start: 735, time: "edit",
+    foot: '<div class="foot2"><button class="cta" type="button">Review proposal</button><button class="ghost" type="button">Delete draft</button></div>',
+  });
+
+  function render9() {
+    const el = document.getElementById("f9");
+    el.innerHTML = planner({
+      banner: `<span><b>Set C</b> for ${JOIN.title}</span><span>${clock(JOIN.start)}–${clock(JOIN.end)}</span>`,
+      back: "Cancel", name: "Elephant Mountain &amp; Taipei 101", legs: BASE, start: state.joinLeave, time: "step", win: JOIN,
+      note: "",
+      foot: (over) => `<button class="cta" type="button" ${over ? 'disabled style="opacity:.4"' : ""}>${over ? "Doesn't fit the vote's hours" : "Review Set C"}</button>`,
+    });
+    el.querySelector(".js-dn").onclick = () => { state.joinLeave = Math.max(JOIN.start, state.joinLeave - 15); render9(); };
+    el.querySelector(".js-up").onclick = () => { state.joinLeave = Math.min(JOIN.end, state.joinLeave + 15); render9(); };
+  }
+
+  let armed = false;
+  function render10() {
+    const el = document.getElementById("f10");
+    el.innerHTML = planner({
+      banner: `<span><b>Editing Set B</b> · ${JOIN.title}</span><span>${clock(JOIN.start)}–${clock(JOIN.end)}</span>`,
+      back: "Cancel", name: "Tea houses in Maokong", start: 750, time: "step", win: JOIN, note: "",
+      legs: [
+        { kind: "stop", id: "H", title: "Ximending hotel", lodge: true },
+        { kind: "ride", label: "MRT + gondola · 55 min", min: 55 },
+        { kind: "stop", id: "1", title: "Maokong tea house", stay: 90 },
+        { kind: "ride", none: true, label: "Same place · no ride", min: 0 },
+        { kind: "stop", id: "·", title: "Tea tasting class", stay: 60, custom: true, where: "at Maokong" },
+        { kind: "ride", label: "Gondola + MRT · 50 min", min: 50 },
+        { kind: "stop", id: "H", title: "Ximending hotel", lodge: true, end: true },
+      ],
+      foot: `<div class="foot2"><button class="cta" type="button">Save changes</button><button class="ghost ${armed ? "armed" : ""}" type="button" id="wd">${armed ? "Tap again to withdraw" : "Withdraw this proposal"}</button></div>`,
+    });
+    el.querySelector("#wd").onclick = () => { armed = !armed; render10(); if (armed) setTimeout(() => { armed = false; render10(); }, 3000); };
+  }
+
+  document.getElementById("f11-tl").innerHTML = timeline(WITH_LUNCH, 735);
+
+  renderCalendar(); render2(); renderSheet(); renderCe(); render9(); render10();
+</script>
