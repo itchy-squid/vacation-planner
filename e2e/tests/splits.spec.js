@@ -108,7 +108,7 @@ test.describe("splitting the group", () => {
     expect(gorgePlan).toMatchObject({ status: "placed", branch_id: gorge.id });
   });
 
-  test("a route that runs past the split says why it can't be sent", async ({ page, api, seed }) => {
+  test("a route that runs past the split keeps the group apart longer", async ({ page, api, seed }) => {
     const trip = await seed({ travelers: ["Ana"], pins: [{ title: "Beach", minutes: 120 }] });
     await splitDay(api, trip, {
       from: "09:00",
@@ -123,12 +123,42 @@ test.describe("splitting the group", () => {
     await page.getByRole("button", { name: /^From the ideas list/ }).click();
     await page.getByRole("button", { name: /^Beach/ }).click();
 
-    await startAt(page, "11", "00");
-    await expect(page.getByText(/This runs past the split\. Lake’s time apart ends at 12:00/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Review proposal" })).toBeDisabled();
-
     await startAt(page, "08", "00");
-    await expect(page.getByText(/This starts before the split\. Everyone is together until 09:00/)).toBeVisible();
+    await expect(page.getByText(/This starts before the split\. Sending it keeps the group apart from 08:00 instead of 09:00\./)).toBeVisible();
+
+    await startAt(page, "11", "00");
+    await expect(
+      page.getByText("This runs past the split. Sending it keeps the group apart until 13:00 instead of 12:00. Gorge’s time apart runs longer too.")
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await page.getByRole("button", { name: "Send to vote" }).click();
+    await expect(page).toHaveURL(/\/contests\/\d+/);
+
+    const [split] = await splitsOf(api, trip);
+    expect(split.starts_at).toContain("T09:00");
+    expect(split.ends_at).toContain("T13:00");
+    const [contest] = await contestsOf(api, trip);
+    expect(contest.ends_at).toContain("T13:00");
+  });
+
+  test("a route can't stretch the split over a plan for everyone", async ({ page, api, seed }) => {
+    const trip = await seed({ travelers: ["Ana"], pins: [{ title: "Beach", minutes: 120 }, { title: "Lunch spot" }] });
+    await splitDay(api, trip, {
+      from: "09:00",
+      to: "12:00",
+      groups: [
+        { label: "Gorge", travelers: [trip.travelers.Ana] },
+        { label: "Lake", travelers: [trip.me] },
+      ],
+    });
+    await placePlan(api, trip, { from: "12:00", to: "13:00", pin: trip.pins["Lunch spot"] });
+    await page.goto(`/trips/${trip.id}/map/trip?day=1&from=schedule`);
+    await page.getByRole("button", { name: "+ Add a stop" }).click();
+    await page.getByRole("button", { name: /^From the ideas list/ }).click();
+    await page.getByRole("button", { name: /^Beach/ }).click();
+
+    await startAt(page, "11", "00");
+    await expect(page.getByText(/Keeping the group apart 09:00–13:00 doesn’t work: Lunch spot for everyone runs 12:00–13:00/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Review proposal" })).toBeDisabled();
   });
 

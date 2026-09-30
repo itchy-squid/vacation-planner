@@ -9,7 +9,7 @@ import {
   openSlots,
   proposalBody,
   rideLegsOf,
-  splitEdgeProblem,
+  splitStretch,
   tripMoney,
   rideItem,
   ridePlacements,
@@ -275,13 +275,17 @@ test("open slots skip what's booked and round starts to the quarter hour", () =>
   assert.deepEqual(openSlots(busy, 60, { from: 480, to: 1440 }).map((s) => s.start), [480, 720, 1260]);
 });
 
-test("a block for one group has to sit inside its split", () => {
-  const daySplits = [{ startMin: 540, endMin: 1020, split: { branches: [{ id: 7 }, { id: 8 }] } }];
-  const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  const ask = (branchId, start, end) => splitEdgeProblem({ daySplits, branchId, start, end, groupName: () => "Mei & Jae", clock });
-  assert.equal(ask(7, 600, 900), null);
-  assert.match(ask(7, 840, 1125), /runs past the split.*ends at 17:00.*Start by 12:15/);
-  assert.match(ask(7, 480, 765), /starts before the split.*Start at 09:00 or later/);
-  assert.match(ask(null, 480, 600), /runs into the split/);
-  assert.equal(ask(null, 1020, 1100), null);
+test("a group's block that runs long stretches its split instead of stopping", () => {
+  const daySplits = [{ startMin: 540, endMin: 720, split: { branches: [{ id: 7 }, { id: 8 }] } }];
+  const ask = (branchId, start, end) => splitStretch({ daySplits, branchId, start, end });
+  assert.equal(ask(7, 600, 700), null);
+  assert.equal(ask(null, 480, 600), null);
+  assert.deepEqual(
+    (({ startMin, endMin, earlier, later }) => ({ startMin, endMin, earlier, later }))(ask(7, 660, 750)),
+    { startMin: 540, endMin: 750, earlier: false, later: true }
+  );
+  assert.deepEqual(
+    (({ startMin, endMin, earlier, later }) => ({ startMin, endMin, earlier, later }))(ask(8, 510, 600)),
+    { startMin: 510, endMin: 720, earlier: true, later: false }
+  );
 });

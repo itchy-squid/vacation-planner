@@ -363,31 +363,23 @@ export function openSlots(busy, lengthMin, { from = 0, to = 1440, step = 15 } = 
 }
 
 /**
- * Why the block can't be for the audience its hours make it, or null.
- * `daySplits` from lib/splits.js splitsOnDay; `groupName(branchId)` names
- * the group this block is for. A block for one group has to sit inside
- * that group's split, and a block for everyone has to stay out of every
- * split — the group isn't all together then.
+ * How far a block for one group reaches past its split's hours, or null
+ * when it fits. A group's plans running long doesn't stop them: the group
+ * stays apart longer. { daySplit, startMin, endMin } are the split's hours
+ * as they'd have to become, and `earlier` / `later` say which edge moves.
+ * `daySplits` from lib/splits.js splitsOnDay.
  */
-export function splitEdgeProblem({ daySplits, branchId, start, end, groupName, clock }) {
-  if (end <= start) return null;
-  const home = branchId != null ? daySplits.find((s) => s.split.branches.some((b) => b.id === branchId)) : null;
-  if (home) {
-    const name = groupName(branchId);
-    if (start < home.startMin) {
-      return `This starts before the split. Everyone is together until ${clock(home.startMin)}, so leaving at ${clock(start)} would make it the whole group’s, but it runs into ${name}’s time apart. Start at ${clock(home.startMin)} or later to make it ${name}’s, or end it by ${clock(home.startMin)} to make it everyone’s.`;
-    }
-    if (end > home.endMin) {
-      return `This runs past the split. ${name}’s time apart ends at ${clock(home.endMin)}, but this gets back at ${clock(end)}. A proposal for one group has to end by then. Start by ${clock(home.endMin - (end - start))}, or take out a stop.`;
-    }
-    return null;
-  }
-  const crossed = daySplits.find((s) => start < s.endMin && end > s.startMin);
-  if (!crossed) return null;
-  if (start < crossed.startMin) {
-    return `This runs into the split. The group splits up at ${clock(crossed.startMin)}, and this runs until ${clock(end)}. Finish by ${clock(crossed.startMin)}, or start at ${clock(crossed.startMin)} or later to plan it for one group.`;
-  }
-  return `This starts during the split. The group is apart until ${clock(crossed.endMin)}. Start at ${clock(crossed.endMin)} or later to plan it for everyone.`;
+export function splitStretch({ daySplits, branchId, start, end }) {
+  if (branchId == null || end <= start) return null;
+  const daySplit = daySplits.find((s) => s.split.branches.some((b) => b.id === branchId));
+  if (!daySplit || (start >= daySplit.startMin && end <= daySplit.endMin)) return null;
+  return {
+    daySplit,
+    startMin: Math.min(start, daySplit.startMin),
+    endMin: Math.max(end, daySplit.endMin),
+    earlier: start < daySplit.startMin,
+    later: end > daySplit.endMin,
+  };
 }
 
 /** One placed plan per ride (POST /api/trips/{id}/plans), for a trip with nothing to decide. */

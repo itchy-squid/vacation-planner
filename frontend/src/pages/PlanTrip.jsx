@@ -18,9 +18,9 @@ import { getTripDays, tripDayTitle } from "../data/trip";
 import { formatMoney } from "../data/expenses";
 import { api } from "../lib/api";
 import { lodgingFor, tripDates } from "../lib/dayPlaces";
-import { clockLabel } from "../lib/planTime";
+import { clockLabel, isoForDayMinute } from "../lib/planTime";
 import { contestWindowsFrom, planStartMinute, plansOnDay } from "../lib/dayGrid";
-import { branchName, branchesById, scopeForAnchor, splitsOnDay } from "../lib/splits";
+import { branchName, branchesById, scopeForAnchor, splitHoursProblem, splitsOnDay } from "../lib/splits";
 import { MODES, nextDeparture } from "../lib/routes";
 import {
   blockItems,
@@ -34,7 +34,7 @@ import {
   rideItem,
   rideLegsOf,
   ridePlacements,
-  splitEdgeProblem,
+  splitStretch,
   stopLetter,
   tripMoney,
   tripName,
@@ -261,6 +261,24 @@ function Planner({ seed }) {
     ? runningVotes.find((w) => model.windowStart < w.endMin && model.windowEnd > w.startMin) ?? null
     : null;
 
+  // A group's route that runs past its split keeps the group apart longer:
+  // the split's hours stretch when it's sent (not for a draft, which no one
+  // else sees). Only a planner can change the split, and not over a plan
+  // for everyone.
+  const stretch = !fixed && !direct ? splitStretch({ daySplits, branchId: audience, start: model.windowStart, end: model.windowEnd }) : null;
+  const stretchNote = stretch ? stretchMessage(stretch, { audience, travelers }) : null;
+  const stretchProblem = (() => {
+    if (!stretch) return null;
+    const fix = stretch.later
+      ? `Start by ${clockLabel(stretch.daySplit.endMin - length)}, or take out a stop.`
+      : `Start at ${clockLabel(stretch.daySplit.startMin)} or later.`;
+    const what = stretch.later ? `This runs past the split, which ends at ${clockLabel(stretch.daySplit.endMin)}.` : `This starts before the split, which begins at ${clockLabel(stretch.daySplit.startMin)}.`;
+    if (!can("plans:write")) return `${what} Only a planner can keep the group apart longer. ${fix}`;
+    const entries = plansOnDay(others.filter((p) => p.status !== "draft"), trip.startDate, dayIndex);
+    const blocked = splitHoursProblem(stretch.daySplit, stretch.startMin, stretch.endMin, { daySplits, entries, travelers });
+    return blocked ? `${what} Keeping the group apart ${clockLabel(stretch.startMin)}–${clockLabel(stretch.endMin)} doesn’t work: ${blocked} Or: ${fix}` : null;
+  })();
+
   const problem = (() => {
     if (!trip.startDate) return "Set the trip’s dates to put routes on the calendar.";
     const basic = blockingProblem({ ...model, direct });
@@ -272,10 +290,7 @@ function Planner({ seed }) {
       }
       return null;
     }
-    if (!direct) {
-      const edge = splitEdgeProblem({ daySplits, branchId: audience, start: model.windowStart, end: model.windowEnd, groupName, clock: clockLabel });
-      if (edge) return edge;
-    }
+    if (stretchProblem) return stretchProblem;
     if (straddles) {
       return `${clockLabel(straddles.startMin)}–${clockLabel(straddles.endMin)} is already out for a vote. Move the start so this stays clear of it, or add a set to that vote from its page.`;
     }
@@ -421,9 +436,27 @@ function Planner({ seed }) {
         body: (ids) => ({ ...proposalBody(model, ids, { ...where, label: label(), rationale, window: fixed }), branch_id: audience ?? null }),
       };
     }
+    const retime = (from, to) =>
+      dispatch({
+        type: "RETIME_SPLIT",
+        splitId: stretch.daySplit.split.id,
+        startsAt: isoForDayMinute(trip.startDate, dayIndex, from),
+        endsAt: isoForDayMinute(trip.startDate, dayIndex, to),
+      });
+    const stretching = stretch && as === "proposal";
+    if (stretching) {
+      const stretched = await retime(stretch.startMin, stretch.endMin);
+      if (!stretched.ok) {
+        setSending(false);
+        setError(`Couldn’t keep the group apart longer: ${stretched.error || "try again."}`);
+        return;
+      }
+    }
     const result = await dispatch({ type: "SUBMIT_TRIP", rides, ...action });
     setSending(false);
     if (!result?.ok) {
+      // Nothing was proposed, so the split goes back to its own hours.
+      if (stretching) await retime(stretch.daySplit.startMin, stretch.daySplit.endMin);
       setError(result?.error ? `Couldn’t save this: ${result.error}` : "Couldn’t save this. Try again.");
       return;
     }
@@ -513,7 +546,9 @@ function Planner({ seed }) {
               ? `Joins the vote for ${clockLabel(fixed.start)}–${clockLabel(fixed.end)} as another set.`
               : joins
                 ? `Matches the hours of a vote already running, ${clockLabel(joins.startMin)}–${clockLabel(joins.endMin)}, so it joins it as another set.`
-                : undefined
+                : stretchNote
+                  ? `${stretchNote} Then it goes to a vote.`
+                  : undefined
         }
         onBack={() => setReviewing(false)}
         onSend={() => submit("proposal")}
@@ -718,6 +753,7 @@ function Planner({ seed }) {
           ) : null}
 
           {readyTimes && problem ? <TripNote tone="warn">{problem}</TripNote> : null}
+          {readyTimes && !problem && stretchNote ? <TripNote tone="warn">{stretchNote}</TripNote> : null}
           {readyTimes && !problem && model.late.length ? <TripNote tone="warn">{lateMessage(model.late[0])}</TripNote> : null}
           {readyTimes && !problem && !direct && model.clashes.length ? (
             <TripNote tone="warn">Overlaps {model.clashes.map((c) => c.title).join(" and ")}. If this goes to a vote, what’s on the board now joins it.</TripNote>
@@ -840,6 +876,19 @@ function StartsField({ value, ready, locked, onOpen }) {
       </span>
     </button>
   );
+}
+
+// "This runs past the split. Sending it keeps the group apart until 12:30
+// instead of 12:00, so Gorge's time apart runs longer too."
+function stretchMessage(stretch, { audience, travelers }) {
+  const { daySplit } = stretch;
+  const others = daySplit.split.branches.filter((b) => b.id !== audience).map((b) => branchName(b, travelers));
+  const alsoLonger = others.length ? ` ${others.join(" and ")}’s time apart ${stretch.earlier && !stretch.later ? "starts earlier" : "runs longer"} too.` : "";
+  const parts = [];
+  if (stretch.earlier) parts.push(`from ${clockLabel(stretch.startMin)} instead of ${clockLabel(daySplit.startMin)}`);
+  if (stretch.later) parts.push(`until ${clockLabel(stretch.endMin)} instead of ${clockLabel(daySplit.endMin)}`);
+  const what = stretch.later && stretch.earlier ? "This starts before the split and runs past it." : stretch.later ? "This runs past the split." : "This starts before the split.";
+  return `${what} Sending it keeps the group apart ${parts.join(" and ")}.${alsoLonger}`;
 }
 
 /** The ride's chosen way, or the fastest there is: { mode, ...readRoute() } or null. */

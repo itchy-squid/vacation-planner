@@ -55,10 +55,20 @@ total, fares included (`tripMoney`).
 
 A route inside a split is for one group: the one picked with the group
 buttons, else the viewer's own. Anything outside a split is for everyone.
-Only that audience's plans are in its way. A route that crosses a split's
-edge can't go to review, and the planner says why and what to change
-(`splitEdgeProblem`), e.g. "This runs past the split. Lake's time apart
-ends at 12:00, but this gets back at 12:30…".
+Only that audience's plans are in its way.
+
+A group's route that starts before its split or runs past it isn't
+blocked: the group stays apart longer (`splitStretch`). The planner warns,
+e.g. "This runs past the split. Sending it keeps the group apart until
+13:00 instead of 12:00. Gorge's time apart runs longer too.", and sending
+the proposal moves the split's edge first (`PATCH /api/splits/{id}`),
+putting it back if the proposal then fails. A draft doesn't move it. It is
+blocked, with the reason, when:
+
+- the viewer can't change splits (a companion: only planners can), or
+- the longer split would take in a plan for everyone or run into another
+  split (`lib/splits.js splitHoursProblem`, the same check as dragging a
+  split's edge on the day view).
 
 ## Votes, drafts and editing
 
