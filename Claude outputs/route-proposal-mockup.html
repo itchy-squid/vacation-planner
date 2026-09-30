@@ -395,8 +395,9 @@
       </div>
 
       <div class="col">
-        <h2><span class="n">14</span> Running past the split</h2>
-        <p>The group can only be split during the split's hours. If the route runs past them, the planner says so before review instead of the server refusing it on send.</p>
+        <h2><span class="n">14</span> Crossing the split's edge <span class="tag">live</span></h2>
+        <p>A proposal for one group has to fit inside the split's hours. If the route starts before the split or runs past it, the planner explains why and what to change, and Review stays off. Switch between the two cases below.</p>
+        <div class="chips" id="f14-case" role="group" aria-label="Which case to show"><button type="button" data-c="late" aria-pressed="true">Runs past the split</button><button type="button" data-c="early" aria-pressed="false">Starts before the split</button></div>
         <div class="phone" id="f14"></div>
       </div>
     </div>
@@ -423,9 +424,10 @@
       </ul>
     </section>
     <section>
-      <h3>Still open</h3>
+      <h3>Split edges</h3>
       <ul>
-        <li><b>A route that starts before the split.</b> If a route starts while everyone's together and runs into the split, is it for everyone (and so blocked), or should the planner offer to trim it? The mockup only covers running past the end.</li>
+        <li>A route entirely outside a split is for everyone, and the group chips don't show.</li>
+        <li>A route that crosses either edge of a split gets an explanation in the planner and can't go to review until it fits (frame 14). The server check stays as a backstop.</li>
       </ul>
     </section>
   </div>
@@ -675,7 +677,18 @@
     el.querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => { grp = b.dataset.g; render13(); render14(); }));
   }
   const render13 = () => renderSplit(document.getElementById("f13"), 690);
-  const render14 = () => renderSplit(document.getElementById("f14"), 840, `<div class="note warn">Ends at ${clock(840 + total(HUALIEN))}, after the group comes back together at ${clock(SPLIT.end)}. Start by ${clock(SPLIT.end - total(HUALIEN))}, or take out a stop.</div>`);
+  let edgeCase = "late";
+  function render14() {
+    const g = GROUPS.find((x) => x.id === grp).name;
+    const len = total(HUALIEN);
+    const start = edgeCase === "late" ? 840 : 480;
+    const note = edgeCase === "late"
+      ? `<div class="note warn"><b>This runs past the split.</b> ${g}'s time apart ends at ${clock(SPLIT.end)}, but this route gets back at ${clock(start + len)}. A proposal for one group has to end by then. Start by ${clock(SPLIT.end - len)}, or take out a stop.</div>`
+      : `<div class="note warn"><b>This starts before the split.</b> Everyone is together until ${clock(SPLIT.start)}, so a route leaving at ${clock(start)} would be for the whole group, but it runs into ${g}'s time apart. Start at ${clock(SPLIT.start)} or later to make it ${g}'s, or end it by ${clock(SPLIT.start)} to make it everyone's.</div>`;
+    renderSplit(document.getElementById("f14"), start, note);
+    document.querySelectorAll("#f14-case button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.c === edgeCase));
+  }
+  document.getElementById("f14-case").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { edgeCase = b.dataset.c; render14(); } });
 
   renderSe(); render13(); render14();
   renderCalendar(); render2(); renderSheet(); renderCe(); render9(); render10();
