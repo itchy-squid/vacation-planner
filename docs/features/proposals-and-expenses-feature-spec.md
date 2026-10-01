@@ -233,6 +233,10 @@ chips, defaulting to none selected — which means everyone, and is what makes
 
 ## 5. Proposal creation
 
+> **Superseded.** The four-step block flow below (§5.1–5.4) has been
+> replaced by the route planner; see `route-proposals-spec.md`. The rules
+> about votes, sets and drafts still hold.
+
 ### 5.1 Step 1 — entry from the add sheet
 
 The existing `pages/DaySchedule.jsx`, unchanged, plus two additions:

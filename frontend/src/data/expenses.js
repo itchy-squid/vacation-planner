@@ -16,7 +16,7 @@ import { tripDayLabel } from "./trip";
 // agreed to spend yet.
 export const SCHEDULED_STATUSES = ["placed", "pencilled", "locked"];
 
-// Money for a stop that isn't saved yet (the propose screen's stop list):
+// Money for a stop that isn't saved yet (a proposal still being built):
 // the same rule the server applies. `memberIds` is who the block is for,
 // and they share every stop in it.
 export function stopMoney(stop, memberIds) {

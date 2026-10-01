@@ -1,6 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { ok } from "../support/api.js";
-import { dayUrl, dragHours } from "../support/calendar.js";
+import { dayUrl } from "../support/calendar.js";
 import { pinsOf } from "../support/seed.js";
 
 const boardUrl = (trip) => `/trips/${trip.id}/board`;
@@ -56,32 +56,17 @@ test("the add sheet sorts unplaced pins by hearts when asked, and remembers it",
   expect(await pickerOrder(page, titles)).toEqual(["Elephant Mountain", "Longshan Temple", "Beitou Hot Springs"]);
 });
 
-test("proposing hours can pull in the most hearted ideas first", async ({ page, seed }) => {
-  const trip = await seed({ pins: [{ title: "Shaved ice" }, { title: "Tide pools", hearted: true }] });
-  await page.goto(`${dayUrl(trip)}/propose`);
-  await dragHours(page, "09:00", "11:00");
-  await page.getByRole("button", { name: "Fill these hours" }).click();
-
-  const chips = page.getByRole("button", { name: /^(Shaved ice|Tide pools) · / });
-  await page.getByRole("radio", { name: "Suggested" }).click();
-  await expect(chips.first()).toHaveAccessibleName(/^Shaved ice/);
-
-  await page.getByRole("radio", { name: "Most hearted" }).click();
-  await expect(chips.first()).toHaveAccessibleName(/^Tide pools .*♥ 1$/);
-});
-
 // A pin added from a pasted link starts out named after the link's host;
-// once renamed, the chip has to show the new name (it used to show a
-// copy of the name taken when the pin was created).
-test("pull-in chips show a pin's current name after it's renamed", async ({ page, api, seed }) => {
+// once renamed, the proposal's ideas list has to show the new name.
+test("the ideas list for a proposal shows a pin's current name after it's renamed", async ({ page, api, seed }) => {
   const trip = await seed({ pins: [{ title: "maps.app.goo.gl" }] });
   const pinId = trip.pins["maps.app.goo.gl"];
   await ok(api.patch(`/api/pins/${pinId}`, { data: { title: "Raohe Night Market" } }), "rename pin");
 
-  await page.goto(`${dayUrl(trip)}/propose`);
-  await dragHours(page, "09:00", "11:00");
-  await page.getByRole("button", { name: "Fill these hours" }).click();
+  await page.goto(`/trips/${trip.id}/map/trip?day=1&from=schedule`);
+  await page.getByRole("button", { name: "+ Add a stop" }).click();
+  await page.getByRole("button", { name: /^From the ideas list/ }).click();
 
-  await expect(page.getByRole("button", { name: /^Raohe Night Market · / })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^maps\.app\.goo\.gl · / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Raohe Night Market/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^maps\.app\.goo\.gl/ })).toHaveCount(0);
 });

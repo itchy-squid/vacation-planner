@@ -21,6 +21,12 @@
 //
 // A trip with no new stop has nothing to decide: its rides go straight on
 // the calendar, each filling the gap between the stops either side of it.
+//
+// A stop can also be somewhere the map doesn't know: a custom event
+// ("Lunch") or an idea with no spot. It happens where the group already is
+// — at the last stop with a place before it — so no ride goes to or from
+// it; the next ride leaves from that last place. Those stops carry
+// `located: false`; anything else counts as a place.
 import { plansOnDay, overlaps } from "./dayGrid.js";
 import { isoForDayMinute } from "./planTime.js";
 
@@ -38,16 +44,18 @@ export function legKey(fromId, toId) {
 }
 
 /**
- * What's on day `dayIndex` for the whole group, as the trip builder needs
- * it: `busy`, every plan holding time that day ({ id, title, startMin,
- * endMin, locked }), and `stops`, where each settled pin is (pin id ->
- * { startMin, endMin, planId }, its earliest placement). Drafts and plans
- * for part of a split group are left out; a proposal is busy but isn't a
- * stop anyone can count on yet.
+ * What's on day `dayIndex` for one audience — everyone (`branchId` null)
+ * or one group of a split — as the trip builder needs it: `busy`, every
+ * plan holding time that day ({ id, title, startMin, endMin, locked }),
+ * and `stops`, where each settled pin is (pin id -> { startMin, endMin,
+ * planId }, its earliest placement). Drafts and other audiences' plans
+ * are left out; a proposal is busy but isn't a stop anyone can count on
+ * yet.
  */
-export function dayCalendar(plans, startDate, dayIndex) {
+export function dayCalendar(plans, startDate, dayIndex, branchId = null) {
+  const mine = (p) => (branchId == null ? p.forEveryone !== false && p.branchId == null : p.branchId === branchId);
   const entries = plansOnDay(
-    plans.filter((p) => OCCUPYING.has(p.status) && p.forEveryone !== false),
+    plans.filter((p) => OCCUPYING.has(p.status) && mine(p)),
     startDate,
     dayIndex
   );
@@ -83,10 +91,29 @@ export function tripStopIds(pickedIds, { endLodgingId = null, endAtLodging = fal
   return ids;
 }
 
+const located = (stop) => stop.located !== false;
+
+/**
+ * The rides a list of stops needs, in order: one into each stop with a
+ * place from the last stop with a place before it. `toIndex` is the stop
+ * the ride arrives at, so the ride happens just before it.
+ */
+export function rideLegsOf(stops) {
+  const rides = [];
+  let from = null;
+  stops.forEach((stop, i) => {
+    if (!located(stop)) return;
+    if (from) rides.push({ key: legKey(from.id, stop.id), from, to: stop, toIndex: i });
+    from = stop;
+  });
+  return rides;
+}
+
 /**
  * The whole trip, timed.
  *
- *   stops         [{ id, title, dur }] in order — pins, with their own visit length
+ *   stops         [{ id, title, dur, located? }] in order — pins, or custom
+ *                 events and ideas with no spot (located: false)
  *   lodgingIds    pin ids that are lodging on this day (where it starts and ends)
  *   calendar      dayCalendar(...)
  *   legMinutes    [minutes | null] per ride, in order; null while unknown
@@ -101,7 +128,7 @@ export function buildTrip({ stops, lodgingIds = [], calendar, legMinutes, leaveM
   const lodging = new Set(lodgingIds);
   const shaped = stops.map((pin, i) => {
     const anchorAt = calendar.stops.get(pin.id) ?? null;
-    const role = lodging.has(pin.id) ? "lodging" : anchorAt ? "anchor" : "new";
+    const role = located(pin) && lodging.has(pin.id) ? "lodging" : anchorAt ? "anchor" : "new";
     // A pin can only be in a plan once (backend routers/plans.py
     // ensure_unique_stops), so passing somewhere a second time is just a
     // waypoint: no time there, and no stop in the block.
@@ -115,12 +142,14 @@ export function buildTrip({ stops, lodgingIds = [], calendar, legMinutes, leaveM
   });
 
   const seq = [];
+  const rides = rideLegsOf(stops);
   shaped.forEach((stop, i) => {
-    seq.push({ kind: "stop", stop, minutes: stop.minutes, inBlock: stop.inBlock });
-    if (i < last) {
-      const minutes = legMinutes[i];
-      seq.push({ kind: "leg", index: i, from: stop.pin, to: stops[i + 1], minutes: minutes ?? 0, known: minutes != null, inBlock: true });
+    const r = rides.findIndex((ride) => ride.toIndex === i);
+    if (r >= 0) {
+      const minutes = legMinutes[r];
+      seq.push({ kind: "leg", index: r, from: rides[r].from, to: rides[r].to, minutes: minutes ?? 0, known: minutes != null, inBlock: true });
     }
+    seq.push({ kind: "stop", stop, minutes: stop.minutes, inBlock: stop.inBlock });
   });
 
   // Pin the chain to its first anchor, else to the chosen leave time.
@@ -171,7 +200,9 @@ export function buildTrip({ stops, lodgingIds = [], calendar, legMinutes, leaveM
     lockedClash: clashes.some((c) => c.locked),
     late,
     captured,
-    ready: legs.length > 0 && legs.every((l) => l.known),
+    // Something to do, and every ride timed. One stop and no ride is a
+    // proposal too ("dinner at the night market").
+    ready: (legs.length > 0 || hasNew) && seq.some((it) => it.inBlock) && legs.every((l) => l.known),
     fitsDay: windowStart >= 0 && windowEnd <= 1440,
   };
 }
@@ -182,7 +213,7 @@ export function buildTrip({ stops, lodgingIds = [], calendar, legMinutes, leaveM
  * a pinned one; rides added straight to the calendar may overlap nothing.
  */
 export function blockingProblem(trip) {
-  if (!trip.legs.length) return "Add another stop to plan a trip.";
+  if (!trip.legs.length && !trip.hasNew) return "Add another stop to plan a trip.";
   if (!trip.fitsDay) return "This trip runs past midnight. Leave earlier, or split it over two days.";
   const pinned = trip.clashes.find((c) => c.locked);
   if (pinned) return `It overlaps ${pinned.title}, which is pinned. Try another day or time.`;
@@ -203,8 +234,10 @@ export function lateMessage(late) {
  * since it's one marker on the map.
  */
 export function stopLetter(trip, stop) {
-  const first = trip.stops.findIndex((s) => s.pin.id === stop.pin.id);
-  return String.fromCharCode(65 + (first < 0 ? stop.index : first));
+  if (!located(stop.pin)) return "•";
+  const first = trip.stops.find((s) => s.pin.id === stop.pin.id) ?? stop;
+  const places = trip.stops.filter((s, i) => i < first.index && located(s.pin) && !s.repeat).length;
+  return String.fromCharCode(65 + places);
 }
 
 /** "Drive to Tulum Ruins". */
@@ -214,12 +247,14 @@ export function rideTitle(mode, to) {
 
 /** "Cobá Ruins & Cenote Dos Ojos": what the proposal is about. */
 export function tripName(trip) {
-  const news = trip.stops.filter((s) => s.role === "new" && !s.repeat).map((s) => s.pin.title);
+  const fresh = trip.stops.filter((s) => s.role === "new" && !s.repeat);
+  const news = fresh.map((s) => s.pin.title);
   if (!news.length) {
     const anchor = trip.stops.find((s) => s.role === "anchor");
     return anchor ? `Getting to ${anchor.pin.title}` : "Rides";
   }
-  if (news.length === 1) return `Trip to ${news[0]}`;
+  // "Trip to Lunch" reads oddly: an event with no place is just its name.
+  if (news.length === 1) return fresh[0].pin.located === false ? news[0] : `Trip to ${news[0]}`;
   if (news.length === 2) return `${news[0]} & ${news[1]}`;
   return `${news[0]} + ${news.length - 1} more`;
 }
@@ -244,26 +279,106 @@ export function rideItem(leg, estimate, mode) {
 /**
  * The proposal (POST /api/trips/{id}/contests): the block's hours, and its
  * stops and rides in order, each at its own time. `rideIds[i]` is the
- * travel item made for ride i.
+ * travel item made for ride i. `window` ({ start, end }) fixes the hours
+ * instead — a set joining a running vote has to span the vote's hours
+ * exactly — and the trip sits inside them at its own times.
  */
-export function proposalBody(trip, rideIds, { startDate, dayIndex, label = "", rationale = "" }) {
-  const base = trip.windowStart;
-  const items = trip.seq
+export function proposalBody(trip, rideIds, { startDate, dayIndex, label = "", rationale = "", window = null }) {
+  const start = window ? window.start : trip.windowStart;
+  const end = window ? window.end : trip.windowEnd;
+  return {
+    starts_at: isoForDayMinute(startDate, dayIndex, start),
+    ends_at: isoForDayMinute(startDate, dayIndex, end),
+    label,
+    rationale,
+    items: blockItems(trip, rideIds, start),
+  };
+}
+
+/** The block's stops and rides as plan items, timed from `base`. */
+export function blockItems(trip, rideIds, base = trip.windowStart) {
+  return trip.seq
     .filter((it) => it.inBlock)
     .map((it) => {
       if (it.kind === "leg") return { travel_item_id: rideIds[it.index], offset_minutes: it.start - base };
       const { pin } = it.stop;
-      const item = { pin_id: pin.id, offset_minutes: it.start - base };
+      const item = pin.travelItemId != null ? { travel_item_id: pin.travelItemId } : { pin_id: pin.id };
+      item.offset_minutes = it.start - base;
       // Only a visit that differs from the idea's own length is a trim.
       if (it.minutes !== pin.dur) item.duration_minutes = it.minutes;
       return item;
     });
+}
+
+/**
+ * What the block costs the people it's for (`memberIds`): each new stop's
+ * price, per person or split across the group (the same rule as
+ * data/expenses.js stopMoney and the server), plus each ride's fare per
+ * person. Stops already on the
+ * calendar are paid for where they are. { perHeadCents, totalCents,
+ * headcount, unknownFares } — unknownFares counts rides with no fare
+ * (a car, or no estimate yet).
+ */
+export function tripMoney(trip, fares, memberIds) {
+  const headcount = Math.max(1, memberIds.length);
+  let totalCents = 0;
+  trip.stops.forEach((s) => {
+    if (s.role !== "new" || s.repeat || !s.inBlock) return;
+    const price = s.pin.costCents ?? 0;
+    totalCents += (s.pin.costBasis ?? "per_head") === "group" ? price : price * headcount;
+  });
+  let unknownFares = 0;
+  trip.legs.forEach((leg) => {
+    const fare = fares[leg.index];
+    if (fare) totalCents += fare * headcount;
+    else unknownFares += 1;
+  });
+  return { perHeadCents: Math.round(totalCents / headcount), totalCents, headcount, unknownFares };
+}
+
+/**
+ * Where a trip of `lengthMin` fits on a day: the open stretches between
+ * `busy` spans ({ startMin, endMin }) inside [from, to], each as
+ * { start, end, after } — `after` the title of what it follows, if
+ * anything. Starts are rounded up to `step` minutes.
+ */
+export function openSlots(busy, lengthMin, { from = 0, to = 1440, step = 15 } = {}) {
+  const spans = [...busy].filter((b) => b.endMin > from && b.startMin < to).sort((a, b) => a.startMin - b.startMin);
+  const slots = [];
+  let cursor = from;
+  let after = null;
+  const push = (end) => {
+    const start = Math.ceil(cursor / step) * step;
+    if (end - start >= lengthMin) slots.push({ start, end, after });
+  };
+  spans.forEach((b) => {
+    if (b.startMin > cursor) push(b.startMin);
+    if (b.endMin > cursor) {
+      cursor = b.endMin;
+      after = b.title ?? null;
+    }
+  });
+  if (to > cursor) push(to);
+  return slots;
+}
+
+/**
+ * How far a block for one group reaches past its split's hours, or null
+ * when it fits. A group's plans running long doesn't stop them: the group
+ * stays apart longer. { daySplit, startMin, endMin } are the split's hours
+ * as they'd have to become, and `earlier` / `later` say which edge moves.
+ * `daySplits` from lib/splits.js splitsOnDay.
+ */
+export function splitStretch({ daySplits, branchId, start, end }) {
+  if (branchId == null || end <= start) return null;
+  const daySplit = daySplits.find((s) => s.split.branches.some((b) => b.id === branchId));
+  if (!daySplit || (start >= daySplit.startMin && end <= daySplit.endMin)) return null;
   return {
-    starts_at: isoForDayMinute(startDate, dayIndex, trip.windowStart),
-    ends_at: isoForDayMinute(startDate, dayIndex, trip.windowEnd),
-    label,
-    rationale,
-    items,
+    daySplit,
+    startMin: Math.min(start, daySplit.startMin),
+    endMin: Math.max(end, daySplit.endMin),
+    earlier: start < daySplit.startMin,
+    later: end > daySplit.endMin,
   };
 }
 

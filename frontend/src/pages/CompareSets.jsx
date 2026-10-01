@@ -137,17 +137,14 @@ export default function CompareSets() {
     [contest, currentUser, canPropose]
   );
 
-  // Both of these go to the same screen the set was built on
-  // (pages/ProposeBlock.jsx): a set is a set whether it exists yet or not,
-  // and giving editing its own screen would mean two places to change
-  // every time a set grows a field. The window travels as the contest id
-  // rather than as hours, so an added set matches this decision's hours
-  // exactly and joins it instead of opening a second one (feature spec
-  // §6.2).
-  function openProposeScreen(state) {
+  // Both of these go to the route planner every proposal is built on
+  // (pages/PlanTrip.jsx): a set is a set whether it exists yet or not.
+  // The window travels as the contest id rather than as hours, so an added
+  // set matches this decision's hours exactly and joins it instead of
+  // opening a second one (feature spec §6.2).
+  function openProposeScreen({ editPlanId } = {}) {
     if (!contest) return;
-    const dayIndex = dayIndexOf(contest.starts_at, trip.startDate);
-    navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`, { state: { contestId: contest.id, ...state } });
+    navigate(`/trips/${trip.id}/map/trip?contest=${contest.id}${editPlanId ? `&edit=${editPlanId}` : ""}`);
   }
 
   const leadingId = useMemo(

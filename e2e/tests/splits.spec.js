@@ -1,5 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
-import { dayUrl, dragHours, dragSplitEdge, openPlan, tapLane } from "../support/calendar.js";
+import { dayUrl, dragSplitEdge, openPlan, tapLane } from "../support/calendar.js";
+import { startAt } from "../support/planner.js";
 import { contestsOf, placePlan, plansOf, splitDay, splitsOf } from "../support/seed.js";
 
 // The group splitting up for part of a day (backend/app/splits.py): a split
@@ -65,11 +66,10 @@ test.describe("splitting the group", () => {
     expect(placed.starts_at).toContain("T11:00");
   });
 
-  // The reported bug: the hour picker clipped at, and refused, hours that
-  // held the other group's plans, so no block could be proposed during a
-  // split. Now a drag started in a group's lane is for that group, and only
-  // that group's own pinned plans stop it.
-  test("proposes a block for one group during a split", async ({ page, api, seed }) => {
+  // A proposal during a split is for one group: the viewer's own by
+  // default, switchable from the planner, and only that group's own plans
+  // are in its way.
+  test("proposes a route for one group during a split", async ({ page, api, seed }) => {
     const trip = await seed({
       travelers: ["Ana", "Lin"],
       pins: [{ title: "Gorge trail", minutes: 180 }, { title: "Lake loop" }, { title: "Beach", minutes: 60 }],
@@ -85,27 +85,81 @@ test.describe("splitting the group", () => {
     const [gorge, lake] = split.branches;
     await placePlan(api, trip, { from: "09:00", to: "12:00", pin: trip.pins["Gorge trail"], branch: gorge.id });
     await placePlan(api, trip, { from: "09:00", to: "10:00", pin: trip.pins["Lake loop"], branch: lake.id });
-    await page.goto(`${dayUrl(trip)}/propose`);
+    await page.goto(`/trips/${trip.id}/map/trip?day=1&from=schedule`);
 
-    // The right half of the grid is the Lake lane.
-    await dragHours(page, "09:00", "11:00", 0.75);
+    // Beach has no spot on the map, so it needs no ride (and no Maps key).
+    await page.getByRole("button", { name: "+ Add a stop" }).click();
+    await page.getByRole("button", { name: /^From the ideas list/ }).click();
+    await page.getByRole("button", { name: /^Beach/ }).click();
+    await startAt(page, "10", "00");
+
+    // Inside the split, so it's for a group: yours to start with.
     await expect(page.getByRole("button", { name: "Lake", pressed: true })).toBeVisible();
-    await expect(page.getByText("09:00 – 11:00 · 2h")).toBeVisible();
-    await page.getByRole("button", { name: "Fill these hours" }).click();
-
-    await page.getByRole("button", { name: /^Beach/ }).first().click();
-    await page.getByRole("button", { name: /^Add stop/ }).click();
-    await page.getByRole("button", { name: /^Review/ }).click();
-    await expect(page.getByText(/For Lake only/)).toBeVisible();
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await expect(page.getByText("For Lake")).toBeVisible();
     await page.getByRole("button", { name: "Send to vote" }).click();
     await expect(page).toHaveURL(/\/contests\/\d+/);
 
     const [contest] = await contestsOf(api, trip);
     expect(contest.branch_id).toBe(lake.id);
-    expect(contest.starts_at).toContain("T09:00");
+    expect(contest.starts_at).toContain("T10:00");
     // The other group's plan was never touched.
     const gorgePlan = (await plansOf(api, trip)).find((p) => p.items[0]?.pin?.title === "Gorge trail");
     expect(gorgePlan).toMatchObject({ status: "placed", branch_id: gorge.id });
+  });
+
+  test("a route that runs past the split keeps the group apart longer", async ({ page, api, seed }) => {
+    const trip = await seed({ travelers: ["Ana"], pins: [{ title: "Beach", minutes: 120 }] });
+    await splitDay(api, trip, {
+      from: "09:00",
+      to: "12:00",
+      groups: [
+        { label: "Gorge", travelers: [trip.travelers.Ana] },
+        { label: "Lake", travelers: [trip.me] },
+      ],
+    });
+    await page.goto(`/trips/${trip.id}/map/trip?day=1&from=schedule`);
+    await page.getByRole("button", { name: "+ Add a stop" }).click();
+    await page.getByRole("button", { name: /^From the ideas list/ }).click();
+    await page.getByRole("button", { name: /^Beach/ }).click();
+
+    await startAt(page, "08", "00");
+    await expect(page.getByText(/This starts before the split\. Sending it keeps the group apart from 08:00 instead of 09:00\./)).toBeVisible();
+
+    await startAt(page, "11", "00");
+    await expect(
+      page.getByText("This runs past the split. Sending it keeps the group apart until 13:00 instead of 12:00. Gorge’s time apart runs longer too.")
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await page.getByRole("button", { name: "Send to vote" }).click();
+    await expect(page).toHaveURL(/\/contests\/\d+/);
+
+    const [split] = await splitsOf(api, trip);
+    expect(split.starts_at).toContain("T09:00");
+    expect(split.ends_at).toContain("T13:00");
+    const [contest] = await contestsOf(api, trip);
+    expect(contest.ends_at).toContain("T13:00");
+  });
+
+  test("a route can't stretch the split over a plan for everyone", async ({ page, api, seed }) => {
+    const trip = await seed({ travelers: ["Ana"], pins: [{ title: "Beach", minutes: 120 }, { title: "Lunch spot" }] });
+    await splitDay(api, trip, {
+      from: "09:00",
+      to: "12:00",
+      groups: [
+        { label: "Gorge", travelers: [trip.travelers.Ana] },
+        { label: "Lake", travelers: [trip.me] },
+      ],
+    });
+    await placePlan(api, trip, { from: "12:00", to: "13:00", pin: trip.pins["Lunch spot"] });
+    await page.goto(`/trips/${trip.id}/map/trip?day=1&from=schedule`);
+    await page.getByRole("button", { name: "+ Add a stop" }).click();
+    await page.getByRole("button", { name: /^From the ideas list/ }).click();
+    await page.getByRole("button", { name: /^Beach/ }).click();
+
+    await startAt(page, "11", "00");
+    await expect(page.getByText(/Keeping the group apart 09:00–13:00 doesn’t work: Lunch spot for everyone runs 12:00–13:00/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review proposal" })).toBeDisabled();
   });
 
   // A split's edges drag like a block does. Nothing changes hands, so an

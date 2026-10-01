@@ -2,6 +2,7 @@ import Button from "../core/Button";
 import { clockLabel } from "../../lib/planTime";
 import { formatDuration } from "../../lib/format";
 import { lateMessage, rideTitle, stopLetter } from "../../lib/tripPlan";
+import { formatMoney } from "../../data/expenses";
 import ModeIcon from "./ModeIcon";
 import TripNote from "./TripNote";
 
@@ -15,10 +16,34 @@ const ROLE_COLOURS = { new: "var(--accent)", anchor: "var(--geo)", lodging: "var
  *   trip      buildTrip(...)
  *   choices   the chosen way of making each ride (lib/routes.js readRoute + mode)
  *   planTitles  plan id -> title, to name what the block captures
+ *   when        "Tue, Oct 20 · 12:15–16:22", with onChangeStart to go back and move it
+ *   money       lib/tripPlan.js tripMoney(...), or null when the viewer can't see every cost
+ *   audience    who it's for ("Mei & Jae"), or null for everyone
+ *   sendLabel   "Send to vote", "Add as another set", "Save changes"
+ *   onDraft     null where there's no draft to keep (a set in a running vote)
+ *   footnote    what happens next, in a sentence
  */
-export default function TripReview({ trip, choices, dayIndex, planTitles, name, onName, why, onWhy, sending, error, onSend, onDraft, onBack }) {
-  const fares = choices.filter((c) => c?.fareCents);
-  const perHead = fares.reduce((sum, c) => sum + c.fareCents, 0);
+export default function TripReview({
+  trip,
+  choices,
+  dayIndex,
+  planTitles,
+  name,
+  onName,
+  why,
+  onWhy,
+  sending,
+  error,
+  onSend,
+  onDraft,
+  onBack,
+  when,
+  onChangeStart,
+  money,
+  audience = null,
+  sendLabel = "Send to vote",
+  footnote,
+}) {
   const captured = trip.captured.map((id) => planTitles[id]).filter(Boolean);
   const others = trip.clashes.filter((c) => !c.locked).map((c) => c.title);
 
@@ -26,7 +51,7 @@ export default function TripReview({ trip, choices, dayIndex, planTitles, name, 
     <div className="screen">
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "20px 16px 12px", borderBottom: "1px solid var(--hairline)" }}>
         <button type="button" onClick={onBack} disabled={sending} style={{ justifySelf: "start", font: "500 13px var(--font-sans)", color: "var(--accent)" }}>
-          ‹ Trip
+          ‹ Route
         </button>
         <span className="serif-place" style={{ fontSize: 18 }}>
           Review
@@ -58,6 +83,21 @@ export default function TripReview({ trip, choices, dayIndex, planTitles, name, 
         </Card>
 
         <Card>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span className="mono-caption">Starts</span>
+              <span style={{ font: "600 15px var(--font-sans)", color: "var(--text-primary)" }}>{when}</span>
+              {audience ? <span style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)" }}>For {audience}</span> : null}
+            </span>
+            {onChangeStart ? (
+              <button type="button" onClick={onChangeStart} disabled={sending} style={{ font: "600 12.5px var(--font-sans)", color: "var(--accent)", minHeight: 40 }}>
+                Change
+              </button>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card>
           <span className="mono-caption" style={{ color: "var(--accent)" }}>
             Proposed block · {clockLabel(trip.windowStart)}–{clockLabel(trip.windowEnd)} · {formatDuration(trip.windowEnd - trip.windowStart)}
           </span>
@@ -68,7 +108,21 @@ export default function TripReview({ trip, choices, dayIndex, planTitles, name, 
                   {clockLabel(it.start)}
                 </span>
                 {it.kind === "stop" ? (
-                  <span aria-hidden="true" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", background: ROLE_COLOURS[it.stop.role], color: "#fff", font: "700 11px var(--font-sans)", display: "grid", placeItems: "center" }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 22,
+                      height: 22,
+                      flex: "none",
+                      borderRadius: "50%",
+                      background: it.stop.pin.located === false ? "var(--surface-card)" : ROLE_COLOURS[it.stop.role],
+                      border: it.stop.pin.located === false ? "1.5px dashed var(--text-muted)" : "none",
+                      color: it.stop.pin.located === false ? "var(--text-secondary)" : "#fff",
+                      font: "700 11px var(--font-sans)",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
                     {stopLetter(trip, it.stop)}
                   </span>
                 ) : (
@@ -89,11 +143,14 @@ export default function TripReview({ trip, choices, dayIndex, planTitles, name, 
           </ol>
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--hairline)", paddingTop: 10 }}>
             <span className="mono-caption">
-              {trip.stops.filter((s) => s.inBlock).length} stops · {trip.legs.length} rides
+              {plural(trip.stops.filter((s) => s.inBlock).length, "stop")} · {plural(trip.legs.length, "ride")}
             </span>
-            <span className="mono-data-sm" style={{ letterSpacing: 0 }}>
-              {perHead ? `Fares $${(perHead / 100).toFixed(2)} each${fares.length < trip.legs.length ? " + more" : ""}` : "No fares known"}
-            </span>
+            {money ? (
+              <span className="mono-data-sm" style={{ letterSpacing: 0, textAlign: "right" }}>
+                {money.totalCents ? `About ${formatMoney(money.perHeadCents)} each · ${formatMoney(money.totalCents)} for ${money.headcount}` : "No costs yet"}
+                {money.unknownFares ? " + fares not known" : ""}
+              </span>
+            ) : null}
           </div>
         </Card>
 
@@ -122,16 +179,18 @@ export default function TripReview({ trip, choices, dayIndex, planTitles, name, 
         </Card>
 
         <div style={{ font: "400 12px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
-          Goes to a vote. The block shows as proposed on Day {dayIndex} until the trip owner picks. Rides with a fare reach Expenses once it’s on the board.
+          {footnote ?? `Goes to a vote. The block shows as proposed on Day ${dayIndex} until the trip owner picks. Rides with a fare reach Expenses once it’s on the board.`}
         </div>
       </div>
 
       <div style={{ flex: "none", display: "flex", gap: 10, padding: "12px 16px 22px", borderTop: "1px solid var(--hairline)", background: "var(--surface-card)" }}>
-        <Button variant="secondary" fullWidth={false} onClick={onDraft} disabled={sending} style={{ padding: "0 16px", whiteSpace: "nowrap" }}>
-          Save draft
-        </Button>
+        {onDraft ? (
+          <Button variant="secondary" fullWidth={false} onClick={onDraft} disabled={sending} style={{ padding: "0 16px", whiteSpace: "nowrap" }}>
+            Save draft
+          </Button>
+        ) : null}
         <Button variant="accent" onClick={onSend} disabled={sending || !name.trim()}>
-          {sending ? "Sending…" : "Send to vote"}
+          {sending ? "Sending…" : sendLabel}
         </Button>
       </div>
     </div>
@@ -145,7 +204,12 @@ function stopMeta(it, choices, trip) {
   }
   if (!it.inBlock) return it.stop.index === 0 ? "Leave from here" : "Arrive";
   if (it.stop.role === "anchor") return `Already on the calendar · ${formatDuration(it.minutes)}`;
+  if (it.stop.pin.located === false) return `Where you already are · ${formatDuration(it.minutes)}${it.end === trip.windowEnd ? " · ends the block" : ""}`;
   return `Visit · ${formatDuration(it.minutes)}${it.end === trip.windowEnd ? " · ends the block" : ""}`;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
 function Card({ children }) {

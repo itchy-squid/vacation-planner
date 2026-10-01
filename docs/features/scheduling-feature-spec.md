@@ -207,8 +207,9 @@ there.
 returns to the menu with the sheet still open, so it reads as one panel
 rather than three.
 
-- *Menu* — three rows: **Propose a block** (routes to the proposals
-  spec's hour picker), **Add a pin** (the picker, disabled at zero
+- *Menu* — three rows: **Propose a route** (opens the route planner on
+  this day; see `route-proposals-spec.md`; it was "Propose a block" and
+  the proposals spec's hour picker), **Add a pin** (the picker, disabled at zero
   unplaced), **Custom event** (the form). Tints follow the app's
   one-hue-per-meaning rule: plum for the block, teal for the pin, stone
   for the custom event.

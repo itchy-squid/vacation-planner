@@ -46,9 +46,7 @@ import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splits
 //
 // The grid itself — its geometry, its snapping, and the column-packing
 // sweep that lays overlapping plans side by side — lives in
-// lib/dayGrid.js and components/planner/DayGrid.jsx, because the proposal
-// flow's hour picker renders the same grid with a selection layer over it
-// rather than a lookalike of it (see pages/ProposeBlock.jsx).
+// lib/dayGrid.js and components/planner/DayGrid.jsx.
 
 export default function DaySchedule() {
   const navigate = useNavigate();
@@ -932,7 +930,7 @@ export default function DaySchedule() {
 
       {/* The whole tray, collapsed to one row. It used to stack five
           things here — a caption, a region-filter rail, a horizontal strip
-          of unplaced cards, "Propose a block", and any drafts — roughly
+          of unplaced cards, "Propose a block" (now "Propose a route"), and any drafts — roughly
           300px of a 874pt phone, which is most of a day's worth of grid.
           Everything but the drafts moved behind "+ Add"
           (components/planner/AddSheet.jsx); see
@@ -1004,7 +1002,7 @@ export default function DaySchedule() {
             key={draft.id}
             type="button"
             onClick={() =>
-              navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`, { state: { draftPlanId: draft.id } })
+              navigate(`/trips/${trip.id}/map/trip?draft=${draft.id}`)
             }
             style={{
               width: "100%",

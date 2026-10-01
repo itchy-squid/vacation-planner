@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faBed,
-  faCalendarDay,
   faChevronLeft,
   faChevronRight,
   faClock,
@@ -89,7 +88,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
             dayIndex={dayIndex}
             unplacedCount={unplacedCount}
             canPlace={canPlace}
-            onPropose={() => navigate(`/trips/${trip.id}/schedule/${dayIndex}/propose`)}
+            onPropose={() => navigate(`/trips/${trip.id}/map/trip?day=${dayIndex}&from=schedule`)}
             onPick={() => setMode("picker")}
             onCustom={() => setMode("custom")}
           />
@@ -131,7 +130,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
 
 // ---- menu -----------------------------------------------------------------
 
-// Without plans:write (a companion) only "Propose a block" is offered:
+// Without plans:write (a companion) only "Propose a route" is offered:
 // the other two put something straight onto the calendar.
 function Menu({ dayIndex, unplacedCount, canPlace, onPropose, onPick, onCustom }) {
   return (
@@ -141,11 +140,11 @@ function Menu({ dayIndex, unplacedCount, canPlace, onPropose, onPick, onCustom }
           family, teal is geography, stone is neither (styles/tokens/
           colors.css, "one hue family per meaning"). */}
       <MenuRow
-        icon={faCalendarDay}
+        icon={faRoute}
         tint="var(--plum-tint-strong)"
         ink="var(--accent)"
-        title="Propose a block"
-        subtitle="Pick hours, then fill them"
+        title="Propose a route"
+        subtitle="Build it on the map, then send it to a vote"
         onClick={onPropose}
         last={!canPlace}
       />
