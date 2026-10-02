@@ -54,14 +54,22 @@ export default function RegionFilter({ regions, total, value, onChange }) {
   return (
     <>
       <div ref={rowRef} style={{ position: "relative", padding: "0 var(--gutter-screen) 16px" }}>
-        <div
-          ref={measureRef}
-          aria-hidden="true"
-          style={{ position: "absolute", top: 0, left: 0, display: "flex", gap: 8, width: "max-content", visibility: "hidden", pointerEvents: "none" }}
-        >
-          {options.map((o) => (
-            <Chip key={o.name} label={o.name} selected={o.name === value} />
-          ))}
+        {/* The copy is wider than the screen exactly when it matters, and
+            even hidden it still counts toward the scroll width of
+            .screen-scroll — which let a board with many regions be swiped
+            sideways into blank space on a phone. This zero-height clip
+            box keeps it out of the layout; its own scrollWidth is
+            unaffected. */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 0, overflow: "hidden", visibility: "hidden", pointerEvents: "none" }}>
+          <div
+            ref={measureRef}
+            aria-hidden="true"
+            style={{ display: "flex", gap: 8, width: "max-content" }}
+          >
+            {options.map((o) => (
+              <Chip key={o.name} label={o.name} selected={o.name === value} />
+            ))}
+          </div>
         </div>
 
         {fits ? (
