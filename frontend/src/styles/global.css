@@ -96,8 +96,13 @@ h1, h2, h3, h4, p {
   min-height: 0;
 }
 
+/* Screens scroll vertically only. Anything meant to scroll sideways (the
+   day strip on DaySchedule) is its own overflow-x: auto row; without
+   this, one stray wide element lets the whole screen be swiped sideways
+   into blank space on a phone. */
 .screen-scroll {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
