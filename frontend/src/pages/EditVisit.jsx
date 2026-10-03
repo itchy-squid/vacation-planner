@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
-import TextField, { TextArea, textFieldStyle } from "../components/forms/TextField";
+import PhotoPicker from "../components/photos/PhotoPicker";
+import { TextArea, textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import CostField from "../components/forms/CostField";
@@ -78,6 +79,7 @@ function baselineFrom(pin) {
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
+    photoSourceUrl: pin.photoSourceUrl ?? "",
     // Its exact spot, if it has one: { lat, lng, placeId } (placeId when it
     // came from a place search). null means it shows in its region.
     location: pin.lat != null ? { lat: pin.lat, lng: pin.lng, placeId: pin.googlePlaceId ?? null } : null,
@@ -128,9 +130,9 @@ export default function EditVisit() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [durationSyncNote, setDurationSyncNote] = useState("");
-  // Whether the inline "paste a new photo URL" field is open — separate
-  // from the draft itself, since showing the field is view state, not
-  // something Save or the discard-guard need to know about.
+  // Whether the photo picker is open — separate from the draft itself,
+  // since showing it is view state, not something Save or the
+  // discard-guard need to know about.
   const [editingPhoto, setEditingPhoto] = useState(false);
   // "Find it on Google Maps" (components/newpin/FindOnGoogle.jsx) takes
   // over the screen while it's open; the draft waits underneath. `pinNext`
@@ -559,7 +561,9 @@ export default function EditVisit() {
 
         <PhotoPlaceholder height={150} label="photo placeholder" src={form.photoUrl} alt={pin.title}>
           {canEdit ? (
-            <div style={{ marginLeft: "auto", marginRight: 14, marginBottom: 10 }}>
+            // Positioned so it draws above the photo, which PhotoPlaceholder
+            // lays over the whole box; otherwise the photo swallows the tap.
+            <div style={{ position: "relative", marginLeft: "auto", marginRight: 14, marginBottom: 10 }}>
               <button
                 type="button"
                 onClick={() => setEditingPhoto((open) => !open)}
@@ -573,16 +577,17 @@ export default function EditVisit() {
 
         {editingPhoto && canEdit && (
           <div style={{ padding: "10px 16px 0" }}>
-            <TextField
-              label="Image URL"
-              value={form.photoUrl}
-              onChange={(e) => setField("photoUrl", e.target.value)}
-              placeholder="Paste a new photo URL"
-              mono
-              size={12.5}
-              autoFocus
+            <PhotoPicker
+              tripId={state.trip.id}
+              link={form.link}
+              photoUrl={form.photoUrl}
+              current={baseline.photoUrl}
+              onPick={(url, sourceUrl) => {
+                setField("photoUrl", url);
+                setField("photoSourceUrl", sourceUrl ?? baseline.photoSourceUrl);
+              }}
             />
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 10 }}>
               <Button variant="secondary" size="sm" onClick={() => setEditingPhoto(false)}>
                 Done
               </Button>

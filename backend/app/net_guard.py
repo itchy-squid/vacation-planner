@@ -1,6 +1,6 @@
 """SSRF guard for backend code that fetches a URL a user supplied
-directly — currently just photo_storage.py, mirroring the image link
-pasted into the new-pin form into blob storage. Kept as its own module
+directly: photo_storage.py, mirroring a pin's chosen photo into blob
+storage, and link_photos.py, reading a pin's link for photos to offer. Kept as its own module
 rather than inlined there so the address-family check has exactly one
 place to get right as this backend grows more "read something the user
 pointed at" features.

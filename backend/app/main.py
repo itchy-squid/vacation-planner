@@ -7,6 +7,7 @@ from .routers import (
     day_places,
     events,
     health,
+    link_photos,
     me,
     pins,
     plans,
@@ -41,6 +42,7 @@ app.include_router(me.router)
 app.include_router(account.router)
 app.include_router(trips.router)
 app.include_router(pins.router)
+app.include_router(link_photos.router)
 app.include_router(plans.router)
 app.include_router(contests.router)
 app.include_router(splits.router)
