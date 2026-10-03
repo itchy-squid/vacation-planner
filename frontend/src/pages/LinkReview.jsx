@@ -16,9 +16,11 @@ const SEARCHES_AT_ONCE = 2;
 // places Google knows, each looked up once by its title inside its region.
 // A confident match is offered on its own, an unsure one as a few choices,
 // and no match (a booked tour, say) is left alone. Nothing changes until
-// "Link n": then each accepted idea gets the place's spot and Google place,
-// and nothing else (titles and links stay as typed). Opened from the Map
-// tab's summary (pages/TripMap.jsx), and back there when done.
+// "Link n" (or "Done"): then each accepted idea gets the place's spot and
+// Google place, and nothing else (titles and links stay as typed), and each
+// one answered "None of these" / "Not it" is left out of later reviews; it
+// can still be found on Google Maps from the idea itself. Opened from the
+// Map tab's summary (pages/TripMap.jsx), and back there when done.
 export default function LinkReview() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
@@ -30,7 +32,7 @@ export default function LinkReview() {
   // Read once: the list shouldn't reshuffle while it's being reviewed.
   const [ideas] = useState(() =>
     Object.values(pins)
-      .filter((p) => p.lat == null && regions[regionKey(p.region)] && ideaAccess.canEditIdea(p))
+      .filter((p) => p.lat == null && !p.googleReviewDismissed && regions[regionKey(p.region)] && ideaAccess.canEditIdea(p))
       .sort((a, b) => a.title.localeCompare(b.title))
       .slice(0, MAX_IDEAS)
   );
@@ -77,27 +79,34 @@ export default function LinkReview() {
     return null;
   }
   const toLink = ideas.filter((p) => decisions[p.id] === "link" && placeFor(p));
+  const toDismiss = ideas.filter((p) => decisions[p.id] === "skip");
 
   async function apply() {
-    if (toLink.length === 0) {
+    if (toLink.length === 0 && toDismiss.length === 0) {
       navigate(back);
       return;
     }
     setApplying(true);
     setError("");
     let failed = 0;
+    let dismissFailed = 0;
     for (const pin of toLink) {
       const place = placeFor(pin);
       const result = await dispatch({ type: "PATCH_PIN", id: pin.id, fields: { location: { lat: place.lat, lng: place.lng, placeId: place.placeId } } });
       if (!result?.ok) failed += 1;
     }
+    // Not offered again; the idea's own screen can still find it.
+    for (const pin of toDismiss) {
+      const result = await dispatch({ type: "PATCH_PIN", id: pin.id, fields: { googleReviewDismissed: true } });
+      if (!result?.ok) dismissFailed += 1;
+    }
     const linked = toLink.length - failed;
-    if (failed) {
+    if (failed || dismissFailed) {
       setApplying(false);
-      setError(`Linked ${linked}, but ${failed} didn’t save. Try again.`);
+      setError(failed ? `Linked ${linked}, but ${failed} didn’t save. Try again.` : "Couldn’t save every answer. Try again.");
       return;
     }
-    navigate(back, { state: { notice: `${linked} idea${linked === 1 ? "" : "s"} linked to Google Maps.` } });
+    navigate(back, linked ? { state: { notice: `${linked} idea${linked === 1 ? "" : "s"} linked to Google Maps.` } } : undefined);
   }
 
   const decide = (id, value) => setDecisions((current) => ({ ...current, [id]: value }));

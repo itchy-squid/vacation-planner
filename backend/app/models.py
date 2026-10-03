@@ -38,6 +38,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -282,6 +283,11 @@ class Pin(Base):
     # what spots the same place being added twice, and what a later refresh
     # of lat/lng would go by (Google limits how long those may be cached).
     google_place_id: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Someone answered "None of these" (or "Not it") for this idea in the
+    # Map tab's "On Google Maps?" review (frontend pages/LinkReview.jsx), so
+    # the review leaves it out from then on. It can still be found on
+    # Google Maps from the idea itself.
+    google_review_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     # The whole cost of visiting this pin, for everyone it's shared

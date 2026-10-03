@@ -84,8 +84,9 @@ export default function TripMap() {
   const [finding, setFinding] = useState(null); // the pin being looked up on Google Maps
   const [moveOffer, setMoveOffer] = useState(null); // { pinId, region }: a linked place is in another region
   const knownRegions = useKnownRegions();
-  // Ideas the review can look up: no spot, a placed region, and editable.
-  const reviewable = pinList.filter((p) => p.lat == null && regions[regionKey(p.region)] && ideaAccess.canEditIdea(p)).length;
+  // Ideas the review can look up: no spot, a placed region, editable, and
+  // not already answered "None of these" there.
+  const reviewable = pinList.filter((p) => p.lat == null && !p.googleReviewDismissed && regions[regionKey(p.region)] && ideaAccess.canEditIdea(p)).length;
 
   // A trip with nothing placeable yet opens on its area, found by name.
   const { locationsLine, name } = trip;

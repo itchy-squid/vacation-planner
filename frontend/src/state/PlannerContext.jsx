@@ -142,6 +142,9 @@ function normalizePin(p, contributorsById) {
     lat: p.lat ?? null,
     lng: p.lng ?? null,
     googlePlaceId: p.google_place_id ?? null,
+    // "None of these" was answered for it in the "On Google Maps?" review
+    // (pages/LinkReview.jsx), which then leaves it out.
+    googleReviewDismissed: Boolean(p.google_review_dismissed),
     cx,
     cy,
     dur: p.duration_minutes,
@@ -1387,6 +1390,7 @@ export function PlannerProvider({ children }) {
             backendFields.lng = f.location?.lng ?? null;
             backendFields.google_place_id = f.location?.placeId ?? null;
           }
+          if ("googleReviewDismissed" in f) backendFields.google_review_dismissed = f.googleReviewDismissed;
           // Returns a result rather than swallowing the failure: an
           // explicit Save (pages/EditVisit.jsx) has to be able to keep the
           // user on the form and say so when the write didn't land, instead

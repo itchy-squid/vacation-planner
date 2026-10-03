@@ -105,3 +105,17 @@ def test_half_a_spot_is_refused_on_update(client, trip, body):
     pin = create(client, trip, {**BEAUTY_CAVE, **FOUND_AT}).json()
     assert patch(client, pin["id"], body).status_code == 422
     assert location(client.get(f"/api/pins/{pin['id']}", headers=MEI).json()) == FOUND_AT
+
+
+def test_dismissing_the_google_review_is_remembered(client, trip):
+    # "None of these" in the Map tab's "On Google Maps?" review.
+    pin = create(client, trip, BEAUTY_CAVE).json()
+    assert pin["google_review_dismissed"] is False
+
+    res = client.patch(f"/api/pins/{pin['id']}", json={"google_review_dismissed": True}, headers=JAE)
+    assert res.status_code == 200
+    assert res.json()["google_review_dismissed"] is True
+    assert location(res.json()) == {"lat": None, "lng": None, "google_place_id": None}
+
+    listed = client.get(f"/api/trips/{trip.id}/pins", headers=MEI).json()
+    assert next(p for p in listed if p["id"] == pin["id"])["google_review_dismissed"] is True

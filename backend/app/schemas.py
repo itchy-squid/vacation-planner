@@ -334,6 +334,8 @@ class PinUpdate(BaseModel):
     lat: Latitude | None = None
     lng: Longitude | None = None
     google_place_id: GooglePlaceId | None = None
+    # "None of these" in the "On Google Maps?" review: don't offer it again.
+    google_review_dismissed: bool | None = None
 
     @model_validator(mode="after")
     def _location_is_all_or_nothing(self) -> "PinUpdate":
@@ -434,6 +436,7 @@ class PinOut(BaseModel):
     lat: float | None
     lng: float | None
     google_place_id: str | None = None
+    google_review_dismissed: bool = False
     duration_minutes: int
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None
