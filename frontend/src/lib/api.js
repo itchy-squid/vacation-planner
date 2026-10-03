@@ -385,6 +385,9 @@ export const api = {
   getPin: (pinId) => request(`/api/pins/${pinId}`),
   patchPin: (pinId, fields) => request(`/api/pins/${pinId}`, { method: "PATCH", body: fields }),
   deletePin: (pinId) => request(`/api/pins/${pinId}`, { method: "DELETE" }),
+  // Photos the page behind a link offers, for the photo picker (backend
+  // app/link_photos.py): { status: "ok" | "empty" | "unreachable", photos }.
+  linkPhotos: (tripId, url) => request(`/api/trips/${tripId}/link-photos?url=${encodeURIComponent(url)}`),
   // Idempotent both ways (backend/app/routers/pins.py heart_pin); each
   // returns the pin, with everyone who has hearted it.
   heartPin: (pinId) => request(`/api/pins/${pinId}/heart`, { method: "PUT" }),

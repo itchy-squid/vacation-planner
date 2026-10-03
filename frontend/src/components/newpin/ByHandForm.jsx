@@ -5,6 +5,7 @@ import CostField from "../forms/CostField";
 import RegionPicker from "../forms/RegionPicker";
 import Button from "../core/Button";
 import WhereOnMap from "../map/WhereOnMap";
+import PhotoPicker from "../photos/PhotoPicker";
 import { useRegionPreview } from "../map/useRegionPreview";
 import { NewPinHeader, AddModeSwitch, SourceTag } from "./NewPinChrome";
 import { externalHref } from "../../lib/externalHref";
@@ -52,10 +53,14 @@ export default function ByHandForm({ trip, knownRegions, canSetCost, focusTitle,
   const [minutes, setMinutes] = useState(DEFAULT_MINUTES);
   const [cost, setCost] = useState("");
   const [costBasis, setCostBasis] = useState("per_head");
+  const [photo, setPhoto] = useState({ url: "", sourceUrl: "", origin: "none" });
   const { chosenChip, knownByKey, location, lookingUp } = useRegionPreview(region, knownRegions);
 
   function changeLink(next) {
     setLink(next);
+    // A photo found on the old link's page doesn't belong to the new one,
+    // and with no link the picker is gone, so nothing it chose stays.
+    if (photo.url && (photo.origin === "link" || !next.trim())) setPhoto({ url: "", sourceUrl: "", origin: "none" });
     const hints = hintsFromLink(next);
     if (!hints) return;
     // Only fill fields the person hasn't typed in (or that the last link filled).
@@ -83,6 +88,10 @@ export default function ByHandForm({ trip, knownRegions, canSetCost, focusTitle,
         duration_minutes: minutes,
         notes: "",
         tags: [],
+        // A pasted image credits whatever the link is now, not when it was pasted.
+        ...(photo.url.trim()
+          ? { photo_url: photo.url.trim(), photo_source_url: (photo.origin === "pasted" ? link.trim() : photo.sourceUrl) || photo.url.trim() }
+          : {}),
         ...(spot ? { lat: spot.lat, lng: spot.lng } : {}),
         // Only sent when set: pricing needs its own permission.
         ...(canSetCost && costCents > 0 ? { cost_cents: costCents, cost_basis: costBasis } : {}),
@@ -115,6 +124,10 @@ export default function ByHandForm({ trip, knownRegions, canSetCost, focusTitle,
             size={12.5}
             autoFocus={!focusTitle}
           />
+
+          {link.trim() ? (
+            <PhotoPicker tripId={trip.id} link={link} photoUrl={photo.url} onPick={(url, sourceUrl, origin) => setPhoto({ url, sourceUrl: sourceUrl ?? "", origin })} />
+          ) : null}
 
           <div style={{ position: "relative" }}>
             {hinted.title && title === hinted.title ? (
@@ -158,9 +171,6 @@ export default function ByHandForm({ trip, knownRegions, canSetCost, focusTitle,
           <Button variant="accent" type="submit" disabled={!canSubmit} style={{ marginTop: 4 }}>
             {submitting ? "Adding…" : "Add to board"}
           </Button>
-          <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingBottom: 8 }}>
-            A photo link can be added on the idea afterwards.
-          </div>
         </form>
       </div>
     </div>

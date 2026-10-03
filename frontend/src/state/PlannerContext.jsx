@@ -1374,11 +1374,12 @@ export function PlannerProvider({ children }) {
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;
-          // A pasted replacement URL, or a cleared field going back to
-          // "no photo" — either way sent as photo_url, same as create
-          // (pages/NewPin.jsx); routers/pins.py re-mirrors it into blob
-          // storage whenever this lands a new external link.
+          // A photo chosen in the picker (components/photos/PhotoPicker.jsx),
+          // or "no photo" — either way sent as photo_url, same as create;
+          // routers/pins.py re-mirrors it into blob storage whenever this
+          // lands a new external link. photoSourceUrl is the page it came from.
           if ("photoUrl" in f) backendFields.photo_url = f.photoUrl.trim() || null;
+          if ("photoSourceUrl" in f) backendFields.photo_source_url = f.photoSourceUrl.trim() || null;
           // An exact spot: { lat, lng, placeId } or null to remove it.
           // Always sent whole; the API refuses half a location.
           if ("location" in f) {

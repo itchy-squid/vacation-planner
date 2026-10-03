@@ -13,8 +13,8 @@ dependencies = [
   "pydantic-settings>=2.6,<3.0",
   "python-dotenv>=1.0,<2.0",
   "azure-identity>=1.19,<2.0",
-  # Runtime, not just tests: routers/link_preview.py fetches the page
-  # behind a pasted link server-side, because the browser can't read a
+  # Runtime, not just tests: app/link_photos.py fetches the page behind a
+  # pasted link server-side, because the browser can't read a
   # cross-origin page itself.
   "httpx>=0.27,<0.28",
   # app/photo_storage.py mirrors a chosen pin photo into Azure Blob
