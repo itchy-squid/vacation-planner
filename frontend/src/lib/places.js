@@ -2,6 +2,7 @@
 // the browser through the Maps JS "places" library, on the same key as the
 // map, so the key needs Places API (New) enabled (README "Google Maps").
 import { importMapsLibrary } from "./googleMaps";
+import { searchBias } from "./placeBias";
 
 export const MAX_RESULTS = 5;
 
@@ -21,7 +22,8 @@ const FIELDS = ["id", "displayName", "formattedAddress", "location", "addressCom
 export async function searchPlaces(query, { bias, max = MAX_RESULTS } = {}) {
   const { Place } = await importMapsLibrary("places");
   const request = { textQuery: query, fields: FIELDS, maxResultCount: max };
-  if (bias) request.locationBias = bias;
+  const locationBias = searchBias(bias);
+  if (locationBias) request.locationBias = locationBias;
   const { places } = await Place.searchByText(request);
   return places.filter((place) => place.location).map(toResult);
 }
