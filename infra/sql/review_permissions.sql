@@ -148,8 +148,8 @@ FROM pg_namespace WHERE nspname = 'public';
 --   you're a member -- you're not, by design, so this really does need
 --   the app's own credential):
 --     SELECT count(*) FROM trips;                                  -- should succeed
---     INSERT INTO trips (name, region_line, phase, created_at)
---       VALUES ('x', '', 'ideation', now());                       -- should succeed
+--     INSERT INTO trips (name, region_line, created_at)
+--       VALUES ('x', '', now());                                  -- should succeed
 --     CREATE TABLE hax (id int);                                   -- should FAIL
 --
 --   Connected as gh-deploy (or as yourself with `SET ROLE db_owner` --

@@ -1,3 +1,4 @@
+import random
 import secrets
 from typing import TypeVar
 
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import Principal, get_current_principal
 from ..db import get_db
-from ..models import Contributor, Traveler, Trip, TripInvite
+from ..models import Contributor, Pin, Traveler, Trip, TripInvite
 from ..permissions import TRIP_MANAGE, TRIP_READ, Access, Role, require, scopes_for
 from ..schemas import PersonOut, TripCreate, TripInviteeIn, TripOut, TripOwnerOut, TripUpdate
 from ..tripdays import day_count, has_calendar, move_calendar, start_moved_by
@@ -39,6 +40,29 @@ def member_count(db: Session, trip_id: int) -> int:
     return db.scalar(select(func.count()).select_from(Contributor).where(Contributor.trip_id == trip_id)) or 0
 
 
+# An activity at least this long is a big enough part of the trip to stand
+# for it on the cover, like where the group stays.
+COVER_MIN_ACTIVITY_MINUTES = 180
+
+
+def cover_photo_url(db: Session, trip_id: int) -> str | None:
+    """A photo for the trip's card, chosen at random from its places to
+    stay and its longer activities (COVER_MIN_ACTIVITY_MINUTES or more),
+    or from any idea with a photo when none of those has one.
+
+    Seeded by the trip, so the cover holds still from one visit to the next
+    and only changes when the ideas it's chosen from do."""
+    rows = db.execute(
+        select(Pin.id, Pin.photo_url, Pin.kind, Pin.duration_minutes)
+        .where(Pin.trip_id == trip_id, Pin.photo_url.is_not(None), Pin.photo_url != "")
+        .order_by(Pin.id)
+    ).all()
+    if not rows:
+        return None
+    featured = [r for r in rows if r.kind == "stay" or r.duration_minutes >= COVER_MIN_ACTIVITY_MINUTES]
+    return random.Random(trip_id).choice(featured or rows).photo_url
+
+
 def trip_out(db: Session, trip: Trip, member: Contributor) -> TripOut:
     """A trip as `member` sees it — the trip's own fields plus the caller's
     role and scopes, the owner, and the headcount."""
@@ -51,7 +75,6 @@ def trip_out(db: Session, trip: Trip, member: Contributor) -> TripOut:
         length_days=trip.length_days,
         rough_month=trip.rough_month,
         day_count=day_count(trip),
-        phase=trip.phase.value,
         traveler_count=db.scalar(select(func.count()).select_from(Traveler).where(Traveler.trip_id == trip.id)) or 0,
         created_at=trip.created_at,
         my_role=member.role,
@@ -62,6 +85,7 @@ def trip_out(db: Session, trip: Trip, member: Contributor) -> TripOut:
         ),
         owner=owner_out(owner_of(db, trip.id)),
         member_count=member_count(db, trip.id),
+        cover_photo_url=cover_photo_url(db, trip.id),
     )
 
 

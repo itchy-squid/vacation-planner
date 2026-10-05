@@ -34,7 +34,6 @@ from .models import (
     TravelItem,
     Traveler,
     Trip,
-    TripPhase,
     Vote,
 )
 
@@ -102,7 +101,6 @@ def seed_taiwan(db: Session) -> None:
         region_line="Taipei · Xiaoliuqiu · Hualien · Tainan",
         start_date=TAIWAN_TRIP_START,
         end_date=date(2026, 10, 10),
-        phase=TripPhase.scheduling,
     )
     db.add(trip)
     db.flush()
@@ -341,7 +339,6 @@ def seed_light_trip(
     region_line: str,
     start_date: date | None,
     end_date: date | None,
-    phase: TripPhase,
     pin_titles: list[tuple[str, str]],
     mei_role: str,
     owner_name: str,
@@ -354,7 +351,7 @@ def seed_light_trip(
     trip someone else owns in each of the roles she can hold there — and so
     she can see these trips at all, since the trips list only returns the
     caller's own."""
-    trip = Trip(name=name, region_line=region_line, start_date=start_date, end_date=end_date, phase=phase)
+    trip = Trip(name=name, region_line=region_line, start_date=start_date, end_date=end_date)
     db.add(trip)
     db.flush()
 
@@ -389,7 +386,6 @@ def run() -> None:
             "Tokyo · Kyoto",
             None,  # dates still tentative
             None,
-            TripPhase.ideation,
             [("Shinjuku Gyoen", "Tokyo"), ("Fushimi Inari", "Kyoto"), ("Nishiki Market", "Kyoto")],
             mei_role="planner",
             owner_name="Kenji",
@@ -400,7 +396,6 @@ def run() -> None:
             "Reykjavik · Vik · Akureyri",
             date(2026, 6, 15),
             date(2026, 6, 25),
-            TripPhase.locked,
             [("Golden Circle", "Reykjavik"), ("Diamond Beach", "Vik"), ("Godafoss", "Akureyri"), ("Blue Lagoon", "Reykjavik")],
             mei_role="reader",
             owner_name="Sigrid",
