@@ -361,6 +361,13 @@ export const api = {
   // traveler ignores it.
   acceptInvite: (token, claim) =>
     request(`/api/invites/${encodeURIComponent(token)}/accept`, { method: "POST", body: claim ?? {} }),
+  // Invites sent straight to you (a new trip's "Who's planning with
+  // you?"), waiting on Trips home. Accepted with acceptInvite above; only
+  // these can be declined.
+  myInvites: () => request("/api/me/invites"),
+  declineInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}/decline`, { method: "POST" }),
+  // Everyone you've planned a trip with (backend/app/routers/people.py).
+  listPeople: () => request("/api/people"),
 
   // The traveler roster — who is going, separate from who's on the app
   // (backend/app/routers/travelers.py).

@@ -7,7 +7,8 @@ import AvatarStack from "../components/planner/AvatarStack";
 import MetricTile from "../components/planner/MetricTile";
 import { usePlannerState, usePlannerDispatch, roleLabel } from "../state/PlannerContext";
 import RoleTag from "../components/core/RoleTag";
-import { logout } from "../lib/api";
+import HomeTabBar from "../components/core/HomeTabBar";
+import WaitingInvites from "../components/sharing/WaitingInvites";
 
 // Screen 1 — "pick a trip; read its phase at a glance." Handoff README
 // screen 1. "Add trip" opens the new-trip form (see pages/NewTrip.jsx);
@@ -17,17 +18,25 @@ import { logout } from "../lib/api";
 // reflects TRIP.phase — "Start schedule" pre-ideation-exit, "Open
 // schedule" once the trip has moved into scheduling/locked) — it does not
 // navigate away from this screen.
+//
+// It's the first of three tabs outside any trip (components/core/
+// HomeTabBar.jsx: Trips | People | You). Invites sent straight to you sit
+// above your trips (components/sharing/WaitingInvites.jsx); signing out
+// and deleting your account moved to the You tab (pages/You.jsx).
 export default function TripsHome() {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = usePlannerDispatch();
   // "Taiwan added to your trips" — set by pages/JoinTrip.jsx when it
-  // lands here after a join. Read once, then cleared from history so a
-  // refresh or back-navigation doesn't show it again.
-  const [joinedName, setJoinedName] = useState(location.state?.joinedTripName ?? null);
-  const dismissJoined = useCallback(() => setJoinedName(null), []);
+  // lands here after a join — or "Japan created · 2 invites sent" from
+  // pages/NewTrip.jsx. Read once, then cleared from history so a refresh
+  // or back-navigation doesn't show it again. Joining from an invite card
+  // on this screen sets it directly.
+  const [toast, setToast] = useState(() => initialToast(location.state));
+  const dismissToast = useCallback(() => setToast(null), []);
+  const showJoined = useCallback((name) => setToast(`${name} added to your trips`), []);
   useEffect(() => {
-    if (location.state?.joinedTripName) {
+    if (location.state?.joinedTripName || location.state?.toast) {
       navigate(location.pathname, { replace: true, state: null });
     }
   }, [location.state, location.pathname, navigate]);
@@ -47,7 +56,9 @@ export default function TripsHome() {
   // there is no primary card, no "also planning" list and no contributors
   // to stack, so all that's left is the one thing to do next.
   if (TRIP === null) {
-    return <NoTripsYet onCreate={() => navigate("/new-trip")} />;
+    return (
+      <NoTripsYet onCreate={() => navigate("/new-trip")} onJoined={showJoined} toast={toast} onDismissToast={dismissToast} />
+    );
   }
 
   async function openTrip(tripId) {
@@ -74,6 +85,8 @@ export default function TripsHome() {
             <CircleGlyph glyph="+" label="Add trip" onClick={() => navigate("/new-trip")} />
           </div>
         </div>
+
+        <WaitingInvites onJoined={showJoined} />
 
         <div style={{ padding: "0 var(--gutter-screen)" }}>
           <div
@@ -189,14 +202,19 @@ export default function TripsHome() {
           })}
         </div>
 
-        <SignOut />
       </div>
-      {joinedName ? <JoinedToast name={joinedName} onDismiss={dismissJoined} /> : null}
+      <HomeTabBar />
+      {toast ? <HomeToast message={toast} onDismiss={dismissToast} /> : null}
     </div>
   );
 }
 
-function JoinedToast({ name, onDismiss }) {
+function initialToast(state) {
+  if (state?.joinedTripName) return `${state.joinedTripName} added to your trips`;
+  return state?.toast ?? null;
+}
+
+function HomeToast({ message, onDismiss }) {
   useEffect(() => {
     const t = window.setTimeout(onDismiss, 5000);
     return () => window.clearTimeout(t);
@@ -208,7 +226,8 @@ function JoinedToast({ name, onDismiss }) {
         position: "absolute",
         left: "var(--gutter-screen)",
         right: "var(--gutter-screen)",
-        bottom: 28,
+        // Clear of the tab bar below it.
+        bottom: 84,
         background: "var(--surface-inverse)",
         color: "var(--text-on-dark)",
         borderRadius: "var(--radius-lg)",
@@ -221,7 +240,7 @@ function JoinedToast({ name, onDismiss }) {
         zIndex: 20,
       }}
     >
-      <span style={{ font: "500 13px var(--font-sans)" }}>{name} added to your trips</span>
+      <span style={{ font: "500 13px var(--font-sans)" }}>{message}</span>
       <button
         type="button"
         className="hit-target"
@@ -234,49 +253,20 @@ function JoinedToast({ name, onDismiss }) {
   );
 }
 
-// Signing out used to live in the ☰ menu on the trip screens (see
-// components/core/TripHeader.jsx, which replaced it with a back chevron and
-// a gear). It belongs here instead: leaving the app is something you do
-// when you're done with a trip, not mid-way through arranging one, and this
-// is the only screen that isn't about a particular trip. Quiet on purpose —
-// it's the rarest thing on the screen and the only irreversible one.
-function SignOut() {
-  const navigate = useNavigate();
-  const linkStyle = {
-    padding: "0 16px",
-    background: "none",
-    border: "none",
-    font: "500 12.5px var(--font-sans)",
-    color: "var(--text-muted)",
-    cursor: "pointer",
-  };
-  // "Delete account" sits beside it for the same reasons: rare, about you
-  // rather than a trip, and it opens a confirmation screen
-  // (pages/DeleteAccount.jsx) rather than doing anything on the spot.
-  return (
-    <div style={{ display: "flex", justifyContent: "center", gap: 4, padding: "28px 0 4px" }}>
-      <button type="button" className="tap hit-target" onClick={() => logout()} style={linkStyle}>
-        Sign out
-      </button>
-      <button type="button" className="tap hit-target" onClick={() => navigate("/account/delete")} style={linkStyle}>
-        Delete account
-      </button>
-    </div>
-  );
-}
-
 // The no-trips screen. The header keeps only the title: with no trips
 // there is nothing for a second, smaller "add" affordance to sit
 // alongside, and the "New trip" button on the card below is the one
 // obvious thing to do. The "+" returns to the header as soon as there is
 // a first trip.
-function NoTripsYet({ onCreate }) {
+function NoTripsYet({ onCreate, onJoined, toast, onDismissToast }) {
   return (
-    <div className="screen">
+    <div className="screen" style={{ position: "relative" }}>
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "flex-end", padding: "20px var(--gutter-text) 14px" }}>
           <h1 style={{ font: "700 26px var(--font-sans)", color: "var(--text-primary)" }}>Trips</h1>
         </div>
+
+        <WaitingInvites onJoined={onJoined} />
 
         <div style={{ padding: "0 var(--gutter-screen)" }}>
           <div
@@ -309,9 +299,9 @@ function NoTripsYet({ onCreate }) {
             </div>
           </div>
         </div>
-
-        <SignOut />
       </div>
+      <HomeTabBar />
+      {toast ? <HomeToast message={toast} onDismiss={onDismissToast} /> : null}
     </div>
   );
 }

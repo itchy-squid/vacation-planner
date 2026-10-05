@@ -69,6 +69,11 @@ _UNSCOPED = {
     ("POST", "/api/trips"),
     ("GET", "/api/invites/{token}"),
     ("POST", "/api/invites/{token}/accept"),
+    # Invites sent to you, and the people you've planned with
+    # (routers/sharing.py, routers/people.py): yours, not a trip's.
+    ("GET", "/api/me/invites"),
+    ("POST", "/api/invites/{token}/decline"),
+    ("GET", "/api/people"),
 }
 
 

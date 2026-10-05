@@ -5,6 +5,10 @@
 - Invite links: one live link per role, reused until the owner revokes it.
   Anyone signed in who holds a live link can preview the trip and join it
   with that link's role.
+- Direct invites: sent to one person by email when a trip is created
+  (routers/trips.py create_trip). They wait on that person's Trips screen
+  (GET /me/invites); only they can accept (the same accept call a link
+  uses) or decline one, and each works once.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from ..models import (
 from ..permissions import MEMBERS_MANAGE, TRIP_READ, VOTING_ROLES, Access, Role, invite_by_token, member_for, require
 from ..schemas import (
     ContributorOut,
+    DirectInviteOut,
     ContributorRoleUpdate,
     InviteAccept,
     InviteCreate,
@@ -45,7 +50,7 @@ from ..schemas import (
     InvitePreviewOut,
     TripOut,
 )
-from .travelers import add_traveler, traveler_brief, traveler_for_member
+from .travelers import add_traveler, remove_traveler, traveler_brief, traveler_for_member
 from .trips import member_count, owner_of, owner_out, trip_out
 
 router = APIRouter(prefix="/api", tags=["sharing"])
@@ -197,7 +202,12 @@ def _invite_out(invite: TripInvite, joined: int) -> InviteOut:
 def _live_invites(db: Session, trip_id: int) -> list[TripInvite]:
     return db.scalars(
         select(TripInvite)
-        .where(TripInvite.trip_id == trip_id, TripInvite.revoked_at.is_(None), TripInvite.traveler_id.is_(None))
+        .where(
+            TripInvite.trip_id == trip_id,
+            TripInvite.revoked_at.is_(None),
+            TripInvite.traveler_id.is_(None),
+            TripInvite.invitee_email.is_(None),
+        )
         .order_by(TripInvite.created_at, TripInvite.id)
     ).all()
 
@@ -244,7 +254,7 @@ def revoke_invite(
 ):
     """Stops the link working. People who already joined through it stay."""
     invite = db.get(TripInvite, invite_id)
-    if invite is None or invite.trip_id != trip_id:
+    if invite is None or invite.trip_id != trip_id or invite.invitee_email is not None:
         raise HTTPException(status_code=404, detail="Invite link not found")
     if invite.revoked_at is None:
         invite.revoked_at = _now()
@@ -258,7 +268,7 @@ def preview_invite(
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ):
-    invite = invite_by_token(db, token)
+    invite = _usable_invite(db, token, principal)
     trip = db.get(Trip, invite.trip_id)
     existing = member_for(db, trip.id, principal.email)
     return InvitePreviewOut(
@@ -285,6 +295,16 @@ def preview_invite(
     )
 
 
+def _usable_invite(db: Session, token: str, principal: Principal) -> TripInvite:
+    """A live invite the caller may use. A direct invite is only for the
+    person it was sent to; anyone else holding its token gets the same 404
+    as a dead link."""
+    invite = invite_by_token(db, token)
+    if invite.invitee_email is not None and invite.invitee_email != principal.email:
+        raise HTTPException(status_code=404, detail="This invite link doesn't work anymore")
+    return invite
+
+
 def _invite_traveler(db: Session, invite: TripInvite):
     """The traveler a link was made for, while they're still unclaimed."""
     if invite.traveler_id is None:
@@ -306,9 +326,18 @@ def accept_invite(
     already on the trip keeps the role they have — a reader link can't
     demote a contributor, and a contributor link passed around can't be
     used to upgrade a reader the owner chose to keep read-only."""
-    invite = invite_by_token(db, token)
+    invite = _usable_invite(db, token, principal)
     trip = db.get(Trip, invite.trip_id)
     member = member_for(db, trip.id, principal.email)
+    if invite.invitee_email is not None:
+        # Sent to this one person, so it's done with either way. The
+        # owner chose whether they're coming: with no traveler listed for
+        # them, they join to help plan.
+        invite.revoked_at = _now()
+        if invite.traveler_id is None:
+            payload = InviteAccept(not_going=True)
+        if member is not None:
+            db.commit()
     if member is None:
         count = member_count(db, trip.id)
         member = Contributor(
@@ -360,3 +389,82 @@ def _claim_traveler(db: Session, trip_id: int, invite: TripInvite, member: Contr
     if payload.not_going or traveler_for_member(db, trip_id, member.id) is not None:
         return
     add_traveler(db, trip_id, member.display_name, contributor_id=member.id, tint=member.tint)
+
+
+# --- direct invites -------------------------------------------------------------
+
+
+@router.get("/me/invites", response_model=list[DirectInviteOut])
+def my_invites(principal: Principal = Depends(get_current_principal), db: Session = Depends(get_db)):
+    """Invites waiting for the caller, newest first. One for a trip they've
+    since joined some other way is left out."""
+    my_trips = select(Contributor.trip_id).where(Contributor.email == principal.email)
+    invites = db.scalars(
+        select(TripInvite)
+        .where(
+            TripInvite.invitee_email == principal.email,
+            TripInvite.revoked_at.is_(None),
+            TripInvite.trip_id.not_in(my_trips),
+        )
+        .order_by(TripInvite.created_at.desc(), TripInvite.id.desc())
+    ).all()
+    out = []
+    for invite in invites:
+        trip = db.get(Trip, invite.trip_id)
+        sender = db.get(Contributor, invite.created_by_id) if invite.created_by_id else None
+        out.append(
+            DirectInviteOut(
+                id=invite.id,
+                token=invite.token,
+                trip_id=trip.id,
+                trip_name=trip.name,
+                start_date=trip.start_date,
+                end_date=trip.end_date,
+                phase=trip.phase.value,
+                role=invite.role,
+                invited_by=owner_out(sender or owner_of(db, trip.id)),
+                member_count=member_count(db, trip.id),
+                traveling=invite.traveler_id is not None,
+                created_at=invite.created_at,
+            )
+        )
+    return out
+
+
+@router.post("/invites/{token}/decline", status_code=204)
+def decline_invite(
+    token: str,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    """Turn down a direct invite. The traveler listed for them comes off
+    the roster (and so off every group and cost split), unless someone has
+    claimed it in the meantime."""
+    invite = _usable_invite(db, token, principal)
+    if invite.invitee_email is None:
+        raise HTTPException(status_code=404, detail="Only an invite sent to you can be declined")
+    events, forgotten = withdraw_direct_invite(db, invite)
+    db.commit()
+    for trip_id, event, data in events:
+        bus.publish(trip_id, event, data)
+    publish_forgotten(forgotten)
+    return None
+
+
+def withdraw_direct_invite(
+    db: Session, invite: TripInvite
+) -> tuple[list[tuple[int, str, dict]], list[tuple[int, int]]]:
+    """Retire a direct invite that won't be accepted (declined, or its
+    invitee deleted their account), taking the traveler listed for them off
+    the roster unless someone has claimed it meanwhile. Doesn't commit;
+    returns the events to publish and the travel items forgotten."""
+    trip_id = invite.trip_id
+    traveler = db.get(Traveler, invite.traveler_id) if invite.traveler_id else None
+    if traveler is None or traveler.contributor_id is not None:
+        invite.revoked_at = _now()
+        return [], []
+    # Removing the traveler deletes the invites made for them, this one
+    # included.
+    removed_id = traveler.id
+    forgotten = forget_orphaned_travel_items(db, remove_traveler(db, traveler))
+    return [(trip_id, "traveler.removed", {"traveler_id": removed_id})], forgotten

@@ -227,7 +227,13 @@ def invite_traveler(
     if traveler.contributor_id is not None:
         raise HTTPException(status_code=409, detail=f"{traveler.name} is already on the app")
     existing = db.scalar(
-        select(TripInvite).where(TripInvite.traveler_id == traveler.id, TripInvite.revoked_at.is_(None))
+        select(TripInvite).where(
+            TripInvite.traveler_id == traveler.id,
+            TripInvite.revoked_at.is_(None),
+            # Not a direct invite waiting for someone (routers/sharing.py):
+            # that one only works for them, so it can't double as a link.
+            TripInvite.invitee_email.is_(None),
+        )
     )
     if existing is not None and existing.role != payload.role:
         existing.revoked_at = _now()

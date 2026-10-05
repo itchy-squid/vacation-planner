@@ -9,6 +9,7 @@ from .routers import (
     health,
     link_photos,
     me,
+    people,
     pins,
     plans,
     regions,
@@ -49,6 +50,7 @@ app.include_router(splits.router)
 app.include_router(travel_items.router)
 app.include_router(comments.router)
 app.include_router(sharing.router)
+app.include_router(people.router)
 app.include_router(travelers.router)
 app.include_router(regions.router)
 app.include_router(day_places.router)

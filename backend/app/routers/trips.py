@@ -1,12 +1,16 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import Principal, get_current_principal
 from ..db import get_db
-from ..models import Contributor, Traveler, Trip
+from ..models import Contributor, Traveler, Trip, TripInvite
 from ..permissions import TRIP_MANAGE, TRIP_READ, Access, Role, require, scopes_for
-from ..schemas import TripCreate, TripOut, TripOwnerOut, TripUpdate
+from ..schemas import PersonOut, TripCreate, TripInviteeIn, TripOut, TripOwnerOut, TripUpdate
+from .people import people_for
+from .travelers import add_traveler
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
 
@@ -77,6 +81,10 @@ def create_trip(
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ):
+    # Checked before anything is written, so a refused invitee leaves no
+    # half-made trip behind.
+    invitees = _invitees(db, principal, payload.invitees)
+
     trip = Trip(
         name=payload.name,
         region_line=payload.region_line,
@@ -87,7 +95,8 @@ def create_trip(
     db.flush()
 
     # The creator is the trip's one owner. Everyone else arrives through an
-    # invite link (routers/sharing.py).
+    # invite: a link (routers/sharing.py), or one sent below to someone
+    # they've planned with before.
     owner = Contributor(
         trip_id=trip.id,
         email=principal.email,
@@ -108,10 +117,56 @@ def create_trip(
             position=0,
         )
     )
+    db.flush()
+
+    # "Who's planning with you?": an invite each, waiting on their Trips
+    # screen. Someone coming is listed as a traveler now, so the roster
+    # and cost splits include them from the start; accepting claims that
+    # row (sharing._claim_traveler) and declining removes it.
+    for person, invitee in invitees:
+        traveler = add_traveler(db, trip.id, person.display_name) if invitee.traveling else None
+        db.add(
+            TripInvite(
+                trip_id=trip.id,
+                token=secrets.token_urlsafe(18),
+                role=invitee.role,
+                created_by_id=owner.id,
+                traveler_id=traveler.id if traveler else None,
+                invitee_email=person.email,
+                invitee_name=person.display_name,
+            )
+        )
+
     db.commit()
     db.refresh(trip)
     db.refresh(owner)
     return trip_out(db, trip, owner)
+
+
+def _invitees(
+    db: Session, principal: Principal, requested: list[TripInviteeIn]
+) -> list[tuple[PersonOut, TripInviteeIn]]:
+    """The people a new trip invites, each matched to someone the creator
+    has planned with (routers/people.py). Anyone else is refused: a direct
+    invite lands on that person's own Trips screen, so it's only for
+    people who already know you here. Everyone else gets a link from Trip
+    settings. Repeats, and the creator themselves, are dropped."""
+    if not requested:
+        return []
+    known = {person.email: person for person in people_for(db, principal.email)}
+    chosen: dict[str, tuple[PersonOut, TripInviteeIn]] = {}
+    for invitee in requested:
+        email = invitee.email.strip()
+        if email == principal.email or email in chosen:
+            continue
+        person = known.get(email)
+        if person is None:
+            raise HTTPException(
+                status_code=400,
+                detail="You can only invite people you've planned a trip with. Send anyone else a link from Trip settings.",
+            )
+        chosen[email] = (person, invitee)
+    return list(chosen.values())
 
 
 @router.get("/{trip_id}", response_model=TripOut)
