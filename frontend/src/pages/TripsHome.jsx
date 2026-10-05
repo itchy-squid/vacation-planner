@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
-import Badge from "../components/core/Badge";
 import Button from "../components/core/Button";
 import AvatarStack from "../components/planner/AvatarStack";
 import MetricTile from "../components/planner/MetricTile";
@@ -10,14 +9,13 @@ import RoleTag from "../components/core/RoleTag";
 import HomeTabBar from "../components/core/HomeTabBar";
 import WaitingInvites from "../components/sharing/WaitingInvites";
 
-// Screen 1 — "pick a trip; read its phase at a glance." Handoff README
+// Screen 1 — "pick a trip." Handoff README
 // screen 1. "Add trip" opens the new-trip form (see pages/NewTrip.jsx);
 // tapping an "also planning" trip swaps it into the primary trip card
 // (see PlannerContext's OPEN_TRIP) so its overview is visible before the
-// user chooses "Open board" or "Start schedule"/"Open schedule" (label
-// reflects TRIP.phase — "Start schedule" pre-ideation-exit, "Open
-// schedule" once the trip has moved into scheduling/locked) — it does not
-// navigate away from this screen.
+// user chooses "Open board" or "Open schedule" — it does not navigate away
+// from this screen. Each card's photo is one the server picks from the
+// trip's stays and longer activities (TRIP.coverPhotoUrl).
 //
 // It's the first of three tabs outside any trip (components/core/
 // HomeTabBar.jsx: Trips | People | You). Invites sent straight to you sit
@@ -66,7 +64,7 @@ export default function TripsHome() {
     // re-derives both `trip` and `otherTrips`, so the former primary trip
     // reappears in the "also planning" list automatically). Deliberately
     // stays on this screen instead of navigating — the user sees the
-    // swapped-in trip's overview here and picks "Open board" or "Start
+    // swapped-in trip's overview here and picks "Open board" or "Open
     // schedule" themselves when ready.
     if (switchingTripId) return; // one switch at a time
     try {
@@ -98,11 +96,7 @@ export default function TripsHome() {
               overflow: "hidden",
             }}
           >
-            <PhotoPlaceholder height={158} label="">
-              <div style={{ position: "absolute", bottom: 10, right: 10 }}>
-                <Badge>{TRIP.phase === "ideation" ? "IDEATION" : "SCHEDULING"}</Badge>
-              </div>
-            </PhotoPlaceholder>
+            <PhotoPlaceholder height={158} label="" src={TRIP.coverPhotoUrl} />
             <div style={{ padding: "16px 18px 18px" }}>
               <div className="serif-place" style={{ fontSize: 27, lineHeight: 1.15, color: "var(--text-primary)" }}>{TRIP.name}</div>
               <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>
@@ -154,7 +148,7 @@ export default function TripsHome() {
               <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
                 <Button variant="primary" onClick={() => navigate(`/trips/${TRIP.id}/board`)}>Open board</Button>
                 <Button variant="secondary" onClick={() => navigate(`/trips/${TRIP.id}/schedule/5`)}>
-                  {TRIP.phase === "ideation" ? "Start schedule" : "Open schedule"}
+                  Open schedule
                 </Button>
               </div>
             </div>
@@ -195,14 +189,13 @@ export default function TripsHome() {
                   opacity: isOpening ? 0.6 : 1,
                 }}
               >
-                <PhotoPlaceholder height={56} label="" style={{ width: 56, flex: "none", borderRadius: "var(--radius-md)" }} />
+                <div style={{ width: 56, flex: "none", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+                  <PhotoPlaceholder height={56} label="" src={t.coverPhotoUrl} />
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="serif-place" style={{ fontSize: 18, color: "var(--text-primary)" }}>{t.name}</div>
                   <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>
                     {isOpening ? "Opening…" : [t.meta, t.ownership].filter(Boolean).join(" · ")}
-                  </div>
-                  <div style={{ marginTop: 6, width: 64, height: 5, borderRadius: 999, background: t.phase === "ideation" ? "var(--plum-tint-strong)" : "var(--surface-sunken)", overflow: "hidden" }}>
-                    <div style={{ width: `${t.progress * 100}%`, height: "100%", background: t.phase === "ideation" ? "var(--accent)" : "var(--geo)" }} />
                   </div>
                 </div>
               </div>

@@ -217,7 +217,7 @@ GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO db_rw;
 -- ============================================================================
 -- Connected as "app-backend" (or any db_rw member), these should succeed:
 --   SELECT count(*) FROM trips;
---   INSERT INTO trips (name, region_line, phase, created_at) VALUES ('x', '', 'ideation', now());
+--   INSERT INTO trips (name, region_line, created_at) VALUES ('x', '', now());
 -- ...and these should both fail with a permission error:
 --   CREATE TABLE hax (id int);
 --   ALTER TABLE trips ADD COLUMN hax int;

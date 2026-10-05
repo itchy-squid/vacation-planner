@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
-import Badge from "../components/core/Badge";
 import Button from "../components/core/Button";
 import RoleTag from "../components/core/RoleTag";
 import { api } from "../lib/api";
@@ -152,11 +151,7 @@ export default function JoinTrip() {
               overflow: "hidden",
             }}
           >
-            <PhotoPlaceholder height={132} label="">
-              <div style={{ position: "absolute", bottom: 10, right: 10 }}>
-                <Badge>{preview.phase === "ideation" ? "IDEATION" : "SCHEDULING"}</Badge>
-              </div>
-            </PhotoPlaceholder>
+            <PhotoPlaceholder height={132} label="" />
             <div style={{ padding: "16px 18px 18px" }}>
               <div className="serif-place" style={{ fontSize: 27, lineHeight: 1.15, color: "var(--text-primary)" }}>
                 {preview.trip_name}

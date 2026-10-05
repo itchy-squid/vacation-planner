@@ -131,7 +131,7 @@ export default function PinBoard() {
           }
         />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px var(--gutter-text) 12px" }}>
-          <div className="mono-caption">Ideation · {PINS.length} pins</div>
+          <div className="mono-caption">{PINS.length} pin{PINS.length === 1 ? "" : "s"}</div>
           {canEdit ? null : <RoleTag role="reader">View only</RoleTag>}
         </div>
 

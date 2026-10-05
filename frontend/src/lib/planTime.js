@@ -60,8 +60,7 @@ export function bandsForMinuteRange(startMin, endMin) {
 }
 
 // {dayIndex, band} for a normalized plan (see state/PlannerContext.jsx
-// normalizePlan, which attaches startDt) — used wherever a plan needs to
-// be shown against the day/band-shaped AvailabilityGrid.
+// normalizePlan, which attaches startDt).
 export function dayIndexAndBandForPlan(plan) {
   if (!plan?.startDt) return null;
   return { dayIndex: plan.startDt.dayIndex, band: bandForMinuteOfDay(plan.startDt.minuteOfDay) };

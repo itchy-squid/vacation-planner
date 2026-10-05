@@ -191,7 +191,6 @@ class TripOut(BaseModel):
     # How many days there are to plan, from the dates or the length; None
     # for a trip with neither.
     day_count: int | None = None
-    phase: str
     # How many travelers are listed (models.Traveler) — the people the
     # trip is for and the costs are split between.
     traveler_count: int = 0
@@ -207,6 +206,9 @@ class TripOut(BaseModel):
     my_traveler_id: int | None = None
     owner: TripOwnerOut | None
     member_count: int
+    # The photo on the trip's card: one of its ideas' photos, picked by
+    # app/routers/trips.py cover_photo_url. None until an idea has one.
+    cover_photo_url: str | None = None
 
 
 class TravelerOut(BaseModel):
@@ -360,7 +362,6 @@ class DirectInviteOut(BaseModel):
     end_date: date | None
     length_days: int | None = None
     rough_month: int | None = None
-    phase: str
     role: Literal["planner", "companion", "reader"]
     invited_by: TripOwnerOut | None
     member_count: int
@@ -399,7 +400,6 @@ class InvitePreviewOut(BaseModel):
     # A trip without dates yet: how long, and roughly when (app/tripdays.py).
     length_days: int | None = None
     rough_month: int | None = None
-    phase: str
     role: Literal["planner", "companion", "reader"]
     owner: TripOwnerOut | None
     member_count: int

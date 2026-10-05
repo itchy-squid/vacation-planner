@@ -11,7 +11,7 @@ owner locks one option, which becomes final until explicitly reopened.
 
 ## Existing entities used by this feature
 
-- **Trip**: `id`, `start_date`, `end_date`, `phase`.
+- **Trip**: `id`, `start_date`, `end_date`.
 - **Contributor**: `id`, `trip_id`, `email`, `display_name`, `is_owner`.
 - **Pin**: `id`, `trip_id`, `title`, `short`, `region`, `lat`, `lng`,
   `duration_minutes`, `cost_cents`, `notes`, `link`, `tags`,

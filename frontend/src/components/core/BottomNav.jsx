@@ -11,7 +11,7 @@ import { useGuardedNavigate, useIsNavGuarded } from "../../state/NavGuard";
 // exists once you're inside one. Trips Home (and the new-trip form) are
 // trip-agnostic — there's no trip to have a Board or a Schedule of yet, and
 // the choice to make there is which trip to open, which that screen's own
-// cards and its "Open board" / "Start schedule" buttons already are. So
+// cards and its "Open board" / "Open schedule" buttons already are. So
 // nothing renders there at all: an empty bar would read as a broken one.
 // Picking a trip on Trips Home lands on a trip-scoped screen, and the tabs
 // appear with it.

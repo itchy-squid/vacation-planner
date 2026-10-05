@@ -49,12 +49,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class TripPhase(str, enum.Enum):
-    ideation = "ideation"
-    scheduling = "scheduling"
-    locked = "locked"
-
-
 class Trip(Base):
     __tablename__ = "trips"
 
@@ -71,7 +65,6 @@ class Trip(Base):
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     length_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rough_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    phase: Mapped[TripPhase] = mapped_column(Enum(TripPhase), default=TripPhase.ideation)
     # There is no traveller count any more: the people going are the
     # Traveler rows below, and how many there are is simply how many are
     # listed (see Traveler).
