@@ -1,0 +1,622 @@
+<title>Flexible Trip Dates</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a review sheet. Each feature is a band of phone screens drawn in the
+     app's own tokens, then the decisions it needs. Page chrome follows the
+     viewer's theme; the phones stay in the app's light palette, as the app does. */
+  :root {
+    --pg-bg: #e9e7ec; --pg-fg: #1b1a1f; --pg-muted: #5d5b66; --pg-line: rgba(27,26,31,.14);
+    --pg-panel: #f6f5f7; --pg-accent: #8f4478; --pg-tag: rgba(143,68,120,.10);
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-inset: #f9f8fa; --surface-sunken: #eceaee;
+    --surface-inverse: #1b1a1f; --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95;
+    --text-faint: #a3a1ab; --accent: #8f4478; --accent-quiet: rgba(143,68,120,.06); --plum-tint-strong: rgba(143,68,120,.22);
+    --geo: #3d8a9c; --geo-quiet: #eef2f3; --warn: #b4553f; --stone-250: #dcdae0; --stone-700: #4a4852;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --on-ink: #ffffff; --on-ink-muted: rgba(255,255,255,.6); --scrim: rgba(27,26,31,.42);
+    --who-1: #e8d5e1; --who-2: #d3e6ea; --who-3: #ece3cf; --who-4: #dbe4d2; --who-5: #e3dcef; --who-6: #f0d9d0;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(27,26,31,.06), 0 2px 8px rgba(27,26,31,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+      --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+    --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); font: 400 14px/1.55 var(--font-sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; }
+  h1 { font: 400 34px/1.15 var(--font-serif); margin: 0 0 10px; text-wrap: balance; }
+  .lede { max-width: 70ch; color: var(--pg-muted); margin: 0; }
+  .eyebrow { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pg-accent); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { font: 600 12.5px var(--font-sans); color: var(--pg-fg); text-decoration: none; padding: 6px 12px; border: 1px solid var(--pg-line); border-radius: 999px; }
+  .toc a:hover, .toc a:focus-visible { border-color: var(--pg-accent); outline: none; }
+  section.feature { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--pg-line); }
+  section.feature > h2 { font: 400 27px/1.2 var(--font-serif); margin: 6px 0 8px; text-wrap: balance; }
+  .ask { max-width: 72ch; color: var(--pg-muted); margin: 0 0 14px; }
+  .today { max-width: 78ch; background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 24px; }
+  .today b { font-weight: 600; }
+  code { font: 400 12px var(--font-mono); background: var(--pg-tag); padding: 1px 5px; border-radius: 4px; }
+  .screens { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+  .screen-col { width: 340px; max-width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .screen-col h3 { font: 600 13.5px/1.3 var(--font-sans); margin: 0; }
+  .screen-col .note { font-size: 12.5px; color: var(--pg-muted); margin: 0; line-height: 1.5; }
+  .decide { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .decide > div { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .decide h4 { font: 600 13px var(--font-sans); margin: 0 0 8px; }
+  .decide ol, .decide ul { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+  .rec { display: inline-block; font: 600 10px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-accent); background: var(--pg-tag); padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+
+  /* ---------- phone (app palette only below here) ---------- */
+  .phone { background: var(--surface-page); color: var(--text-primary); border-radius: 30px; border: 1px solid var(--pg-line); box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; position: relative; font-size: 13px; display: flex; flex-direction: column; min-height: 640px; }
+  .phone .bar { height: 26px; flex: none; }
+  .topline { display: flex; justify-content: space-between; align-items: center; padding: 0 16px 6px; font: 500 12.5px var(--font-sans); }
+  .topline .back { color: var(--accent); }
+  .topline .skip { color: var(--text-secondary); }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .h { font: 400 22px/1.2 var(--font-serif); text-wrap: balance; }
+  .sub { font: 400 12px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .body { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .search { height: 40px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-card); display: flex; align-items: center; padding: 0 12px; color: var(--text-muted); font-size: 13px; }
+  .row-scroll { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .row-scroll::-webkit-scrollbar { display: none; }
+  .gchip { flex: none; height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 6px; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 12px var(--font-sans); color: var(--text-primary); cursor: pointer; }
+  .gchip[aria-pressed="true"] { border: 1.5px solid var(--accent); background: var(--accent-quiet); }
+  .stack { display: flex; }
+  .stack i { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--surface-card); margin-left: -7px; display: grid; place-items: center; font: 600 8.5px var(--font-sans); font-style: normal; color: var(--text-secondary); }
+  .stack i:first-child { margin-left: 0; }
+  .stack i.ghost { border: 1.5px dashed var(--text-faint); background: var(--surface-card) !important; }
+
+  .list { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); overflow: hidden; }
+  .prow { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-height: 56px; border-top: 1px solid var(--hairline); }
+  .prow:first-child { border-top: 0; }
+  .prow.dim { opacity: .5; }
+  .prow input[type=checkbox] { width: 19px; height: 19px; accent-color: var(--accent); margin: 0; flex: none; }
+  .av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--font-sans); color: var(--text-secondary); flex: none; }
+  .av.ghost { background: var(--surface-card) !important; border: 1.5px dashed var(--text-faint); color: var(--text-muted); }
+  .who { flex: 1; min-width: 0; }
+  .who .n { font: 600 13.5px var(--font-sans); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .who .t { font: 400 11.5px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .tag { font: 500 9px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; padding: 3px 5px; border-radius: 4px; background: var(--surface-sunken); color: var(--stone-700); }
+  .tag.app { background: var(--geo-quiet); color: var(--geo); }
+  .tag.inv { background: var(--accent-quiet); color: var(--accent); border: 1px solid var(--plum-tint-strong); }
+  .tag.new { background: var(--surface-inverse); color: var(--on-ink); }
+  .pick { flex: none; height: 30px; padding: 0 9px; border-radius: var(--radius-pill); background: var(--accent-quiet); border: 1px solid var(--plum-tint-strong); color: var(--accent); font: 600 11px var(--font-sans); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+  .pick.plain { background: var(--surface-sunken); border-color: transparent; color: var(--stone-700); }
+  .pick svg { width: 9px; height: 9px; }
+  .swap { display: block; font: 500 10.5px var(--font-mono); color: var(--accent); margin-top: 2px; }
+  .foot-note { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-muted); padding: 0 4px; }
+
+  .footer { flex: none; background: var(--surface-card); border-top: 1px solid var(--hairline); padding: 12px 16px 16px; display: flex; align-items: center; gap: 12px; }
+  .footer .count { flex: 1; font: 400 12px var(--font-sans); color: var(--text-secondary); }
+  .btn { height: 44px; border-radius: var(--radius-lg); border: 0; padding: 0 20px; font: 600 14px var(--font-sans); background: var(--accent); color: var(--on-ink); cursor: pointer; }
+  .btn.full { width: 100%; }
+  .btn.ghost { background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-strong); }
+  .btn:focus-visible, .gchip:focus-visible, .pick:focus-visible, .seg button:focus-visible, .opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--hairline); padding: 0 16px; }
+  .tabs span { padding: 8px 0 9px; font: 600 12.5px var(--font-sans); color: var(--text-muted); }
+  .tabs span.on { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .scrim { background: var(--scrim); flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
+  .ghostpage { padding: 6px 16px; opacity: .35; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 2px; }
+  .seg { display: flex; background: var(--surface-sunken); border-radius: var(--radius-md); padding: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: 600 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-primary); box-shadow: 0 1px 3px rgba(27,26,31,.14); }
+  .opts { display: flex; flex-direction: column; gap: 7px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-card); cursor: pointer; }
+  .opt:has(input:checked) { border: 1.5px solid var(--accent); background: var(--accent-quiet); }
+  .opt input { width: 17px; height: 17px; accent-color: var(--accent); margin: 2px 0 0; flex: none; }
+  .opt .l { font: 600 13px var(--font-sans); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .opt .d { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); margin-top: 2px; }
+  .field { height: 42px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); display: flex; align-items: center; padding: 0 12px; font: 600 13.5px var(--font-sans); }
+  .field.empty { color: var(--text-muted); font-weight: 400; }
+
+  .invcard { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .invcard .tn { font: 400 20px/1.2 var(--font-serif); }
+  .callout { display: flex; gap: 10px; align-items: center; padding: 9px 11px; border-radius: var(--radius-lg); background: var(--surface-inset); border: 1px dashed var(--border-strong); font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .callout b { color: var(--text-primary); font-weight: 600; }
+  .arrow { font: 500 12px var(--font-mono); color: var(--text-muted); }
+  .two { display: flex; gap: 8px; }
+  .two .btn { flex: 1; }
+  .trip-mini { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); padding: 12px 14px; }
+  .trip-mini .tn { font: 400 17px var(--font-serif); }
+  .rhead { display: flex; justify-content: space-between; }
+  .indent { padding-left: 34px; }
+  .toast { margin: 0 16px 12px; background: var(--surface-inverse); color: var(--on-ink); border-radius: var(--radius-lg); padding: 10px 12px; font: 500 12px var(--font-sans); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  /* ---------- additions for this sheet ---------- */
+  .stepper { display: flex; align-items: center; gap: 0; background: var(--surface-card); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); height: 52px; overflow: hidden; }
+  .stepper button { width: 52px; height: 100%; border: 0; background: transparent; font: 400 22px var(--font-sans); color: var(--accent); cursor: pointer; }
+  .stepper button:disabled { color: var(--text-faint); cursor: default; }
+  .stepper .val { flex: 1; text-align: center; font: 400 22px var(--font-serif); border-inline: 1px solid var(--hairline); height: 100%; display: grid; place-items: center; }
+  .stepper button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .mchip { flex: none; height: 30px; padding: 0 11px; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 11.5px var(--font-sans); color: var(--text-primary); cursor: pointer; }
+  .mchip[aria-pressed="true"] { border: 1.5px solid var(--accent); background: var(--accent-quiet); color: var(--accent); }
+  .mchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .lbl { font: 600 11.5px var(--font-sans); color: var(--text-secondary); margin-bottom: -6px; }
+  .preview { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-lg); background: var(--surface-inset); border: 1px solid var(--hairline); font: 500 12px var(--font-sans); color: var(--text-secondary); }
+  .preview b { color: var(--text-primary); font-weight: 600; }
+  .dates { display: flex; gap: 8px; }
+  .dates > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .dates .field { font-size: 12.5px; background: var(--surface-card); }
+  .dates .field.changed { border: 1.5px solid var(--accent); }
+  [hidden] { display: none !important; }
+
+  .tripcard { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+  .tripcard .tn { font: 400 21px/1.2 var(--font-serif); }
+  .tripcard .dl { font: 500 12px var(--font-sans); color: var(--text-secondary); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tag.soft { background: var(--geo-quiet); color: var(--geo); }
+
+  .daytabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 0 16px; }
+  .daytabs::-webkit-scrollbar { display: none; }
+  .dtab { flex: none; width: 54px; padding: 6px 0 7px; border-radius: var(--radius-md); background: var(--surface-card); border: 1px solid var(--hairline); text-align: center; }
+  .dtab .k { font: 500 9.5px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+  .dtab .v { font: 400 17px/1.2 var(--font-serif); }
+  .dtab.on { background: var(--surface-inverse); color: var(--on-ink); border-color: transparent; }
+  .dtab.on .k { color: var(--on-ink-muted); }
+  .slot { display: flex; gap: 10px; align-items: stretch; }
+  .slot .t { width: 34px; flex: none; font: 500 10px var(--font-mono); color: var(--text-faint); padding-top: 3px; }
+  .blk { flex: 1; border-radius: var(--radius-md); padding: 8px 10px; background: var(--accent-quiet); border-left: 3px solid var(--accent); }
+  .blk .n { font: 600 12.5px var(--font-sans); }
+  .blk .m { font: 400 11px var(--font-sans); color: var(--text-secondary); }
+  .blk.geo { background: var(--geo-quiet); border-left-color: var(--geo); }
+
+  .drows { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); overflow: hidden; }
+  .drow { display: flex; gap: 10px; align-items: baseline; padding: 7px 11px; border-top: 1px solid var(--hairline); font-size: 11.5px; }
+  .drow:first-child { border-top: 0; }
+  .drow .d1 { width: 92px; flex: none; font: 600 11.5px var(--font-sans); }
+  .drow .d1 small { display: block; font: 500 10px var(--font-mono); color: var(--text-muted); letter-spacing: .02em; }
+  .drow .d2 { flex: 1; min-width: 0; color: var(--text-secondary); }
+  .drow .d2 .from { display: block; font: 500 10px var(--font-mono); color: var(--accent); }
+  .drow.empty .d2 { color: var(--text-faint); font-style: italic; }
+  .drow.out { background: rgba(180,85,63,.06); }
+  .drow.out .d1, .drow.out .d2 { color: var(--warn); }
+  .drow.out .d2 .from { color: var(--warn); }
+  .warnline { display: flex; gap: 8px; align-items: flex-start; padding: 9px 11px; border-radius: var(--radius-lg); background: rgba(180,85,63,.07); border: 1px solid rgba(180,85,63,.22); font: 400 11.5px/1.45 var(--font-sans); color: var(--warn); }
+  .warnline b { font-weight: 600; }
+  .aside { margin: 0 16px; padding: 10px 12px; border-radius: var(--radius-lg); border: 1px dashed var(--warn); background: rgba(180,85,63,.05); display: flex; flex-direction: column; gap: 6px; }
+  .aside .l { font: 600 12.5px var(--font-sans); color: var(--warn); }
+  .aside .d { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .linkbtn { align-self: flex-start; font: 600 12px var(--font-sans); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+  .toast { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .toast .u { color: #f1c9e3; font-weight: 600; }
+  .rules { margin-top: 26px; max-width: 900px; }
+  .rules table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .rules th, .rules td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--pg-line); vertical-align: top; }
+  .rules th { font: 500 11px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-muted); }
+  .rules td:first-child { font-weight: 600; width: 32%; }
+  .tblwrap { overflow-x: auto; }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Mockups · Oct 5, 2026</div>
+  <h1>Planning before the dates are set</h1>
+  <p class="lede">You can start a trip as "about 5 days" and plan it by day number: Day 1, Day 2, and so on. When the real dates arrive, the days land on them in order. If a trip with real dates moves, one prompt asks whether the plan moves with it or stays on the calendar dates. To make that work, plans, stays and day trips are stored as a day of the trip instead of a calendar date.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#newtrip">1 · Adding a new trip</a>
+    <a href="#edit">2 · Changing an existing trip's dates</a>
+    <a href="#model">3 · Storing days, not dates</a>
+  </nav>
+
+  <!-- ============ FEATURE 1 ============ -->
+  <section class="feature" id="newtrip">
+    <div class="eyebrow">Flow 1</div>
+    <h2>A new trip with a length instead of dates</h2>
+    <p class="ask">Step 1 of a new trip asks for a name and two dates. These screens add a "Not sure yet" choice that asks how long the trip is, and, if you like, roughly when. Everything after that is planned on numbered days.</p>
+    <div class="today"><b>Today:</b> <code>NewTrip.jsx</code> step 1 has two optional date fields. Leave them empty and the trip says "Dates TBD", but nothing can go on the calendar. <code>day_places.py</code> refuses a trip with no <code>start_date</code>, and plans need a real <code>starts_at</code>.</div>
+
+    <div class="screens">
+      <!-- 1a -->
+      <div class="screen-col">
+        <h3>1a · New trip, step 1 (try the toggle)</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="topline"><span class="back">‹ Cancel</span><span class="cap">New trip · 1 of 2</span><span style="font-weight:600">Next</span></div>
+          <div class="body" style="gap:14px; padding-top:14px;">
+            <div class="lbl">Trip name</div>
+            <div class="field" style="background:var(--surface-card)">Kyoto</div>
+            <div class="lbl">When</div>
+            <div class="seg" id="mode1">
+              <button type="button" aria-pressed="false" data-mode="exact">I have dates</button>
+              <button type="button" aria-pressed="true" data-mode="rough">Not sure yet</button>
+            </div>
+
+            <div data-panel="exact" hidden style="display:flex; flex-direction:column; gap:12px;">
+              <div class="dates">
+                <div><span class="cap">Start</span><div class="field">Fri, Mar 12</div></div>
+                <div><span class="cap">End</span><div class="field">Tue, Mar 16</div></div>
+              </div>
+              <div class="preview"><span>📅</span><span><b>5 days</b> · Fri Mar 12 – Tue Mar 16</span></div>
+            </div>
+
+            <div data-panel="rough" style="display:flex; flex-direction:column; gap:12px;">
+              <div class="lbl">About how long?</div>
+              <div class="stepper">
+                <button type="button" id="minus" aria-label="One day fewer">−</button>
+                <span class="val" id="len">5 days</span>
+                <button type="button" id="plus" aria-label="One day more">+</button>
+              </div>
+              <div class="row-scroll" id="lenchips">
+                <button class="mchip" type="button" data-len="3" aria-pressed="false">Long weekend</button>
+                <button class="mchip" type="button" data-len="7" aria-pressed="false">A week</button>
+                <button class="mchip" type="button" data-len="10" aria-pressed="false">10 days</button>
+                <button class="mchip" type="button" data-len="14" aria-pressed="false">Two weeks</button>
+              </div>
+              <div class="lbl">Roughly when? <span style="font-weight:400; color:var(--text-muted)">Optional</span></div>
+              <div class="row-scroll" id="months">
+                <button class="mchip" type="button" aria-pressed="false" data-m="">Don't know</button>
+                <button class="mchip" type="button" aria-pressed="false" data-m="December">Dec</button>
+                <button class="mchip" type="button" aria-pressed="false" data-m="January">Jan</button>
+                <button class="mchip" type="button" aria-pressed="false" data-m="February">Feb</button>
+                <button class="mchip" type="button" aria-pressed="true" data-m="March">Mar</button>
+                <button class="mchip" type="button" aria-pressed="false" data-m="April">Apr</button>
+                <button class="mchip" type="button" aria-pressed="false" data-m="May">May</button>
+              </div>
+              <div class="preview"><span>🗓</span><span id="roughpreview"><b>Day 1 – Day 5</b> · sometime in March</span></div>
+            </div>
+
+            <div style="flex:1"></div>
+            <button class="btn full" type="button">Next: who's coming</button>
+            <div class="foot-note" style="text-align:center">You can set the dates any time in Trip settings.</div>
+          </div>
+        </div>
+        <p class="note">"Not sure yet" swaps the date fields for a day count. The chips set common lengths. The month is only a label. It doesn't fix any days, so it can't be wrong. Step 2 (who's coming) is unchanged.</p>
+      </div>
+
+      <!-- 1b -->
+      <div class="screen-col">
+        <h3>1b · How a trip without dates reads</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="topline"><span class="cap">Your trips</span><span></span></div>
+          <div class="body" style="padding-top:10px">
+            <div class="tripcard">
+              <span class="cap">Planning</span>
+              <span class="tn">Kyoto</span>
+              <span class="dl">About 5 days · March <span class="tag soft">Dates not set</span></span>
+            </div>
+            <div class="tripcard">
+              <span class="cap">Planning</span>
+              <span class="tn">Lisbon</span>
+              <span class="dl">About 1 week <span class="tag soft">Dates not set</span></span>
+            </div>
+            <div class="tripcard">
+              <span class="cap">Booked</span>
+              <span class="tn">Peru</span>
+              <span class="dl">Jun 4 – 14, 2027</span>
+            </div>
+            <div class="cap" style="margin-top:6px">Inside the trip</div>
+            <div class="trip-mini">
+              <div class="tn">Kyoto</div>
+              <div class="sub">About 5 days · March · 4 travelers</div>
+            </div>
+          </div>
+        </div>
+        <p class="note">Where <code>formatDateRange</code> says "Dates TBD" today, a trip with a length says "About 5 days", followed by the month if there is one. The tag tells the group at a glance which trips aren't on a calendar yet.</p>
+      </div>
+
+      <!-- 1c -->
+      <div class="screen-col">
+        <h3>1c · Planning on numbered days</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="topline"><span class="back">‹ Kyoto</span><span class="cap">Plan</span><span></span></div>
+          <div class="daytabs">
+            <div class="dtab"><div class="k">Day</div><div class="v">1</div></div>
+            <div class="dtab on"><div class="k">Day</div><div class="v">2</div></div>
+            <div class="dtab"><div class="k">Day</div><div class="v">3</div></div>
+            <div class="dtab"><div class="k">Day</div><div class="v">4</div></div>
+            <div class="dtab"><div class="k">Day</div><div class="v">5</div></div>
+          </div>
+          <div class="body" style="padding-top:12px; gap:8px;">
+            <div class="callout"><span>🗓</span><span><b>No dates yet.</b> Days are counted from the day you arrive. When you set dates, Day 1 becomes your first date and the rest follow.</span></div>
+            <div class="cap" style="margin-top:4px">Day 2 · staying in Kyoto</div>
+            <div class="slot"><span class="t">09:00</span><div class="blk"><div class="n">Fushimi Inari</div><div class="m">2h · walk up before the crowds</div></div></div>
+            <div class="slot"><span class="t">12:00</span><div class="blk geo"><div class="n">Nishiki Market</div><div class="m">1h 30m · lunch</div></div></div>
+            <div class="slot"><span class="t">15:00</span><div class="blk"><div class="n">Kiyomizu-dera</div><div class="m">2h</div></div></div>
+            <div style="flex:1"></div>
+            <button class="btn ghost full" type="button">Set dates</button>
+          </div>
+        </div>
+        <p class="note">The day tabs show "Day 2" where they'd show "Sat 13". Hours work as they do now. The callout explains the numbering until the trip has dates. Things a weekday decides, like "closed Mondays", can't be checked yet (see the questions below).</p>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Questions for you</h4>
+        <ol>
+          <li><b>One number or a range?</b> "About 5 days" or "4 to 6 days". A range doesn't change how you plan, since you'd still plan 6 days and leave one loose. <span class="rec">Rec: one number</span></li>
+          <li><b>Keep "Roughly when?"</b> It's only a label for now. Later it could feed seasonal hints such as "cherry blossoms in late March". <span class="rec">Rec: keep, optional</span></li>
+          <li><b>Weekday rules on a trip without dates.</b> If an idea says "closed Mondays", we can't tell which day is a Monday. Ignore the rule until there are dates, or let you pick a weekday for Day 1 without picking a date? <span class="rec">Rec: ignore until dates</span></li>
+        </ol>
+      </div>
+      <div>
+        <h4>What stays the same</h4>
+        <ul>
+          <li>The ideas board, map and expenses don't depend on dates and don't change.</li>
+          <li>Pin availability (<code>availability_rules.days</code>) already uses trip-day numbers, so it works on a trip without dates as it is.</li>
+          <li>A rental car's days ("pick up Day 2, drop off Day 4") take day numbers too, so per-day costs add up before there are dates.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FEATURE 2 ============ -->
+  <section class="feature" id="edit">
+    <div class="eyebrow">Flow 2</div>
+    <h2>Changing the dates of a trip that's already planned</h2>
+    <p class="ask">Trip settings keeps the toggle from 1a. When you save, the app asks a question only when the answer changes something: the start date moved and there are things on the calendar. The sample trip is Kyoto, Fri Mar 12 – Tue Mar 16, with 14 plans and four nights booked.</p>
+    <div class="today"><b>Today:</b> stays and day trips (<code>trip_day_places.date</code>) and plans (<code>plans.starts_at</code>) stay on their calendar dates when the trip moves. Anything that ends up outside the trip's new dates is kept but hidden, and nothing tells you. The second option in 2b is today's behavior. The first one is new.</div>
+
+    <div class="tblwrap rules">
+      <table>
+        <thead><tr><th>Change</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>No dates → dates</td><td>No prompt. Day 1 lands on the start date and the other days follow in order (2a).</td></tr>
+          <tr><td>Start date moves</td><td><b>Prompt:</b> shift everything with the trip, or keep things on their dates (2b, 2c).</td></tr>
+          <tr><td>Only the end date moves, or the length changes</td><td>No prompt, because Day 1 doesn't move and both answers would be the same. If days with plans are cut off, a warning shows before Save.</td></tr>
+          <tr><td>Dates → "Not sure yet"</td><td>No prompt. Day numbers stay, the dates are forgotten, and the length is kept.</td></tr>
+          <tr><td>Nothing on the calendar yet</td><td>No prompt in any case.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="screens" style="margin-top:26px">
+      <!-- 2a -->
+      <div class="screen-col">
+        <h3>2a · Setting dates on a trip planned by day</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="topline"><span class="back">‹ Cancel</span><span class="cap">Trip settings</span><span style="font-weight:600">Save</span></div>
+          <div class="body" style="gap:12px; padding-top:14px;">
+            <div class="lbl">When</div>
+            <div class="seg"><button type="button" aria-pressed="true">I have dates</button><button type="button" aria-pressed="false">Not sure yet</button></div>
+            <div class="dates">
+              <div><span class="cap">Start</span><div class="field changed">Fri, Mar 12</div></div>
+              <div><span class="cap">End</span><div class="field changed">Tue, Mar 16</div></div>
+            </div>
+            <div class="cap">Your days land here</div>
+            <div class="drows">
+              <div class="drow"><span class="d1">Day 1<small>FRI MAR 12</small></span><span class="d2">3 plans · Hotel Kaze</span></div>
+              <div class="drow"><span class="d1">Day 2<small>SAT MAR 13</small></span><span class="d2">4 plans · Hotel Kaze</span></div>
+              <div class="drow"><span class="d1">Day 3<small>SUN MAR 14</small></span><span class="d2">2 plans · day trip to Nara</span></div>
+              <div class="drow"><span class="d1">Day 4<small>MON MAR 15</small></span><span class="d2">3 plans · Ryokan Hoshi</span></div>
+              <div class="drow"><span class="d1">Day 5<small>TUE MAR 16</small></span><span class="d2">2 plans · fly home</span></div>
+            </div>
+            <div class="warnline"><span>⚠</span><span><b>Nanzen-ji is closed Mondays</b> and it's on Day 4, which is now Mon Mar 15.</span></div>
+            <div style="flex:1"></div>
+            <button class="btn full" type="button">Save changes</button>
+          </div>
+        </div>
+        <p class="note">A trip with a length but no dates has nothing to decide, so there's no prompt. Trip settings shows where each day lands before you save. Weekday rules that were ignored until now (1c, question 3) are checked here and flagged.</p>
+      </div>
+
+      <!-- 2b -->
+      <div class="screen-col">
+        <h3>2b · Moving the whole trip (try both)</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet" data-sheet="b">
+              <div class="grab"></div>
+              <div>
+                <span class="cap">Kyoto · Mar 12–16 → Mar 19–23</span>
+                <div class="h" style="margin-top:4px">Move the plan with the dates?</div>
+                <div class="sub">14 plans and 4 nights' stays are on the calendar.</div>
+              </div>
+              <div class="opts">
+                <label class="opt"><input type="radio" name="b" value="shift" checked>
+                  <span><span class="l">Shift everything <span data-delta></span> <span class="tag inv">Same length</span></span>
+                  <span class="d">Day 1 stays Day 1. Fri Mar 12's plans move to Fri Mar 19.</span></span></label>
+                <label class="opt"><input type="radio" name="b" value="keep">
+                  <span><span class="l">Keep things on their dates</span>
+                  <span class="d">Plans stay on Mar 12–16. Anything outside the new dates is set aside until you move it.</span></span></label>
+              </div>
+              <span class="cap">Preview</span>
+              <div class="drows" data-preview></div>
+              <div class="two"><button class="btn ghost" type="button">Cancel</button><button class="btn" type="button">Save dates</button></div>
+            </div>
+          </div>
+        </div>
+        <p class="note">Save opens this sheet. The preview shows each new day and what will be on it. If Day 1 and the trip's length don't change, "Shift" is selected to start with, because the trip itself is just moving.</p>
+      </div>
+
+      <!-- 2c -->
+      <div class="screen-col">
+        <h3>2c · Adding a day at the start</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet" data-sheet="c">
+              <div class="grab"></div>
+              <div>
+                <span class="cap">Kyoto · Mar 12–16 → Mar 11–16</span>
+                <div class="h" style="margin-top:4px">Move the plan with the dates?</div>
+                <div class="sub">You added a day at the start.</div>
+              </div>
+              <div class="opts">
+                <label class="opt"><input type="radio" name="c" value="keep" checked>
+                  <span><span class="l">Keep things on their dates <span class="tag inv">Length changed</span></span>
+                  <span class="d">Thu Mar 11 is a new, empty Day 1. Everything else stays where it is.</span></span></label>
+                <label class="opt"><input type="radio" name="c" value="shift">
+                  <span><span class="l">Shift everything <span data-delta></span></span>
+                  <span class="d">Day 1's plans move to Thu Mar 11, and the last day is left empty.</span></span></label>
+              </div>
+              <span class="cap">Preview</span>
+              <div class="drows" data-preview></div>
+              <div class="two"><button class="btn ghost" type="button">Cancel</button><button class="btn" type="button">Save dates</button></div>
+            </div>
+          </div>
+        </div>
+        <p class="note">This is the same sheet, but with a different option selected to start with. If the length changed, you probably meant "we're arriving a day earlier", so it starts on "Keep things on their dates". Either way, you're always asked.</p>
+      </div>
+
+      <!-- 2d -->
+      <div class="screen-col">
+        <h3>2d · After saving, when things were set aside</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="topline"><span class="back">‹ Kyoto</span><span class="cap">Plan</span><span></span></div>
+          <div class="daytabs">
+            <div class="dtab on"><div class="k">Sun</div><div class="v">14</div></div>
+            <div class="dtab"><div class="k">Mon</div><div class="v">15</div></div>
+            <div class="dtab"><div class="k">Tue</div><div class="v">16</div></div>
+            <div class="dtab"><div class="k">Wed</div><div class="v">17</div></div>
+            <div class="dtab"><div class="k">Thu</div><div class="v">18</div></div>
+          </div>
+          <div style="height:12px"></div>
+          <div class="aside">
+            <span class="l">7 plans are outside the trip's dates</span>
+            <span class="d">From Fri Mar 12 and Sat Mar 13, which you kept on their dates when Kyoto moved to Mar 14–18. Two nights at Hotel Kaze are set aside too.</span>
+            <button class="linkbtn" type="button">Put them on a day ›</button>
+          </div>
+          <div class="body" style="padding-top:12px; gap:8px;">
+            <div class="cap">Sun Mar 14 · day trip to Nara</div>
+            <div class="slot"><span class="t">10:00</span><div class="blk"><div class="n">Tōdai-ji</div><div class="m">1h 30m</div></div></div>
+            <div class="slot"><span class="t">13:00</span><div class="blk geo"><div class="n">Nara Park</div><div class="m">2h</div></div></div>
+            <div style="flex:1"></div>
+          </div>
+          <div class="toast"><span>Dates saved · 7 plans set aside</span><span class="u">Undo</span></div>
+        </div>
+        <p class="note">Mar 12–16 → Mar 14–18 with "Keep things on their dates" selected. Set-aside plans aren't deleted. Today they're hidden silently. Now a card says what's missing and lets you put each one on a day. The toast has Undo, which puts the old dates back as well.</p>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Questions for you</h4>
+        <ol>
+          <li><b>Option selected to start with:</b> "Shift" if the length is the same, "Keep dates" if it changed (2b vs 2c)? Or always start with "Shift"? <span class="rec">Rec: depends on length</span></li>
+          <li><b>Things booked for a fixed date.</b> A flight or a prepaid hotel shouldn't shift with the rest. The app can't tell those apart yet. Move everything together for now, and later add a "Booked for this date" lock that keeps a plan where it is? <span class="rec">Rec: lock later</span></li>
+          <li><b>Set-aside things:</b> keep them with a "Put them on a day" card (2d), or send them back to the ideas board? <span class="rec">Rec: keep + card</span></li>
+        </ol>
+      </div>
+      <div>
+        <h4>Other people on the trip</h4>
+        <ul>
+          <li>Only owners and planners can change dates, which is the same as today.</li>
+          <li>Everyone else gets a note on the trip: "Amanda moved Kyoto to Mar 19–23. The plan moved with it."</li>
+          <li>Open votes keep their options. The hours they're voting on move with the plan, or stay on their dates, along with everything else.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MODEL ============ -->
+  <section class="feature" id="model">
+    <div class="eyebrow">Under the hood</div>
+    <h2>Storing days, not dates</h2>
+    <p class="ask">Everything on the calendar gets a day of the trip (Day 1 = 0) and a time in minutes, instead of a timestamp. The trip has either real dates or only a length. "Shift" then changes nothing but the trip row. "Keep dates" subtracts the number of days Day 1 moved from every row, in one transaction.</p>
+    <div class="decide" style="margin-top:0">
+      <div>
+        <h4>Schema</h4>
+        <ul>
+          <li><code>trips</code>: add <code>length_days</code> and <code>rough_month</code> (both nullable). Either <code>start_date</code> + <code>end_date</code> are set, or <code>length_days</code> is, enforced by a check constraint.</li>
+          <li><code>trip_day_places.date</code> → <code>day</code> (int). The unique constraints move to <code>(trip_id, day, …)</code>.</li>
+          <li><code>plans</code>, <code>contests</code>, <code>splits</code>: <code>starts_at</code>/<code>ends_at</code> → <code>start_min</code>/<code>end_min</code>, counted in minutes from 00:00 on Day 1. Overlap checks stay simple integer comparisons. <code>plan_items</code> already count from the plan's start.</li>
+          <li><code>pins.cost_start_date</code>/<code>cost_end_date</code> → <code>cost_start_day</code>/<code>cost_end_day</code>.</li>
+          <li><code>availability_rules</code>/<code>overrides</code> already use day numbers and don't change.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>API and migration</h4>
+        <ul>
+          <li><code>PATCH /trips/{id}</code> takes <code>move: "shift" | "keep_dates"</code>. If the start date changes while something is on the calendar and <code>move</code> is missing, it returns 409, so an older client can't make the choice silently.</li>
+          <li>The Alembic migration computes <code>day = date − trip.start_date</code> and minutes from the stored timestamp in the trip's local time. Rows that are already outside the trip get days below 0 or past the end. These are exactly the "set aside" items.</li>
+          <li>Responses can still include derived <code>starts_at</code> while the frontend moves over, so screens can switch one at a time.</li>
+          <li>Plans no longer depend on time zones: Day 3 at 09:00 is 09:00 wherever the trip is.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Segmented toggle in 1a: switch between the date fields and the length picker.
+  const mode = document.getElementById('mode1');
+  mode.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    mode.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== b.dataset.mode);
+  });
+
+  // Length stepper, length chips and month chips in 1a.
+  let len = 5, month = 'March';
+  const lenEl = document.getElementById('len'), prev = document.getElementById('roughpreview');
+  const minus = document.getElementById('minus');
+  function renderLen() {
+    lenEl.textContent = len + (len === 1 ? ' day' : ' days');
+    minus.disabled = len <= 1;
+    document.querySelectorAll('#lenchips .mchip').forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.len === len)));
+    prev.innerHTML = '<b>' + (len === 1 ? 'Day 1' : 'Day 1 – Day ' + len) + '</b>' + (month ? ' · sometime in ' + month : ' · whenever it happens');
+  }
+  minus.addEventListener('click', () => { len = Math.max(1, len - 1); renderLen(); });
+  document.getElementById('plus').addEventListener('click', () => { len = Math.min(60, len + 1); renderLen(); });
+  document.querySelectorAll('#lenchips .mchip').forEach(c => c.addEventListener('click', () => { len = +c.dataset.len; renderLen(); }));
+  document.querySelectorAll('#months .mchip').forEach(c => c.addEventListener('click', () => {
+    month = c.dataset.m;
+    document.querySelectorAll('#months .mchip').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
+    renderLen();
+  }));
+  document.querySelectorAll('.seg:not(#mode1)').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  renderLen();
+
+  // Live preview for the shift / keep prompt (2b, 2c).
+  // Kyoto as planned: Fri Mar 12 – Tue Mar 16, 2027, indexed by day of trip.
+  const OLD_START = Date.UTC(2027, 2, 12);
+  const PLANNED = ['3 plans · Hotel Kaze', '4 plans · Hotel Kaze', '2 plans · day trip to Nara', '3 plans · Ryokan Hoshi', '2 plans · fly home'];
+  const DAY = 86400000;
+  const fmt = t => new Date(t).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const short = t => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  function deltaWords(d) {
+    const n = Math.abs(d), dir = d > 0 ? 'later' : 'earlier';
+    if (n % 7 === 0) return (n === 7 ? 'a week ' : n / 7 + ' weeks ') + dir;
+    return n + (n === 1 ? ' day ' : ' days ') + dir;
+  }
+  function renderPrompt(sheet, newStart, newLen) {
+    const delta = Math.round((newStart - OLD_START) / DAY);
+    sheet.querySelectorAll('[data-delta]').forEach(el => el.textContent = deltaWords(delta));
+    const how = sheet.querySelector('input[type=radio]:checked').value;
+    const rows = [];
+    for (let i = 0; i < newLen; i++) {
+      const date = newStart + i * DAY;
+      // shift: new Day i holds old Day i. keep: new Day i holds whatever was on that calendar date.
+      const src = how === 'shift' ? i : i + delta;
+      const has = src >= 0 && src < PLANNED.length;
+      const from = has && how === 'shift' && delta !== 0 ? '<span class="from">from ' + short(OLD_START + src * DAY) + '</span>' : '';
+      rows.push('<div class="drow' + (has ? '' : ' empty') + '"><span class="d1">Day ' + (i + 1) + '<small>' + fmt(date).toUpperCase() + '</small></span><span class="d2">' + from + (has ? PLANNED[src] : 'Nothing planned') + '</span></div>');
+    }
+    if (how === 'keep') {
+      PLANNED.forEach((p, j) => {
+        const newIdx = j - delta;
+        if (newIdx < 0 || newIdx >= newLen) {
+          rows.push('<div class="drow out"><span class="d1">Set aside<small>' + fmt(OLD_START + j * DAY).toUpperCase() + '</small></span><span class="d2">' + p + '</span></div>');
+        }
+      });
+    }
+    sheet.querySelector('[data-preview]').innerHTML = rows.join('');
+  }
+  const sheets = [
+    [document.querySelector('[data-sheet="b"]'), Date.UTC(2027, 2, 19), 5],
+    [document.querySelector('[data-sheet="c"]'), Date.UTC(2027, 2, 11), 6],
+  ];
+  sheets.forEach(([s, start, n]) => {
+    s.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => renderPrompt(s, start, n)));
+    renderPrompt(s, start, n);
+  });
+</script>
