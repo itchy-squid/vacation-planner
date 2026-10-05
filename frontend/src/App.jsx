@@ -16,6 +16,8 @@ import EditVisit from "./pages/EditVisit";
 import FinalItinerary from "./pages/FinalItinerary";
 import Expenses from "./pages/Expenses";
 import JoinTrip from "./pages/JoinTrip";
+import People from "./pages/People";
+import You from "./pages/You";
 import DeleteAccount from "./pages/DeleteAccount";
 import BottomNav from "./components/core/BottomNav";
 
@@ -23,7 +25,8 @@ import BottomNav from "./components/core/BottomNav";
 // carries which trip it's about — paste a link to someone else and it
 // opens their browser straight into the same trip (see
 // state/PlannerContext.jsx, which reads :tripId off the URL at load time).
-// Only Trips Home and the new-trip form are trip-agnostic.
+// Only the home tabs (Trips, People, You) and the new-trip form are
+// trip-agnostic.
 function ScheduleIndexRedirect() {
   const { tripId } = useParams();
   return <Navigate to={`/trips/${tripId}/schedule/1`} replace />;
@@ -58,6 +61,8 @@ function AppRoutes() {
     return (
       <Routes>
         <Route path="/" element={<TripsHome />} />
+        <Route path="/people" element={<People />} />
+        <Route path="/you" element={<You />} />
         <Route path="/new-trip" element={<NewTrip />} />
         <Route path="/join/:token" element={<JoinTrip />} />
         <Route path="/account/delete" element={<DeleteAccount />} />
@@ -69,6 +74,11 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<TripsHome />} />
+      {/* The other two home tabs (components/core/HomeTabBar.jsx). Like
+          Trips Home they're about you, not a trip, so they're in both
+          route tables. */}
+      <Route path="/people" element={<People />} />
+      <Route path="/you" element={<You />} />
       <Route path="/new-trip" element={<NewTrip />} />
       {/* An invite link. Works whether or not the person has any trips
           yet, so it's in both route tables. */}

@@ -99,11 +99,24 @@ class TripOwnerOut(BaseModel):
     tint: str
 
 
+class TripInviteeIn(BaseModel):
+    """One person invited as a new trip is created ("Who's planning with
+    you?"). Must be someone the creator has planned a trip with before
+    (GET /api/people). `traveling` lists them on the roster straight
+    away, so costs split with them from the start; they claim that row
+    when they accept."""
+
+    email: str = Field(min_length=3, max_length=320)
+    role: Literal["planner", "companion", "reader"] = "planner"
+    traveling: bool = True
+
+
 class TripCreate(BaseModel):
     name: str
     region_line: str = ""
     start_date: date | None = None
     end_date: date | None = None
+    invitees: list[TripInviteeIn] = Field(default_factory=list, max_length=50)
 
 
 class TripOut(BaseModel):
@@ -204,6 +217,52 @@ def _redact_costs(model: BaseModel, *fields: str, added_by_id: int | None = None
     if not can_see_costs(added_by_id):
         for field in fields:
             setattr(model, field, None)
+
+
+class PersonTripOut(BaseModel):
+    """A trip the caller shared with someone, and that person's role on it."""
+
+    id: int
+    name: str
+    start_date: date | None
+    end_date: date | None
+    role: Literal["owner", "planner", "companion", "reader"]
+
+
+class PersonOut(BaseModel):
+    """Someone the caller has planned a trip with — GET /api/people.
+    People are matched by email, like members (there is no user table)."""
+
+    email: str
+    display_name: str
+    initial: str
+    tint: str
+    # Their role on the most recent trip you shared — what a new invite
+    # suggests for them.
+    last_role: Literal["owner", "planner", "companion", "reader"]
+    # Most recent first.
+    trips: list[PersonTripOut]
+
+
+class DirectInviteOut(BaseModel):
+    """An invite waiting for the caller — GET /api/me/invites. Accept it
+    with the existing POST /api/invites/{token}/accept, or decline with
+    POST /api/invites/{token}/decline."""
+
+    id: int
+    token: str
+    trip_id: int
+    trip_name: str
+    start_date: date | None
+    end_date: date | None
+    phase: str
+    role: Literal["planner", "companion", "reader"]
+    invited_by: TripOwnerOut | None
+    member_count: int
+    # A traveler is already listed for them, so joining makes them that
+    # traveler; false means they're invited to help plan only.
+    traveling: bool
+    created_at: datetime
 
 
 class InviteCreate(BaseModel):

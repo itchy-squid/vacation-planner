@@ -12,6 +12,8 @@ means leaving every trip at once:
 - A trip you own that has other people on it: ownership passes to the
   next member in line (see _successor), then you leave it the same way.
 - A trip you own alone: deleted outright, with its mirrored photos.
+- Invites sent to you that you haven't answered are declined, and your
+  address is wiped from the ones you have.
 
 GET /api/me/deletion-preview sorts your trips into those three groups so
 the confirmation screen can name them. Nothing is kept afterwards to
@@ -47,7 +49,7 @@ from ..models import (
     Vote,
 )
 from ..schemas import AccountDeletionPreviewOut, DeletionTripOut
-from .sharing import _remove_member
+from .sharing import _remove_member, withdraw_direct_invite
 
 router = APIRouter(prefix="/api", tags=["account"])
 
@@ -144,6 +146,23 @@ def delete_account(
     events: list[tuple[int, str, dict]] = []
     forgotten: list[tuple[int, int]] = []
     deleted_trip_ids: list[int] = []
+
+    # Invites still waiting for you are declined, and the address is
+    # wiped from any you already answered.
+    waiting = db.scalars(
+        select(TripInvite).where(TripInvite.invitee_email == principal.email, TripInvite.revoked_at.is_(None))
+    ).all()
+    for invite in waiting:
+        withdrawn, invite_forgotten = withdraw_direct_invite(db, invite)
+        events.extend(withdrawn)
+        forgotten.extend(invite_forgotten)
+    db.flush()
+    db.execute(
+        update(TripInvite)
+        .where(TripInvite.invitee_email == principal.email)
+        .values(invitee_email=None, invitee_name=None),
+        execution_options=_NO_SYNC,
+    )
 
     for member, trip, successor in _memberships(db, principal.email):
         trip_id = trip.id

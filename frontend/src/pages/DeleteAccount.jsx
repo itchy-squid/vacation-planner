@@ -147,7 +147,7 @@ export default function DeleteAccount() {
             >
               {deleting ? "Deleting…" : "Delete my account"}
             </Button>
-            <Button variant="secondary" onClick={() => navigate("/")} disabled={deleting}>
+            <Button variant="secondary" onClick={() => navigate("/you")} disabled={deleting}>
               Cancel
             </Button>
           </div>

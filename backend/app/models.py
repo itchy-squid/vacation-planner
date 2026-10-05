@@ -240,7 +240,8 @@ class Traveler(Base):
 
 
 class TripInvite(Base):
-    """A shareable join link for one trip. Anyone signed in who opens it can
+    """A shareable join link for one trip, or a direct invite to one
+    person (`invitee_email`). Anyone signed in who opens a link can
     add the trip to their list with `role`. One live link per role is
     reused (routers/sharing.py); a link works until the owner revokes it,
     which stamps revoked_at and leaves already-joined members alone."""
@@ -260,6 +261,13 @@ class TripInvite(Base):
     # the per-role links — each is its own row, and it stops working once
     # the traveler is claimed.
     traveler_id: Mapped[int | None] = mapped_column(ForeignKey("travelers.id", ondelete="CASCADE"), nullable=True)
+    # An invite sent to one person the owner has planned with before
+    # (routers/people.py), rather than a link to pass around. It shows up
+    # on that person's Trips screen and only they can accept or decline
+    # it. Single use: accepting or declining stamps revoked_at. Not one of
+    # the per-role links either.
+    invitee_email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    invitee_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     trip: Mapped[Trip] = relationship(back_populates="invites")
 
