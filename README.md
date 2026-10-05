@@ -123,13 +123,12 @@ Engineering additions, not design-reviewed screens:
 - **Trip settings** (`frontend/src/pages/TripSettings.jsx`,
   `PATCH /api/trips/{id}`) — name, regions, start/end dates, reachable
   from the Board/Map/Schedule header (`components/core/SettingsButton.jsx`).
-  Dates are real `start_date`/`end_date` columns (`b3eefc046a80` migration);
-  day-of-trip scheduling intentionally doesn't derive from them yet — see
-  `formatDateRange` in `frontend/src/lib/format.js`.
+  A trip has dates, or a length and rough month for planning before they're
+  known — see "Planning by day of the trip" below.
 - **Where we'll be** (`frontend/src/pages/DayPlaces.jsx`,
   `/trips/:tripId/places`; `backend/app/routers/day_places.py`) — the place
   the group stays in each day, plus day trips (there and back the same
-  day). Stored by date in `trip_day_places`; set from the Plan tab's day
+  day). Stored by day of the trip in `trip_day_places`; set from the Plan tab's day
   header or the whole-trip list, several days at once, with Undo. Once a
   day is set, the Plan tab's header, day strip and "+ Add" filter use it
   instead of guessing from the calendar. Planners and owners change it;
@@ -146,6 +145,20 @@ Engineering additions, not design-reviewed screens:
   so a plan stop for a per-day idea costs nothing of its own
   (`derive.py item_money`). Design: 1a in
   `Claude outputs/stays-costs-types-mockups.html`.
+- **Planning by day of the trip** (`backend/app/tripdays.py`,
+  `frontend/src/lib/tripWhen.js`) — a new trip can be "Not sure yet": a
+  length (`Trip.length_days`) and an optional rough month instead of dates.
+  Everything on the calendar is stored relative to the trip, not the
+  calendar: plans, votes and splits as `start_min`/`end_min` (minutes from
+  00:00 on day 1), places, per-day costs and availability as day numbers
+  (1 is the first day). Setting dates on a trip planned by length needs no
+  question. Moving the start date from one date to another with anything
+  on the calendar asks first (`components/trip/MoveDatesSheet.jsx`):
+  shift the plan with the trip, or keep things on their dates
+  (`PATCH /api/trips/{id}` `move: "shift" | "keep_dates"`; without it the
+  API answers 409 `move_required`). Whatever ends up outside the trip's
+  days is kept, and the Plan tab says so and can clear it. Design:
+  `Claude outputs/flexible-dates-mockups.html`.
 
 ## Repo layout
 

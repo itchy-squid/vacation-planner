@@ -1,6 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl, openPlan } from "../support/calendar.js";
-import { dayDate, placePlan, plansOf } from "../support/seed.js";
+import { placePlan, plansOf, at } from "../support/seed.js";
 
 // The calendar item sheet's Day field (components/forms/DayStepper.jsx):
 // a stepper whose day number you can also type, in place of the row of
@@ -22,7 +22,7 @@ test.describe("moving a calendar item to another day", () => {
     await day.fill("3");
     await day.press("Enter");
 
-    await expect.poll(async () => (await plansOf(api, trip))[0].starts_at).toContain(`${dayDate(3)}T10:00`);
+    await expect.poll(async () => (await plansOf(api, trip))[0].start_min).toBe(at(3, "10:00"));
     await expect(day).toHaveValue("3");
   });
 
@@ -32,7 +32,7 @@ test.describe("moving a calendar item to another day", () => {
     await expect(page.getByRole("button", { name: "Earlier day" })).toBeDisabled();
     await page.getByRole("button", { name: "Later day" }).click();
 
-    await expect.poll(async () => (await plansOf(api, trip))[0].starts_at).toContain(`${dayDate(2)}T10:00`);
+    await expect.poll(async () => (await plansOf(api, trip))[0].start_min).toBe(at(2, "10:00"));
     await expect(page.getByRole("textbox", { name: "Day number" })).toHaveValue("2");
     await expect(page.getByRole("button", { name: "Earlier day" })).toBeEnabled();
   });
@@ -46,6 +46,6 @@ test.describe("moving a calendar item to another day", () => {
 
     await expect(page.getByText("Pick a day from 1 to 4.")).toBeVisible();
     await expect(day).toHaveValue("1");
-    expect((await plansOf(api, trip))[0].starts_at).toContain(`${dayDate(1)}T10:00`);
+    expect((await plansOf(api, trip))[0].start_min).toBe(at(1, "10:00"));
   });
 });

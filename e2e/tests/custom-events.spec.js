@@ -1,6 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl, openPlan, tapCalendar } from "../support/calendar.js";
-import { placePlan, plansOf, travelItemsOf } from "../support/seed.js";
+import { placePlan, plansOf, travelItemsOf, clockOf } from "../support/seed.js";
 
 test.describe("custom events", () => {
   // Regression: arming placement right after creating the event used to
@@ -21,7 +21,7 @@ test.describe("custom events", () => {
     await expect(page.getByText("10:00–11:00")).toBeVisible();
     const plans = await plansOf(api, trip);
     expect(plans).toHaveLength(1);
-    expect(plans[0].starts_at).toContain("T10:00");
+    expect(clockOf(plans[0].start_min)).toBe("10:00");
     expect(plans[0].items[0].travel_item.title).toBe("Scooter hire");
   });
 

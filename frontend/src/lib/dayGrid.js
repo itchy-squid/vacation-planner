@@ -51,18 +51,14 @@ export function planStartMinute(plan) {
   return plan.startDt ? plan.startDt.minuteOfDay : 0;
 }
 
-// Measured across the real dates, not within one. This used to wrap with
-// `% 1440`, which reads an overnight ferry correctly by luck and then
-// gets everything longer wrong: a two-night stay reported 10h, and an
+// Measured across days, not within one. This used to wrap with `% 1440`,
+// which reads an overnight ferry correctly by luck and then gets
+// everything longer wrong: a two-night stay reported 10h, and an
 // exactly-24h one computed 0 and silently fell back to the sum of its
 // items' durations.
-function calendarDayUTC(dt) {
-  return Date.UTC(dt.year, dt.month - 1, dt.day);
-}
-
 export function planDurationMinutes(plan) {
   if (plan.startDt && plan.endDt) {
-    const days = (calendarDayUTC(plan.endDt) - calendarDayUTC(plan.startDt)) / 86400000;
+    const days = plan.endDt.dayIndex - plan.startDt.dayIndex;
     const d = days * 1440 + (plan.endDt.minuteOfDay - plan.startDt.minuteOfDay);
     if (d > 0) return d;
   }

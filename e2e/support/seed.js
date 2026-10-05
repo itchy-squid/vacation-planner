@@ -3,16 +3,21 @@
 import { ok } from "./api.js";
 import { RUN_ID, TRIP_PREFIX } from "./env.js";
 
-// Day 1 of every seeded trip. Plans store trip-local wall-clock time.
+// Day 1 of every seeded trip. Plans store a trip minute: minutes from
+// 00:00 on day 1, wall-clock time wherever the trip is.
 export const TRIP_START = "2026-10-03";
 const TRIP_END = "2026-10-06";
 
+/** The trip minute for "HH:MM" on day `day` (1-based). */
 export function at(day, clock) {
   const [h, m] = clock.split(":").map(Number);
-  const d = new Date(`${TRIP_START}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + day - 1);
-  d.setUTCHours(h, m);
-  return d.toISOString().replace(".000Z", "");
+  return (day - 1) * 1440 + h * 60 + m;
+}
+
+/** "HH:MM" for a trip minute, whatever day it's on. */
+export function clockOf(minute) {
+  const within = ((minute % 1440) + 1440) % 1440;
+  return `${String(Math.floor(within / 60)).padStart(2, "0")}:${String(within % 60).padStart(2, "0")}`;
 }
 
 /**
@@ -73,8 +78,8 @@ export async function placePlan(api, trip, { day = 1, from, to, pin, event, bran
   return ok(
     api.post(`/api/trips/${trip.id}/plans`, {
       data: {
-        starts_at: at(day, from),
-        ends_at: at(day, to),
+        start_min: at(day, from),
+        end_min: at(day, to),
         status: "placed",
         items: [pin != null ? { pin_id: pin } : { travel_item_id: event }],
         branch_id: branch,
@@ -92,8 +97,8 @@ export async function proposeBlock(api, trip, { day = 1, from, to, pins = [], ev
   return ok(
     api.post(`/api/trips/${trip.id}/contests`, {
       data: {
-        starts_at: at(day, from),
-        ends_at: at(day, to),
+        start_min: at(day, from),
+        end_min: at(day, to),
         items: [...pins.map((id) => ({ pin_id: id })), ...events.map((id) => ({ travel_item_id: id }))],
       },
     }),
@@ -108,8 +113,8 @@ export async function splitDay(api, trip, { day = 1, from, to, groups }) {
   return ok(
     api.post(`/api/trips/${trip.id}/splits`, {
       data: {
-        starts_at: at(day, from),
-        ends_at: at(day, to),
+        start_min: at(day, from),
+        end_min: at(day, to),
         branches: groups.map((g) => ({ label: g.label ?? "", traveler_ids: g.travelers })),
       },
     }),
@@ -135,18 +140,12 @@ export async function plansOf(api, trip) {
   return ok(api.get(`/api/trips/${trip.id}/plans`), "list plans");
 }
 
-// "Where we'll be": { "2026-10-03": { stay, lodging, visits } } for the
-// dates to set (backend routers/day_places.py); `lodging` is the id of the
-// pin the group is staying at. dayDate(n) is day n's date.
-export function dayDate(day) {
-  const d = new Date(`${TRIP_START}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + day - 1);
-  return d.toISOString().slice(0, 10);
-}
-
+// "Where we'll be": { 1: { stay, lodging, visits } } for the days of the
+// trip to set (backend routers/day_places.py); `lodging` is the id of the
+// pin the group is staying at.
 export async function setDayPlaces(api, trip, days) {
-  const body = Object.entries(days).map(([date, day]) => ({
-    date,
+  const body = Object.entries(days).map(([number, day]) => ({
+    day: Number(number),
     stay: day.stay ?? null,
     lodging_pin_id: day.lodging ?? null,
     visits: day.visits ?? [],

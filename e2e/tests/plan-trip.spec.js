@@ -1,5 +1,5 @@
 import { test, expect } from "../support/fixtures.js";
-import { dayDate, placePlan, plansOf, contestsOf, setDayPlaces, travelItemsOf } from "../support/seed.js";
+import { placePlan, plansOf, contestsOf, setDayPlaces, travelItemsOf, clockOf } from "../support/seed.js";
 
 // Planning a trip from the Map tab (pages/PlanTrip.jsx, lib/tripPlan.js):
 //   - stops in order with a ride between each pair, from where the group is
@@ -17,7 +17,7 @@ const CENOTE = { title: "Cenote Dos Ojos", region: "Tulum", lat: 20.3272, lng: -
 const TULUM = { title: "Tulum Ruins", region: "Tulum", lat: 20.215, lng: -87.429, minutes: 180 };
 
 async function stayAtHotel(api, trip) {
-  await setDayPlaces(api, trip, { [dayDate(1)]: { stay: HOTEL.region, lodging: trip.pins[HOTEL.title] } });
+  await setDayPlaces(api, trip, { 1: { stay: HOTEL.region, lodging: trip.pins[HOTEL.title] } });
 }
 
 async function openMap(page, trip) {
@@ -90,9 +90,8 @@ test("rides between places already on the calendar go straight onto it", async (
 
   const rides = (await plansOf(api, trip)).filter((p) => p.items[0]?.travel_item);
   expect(rides.map((p) => p.status)).toEqual(["placed", "placed"]);
-  const clock = (iso) => iso.slice(11, 16);
-  expect(rides.map((p) => clock(p.ends_at))).toContain("11:00");
-  expect(rides.map((p) => clock(p.starts_at))).toContain("14:00");
+  expect(rides.map((p) => clockOf(p.end_min))).toContain("11:00");
+  expect(rides.map((p) => clockOf(p.start_min))).toContain("14:00");
   expect((await travelItemsOf(api, trip)).every((t) => t.kind === "travel" && t.mode)).toBe(true);
 });
 

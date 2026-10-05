@@ -49,7 +49,8 @@ export default function TripDaysNotice() {
       outside.days.length ? `places for ${outside.days.length === 1 ? "a day" : `${outside.days.length} days`}` : null,
     ].filter(Boolean);
     const subject = parts.join(" and ");
-    const verb = parts.length === 1 && count === 1 ? "is" : "are";
+    const one = parts.length === 1 && count === 1;
+    const verb = one ? "is" : "are";
     return (
       <Notice tone="warn">
         <div style={{ font: "600 12.5px var(--font-sans)", color: "var(--warn)" }}>
@@ -57,8 +58,8 @@ export default function TripDaysNotice() {
           {subject.slice(1)} {verb} outside the trip’s days
         </div>
         <div>
-          When the dates moved, {parts.length === 1 && count === 1 ? "it was" : "they were"} kept on the dates {parts.length === 1 && count === 1 ? "it was" : "they were"} on.
-          Move the dates back to see {parts.length === 1 && count === 1 ? "it" : "them"} again{can("plans:write") ? ", or clear " + (parts.length === 1 && count === 1 ? "it" : "them") : ""}.
+          When the dates moved, {one ? "it was" : "they were"} kept on the dates {one ? "it was" : "they were"} on.
+          Move the dates back to see {one ? "it" : "them"} again{can("plans:write") ? ", or clear " + (one ? "it" : "them") : ""}.
         </div>
         {error ? <div style={{ color: "var(--warn)" }}>{error}</div> : null}
         <div style={{ display: "flex", gap: 14 }}>
@@ -66,10 +67,10 @@ export default function TripDaysNotice() {
           {can("plans:write") ? (
             confirming ? (
               <LinkButton onClick={clearOutside} disabled={busy} warn>
-                {busy ? "Clearing…" : `Clear ${clearable.length + outside.days.length === 1 ? "it" : "them"}: their ideas stay on the board`}
+                {busy ? "Clearing…" : `Clear ${one ? "it" : "them"}: ${one ? "its idea stays" : "their ideas stay"} on the board`}
               </LinkButton>
             ) : (
-              <LinkButton onClick={() => setConfirming(true)}>Clear them</LinkButton>
+              <LinkButton onClick={() => setConfirming(true)}>{one ? "Clear it" : "Clear them"}</LinkButton>
             )
           ) : null}
         </div>

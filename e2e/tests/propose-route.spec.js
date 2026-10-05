@@ -1,6 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl } from "../support/calendar.js";
-import { contestsOf, plansOf, proposeBlock } from "../support/seed.js";
+import { contestsOf, plansOf, proposeBlock, clockOf } from "../support/seed.js";
 import { addCustomEvent, startAt } from "../support/planner.js";
 
 // Every proposal is built in the route planner (pages/PlanTrip.jsx): from
@@ -23,8 +23,8 @@ test("a day's + Add proposes a route, starting when you say", async ({ page, api
   await expect(page).toHaveURL(/\/contests\/\d+/);
 
   const [contest] = await contestsOf(api, trip);
-  expect(contest.starts_at).toContain("T12:30");
-  expect(contest.ends_at).toContain("T13:30");
+  expect(clockOf(contest.start_min)).toBe("12:30");
+  expect(clockOf(contest.end_min)).toBe("13:30");
   const [set] = contest.plans;
   expect(set.label).toBe("Dumpling lunch");
   expect(set.items.map((i) => i.travel_item?.title)).toEqual(["Dumpling lunch"]);
@@ -75,8 +75,8 @@ test("a set added to a vote spans the vote's hours", async ({ page, api, seed })
   const [after] = await contestsOf(api, trip);
   expect(after.plans).toHaveLength(2);
   const added = after.plans.find((p) => p.items.some((i) => i.travel_item?.title === "Tea house"));
-  expect(added.starts_at).toContain("T13:00");
-  expect(added.ends_at).toContain("T15:00");
+  expect(clockOf(added.start_min)).toBe("13:00");
+  expect(clockOf(added.end_min)).toBe("15:00");
 });
 
 test("editing your set rewrites it in place, and a stop too long for the vote is refused", async ({ page, api, seed }) => {

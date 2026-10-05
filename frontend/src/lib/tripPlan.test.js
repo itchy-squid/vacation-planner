@@ -290,3 +290,11 @@ test("a group's block that runs long stretches its split instead of stopping", (
     { startMin: 510, endMin: 720, earlier: true, later: false }
   );
 });
+
+test("a plan's length runs across days, so an overnight one isn't cut to its stops", async () => {
+  const { planDurationMinutes } = await import("./dayGrid.js");
+  const overnight = { startDt: dayTime(tripMinute(2, 1320)), endDt: dayTime(tripMinute(3, 120)), totalDurationMinutes: 75 };
+  assert.equal(planDurationMinutes(overnight), 240);
+  const contest = { startDt: dayTime(tripMinute(1, 780)), endDt: dayTime(tripMinute(1, 900)), totalDurationMinutes: 90 };
+  assert.equal(planDurationMinutes(contest), 120);
+});
