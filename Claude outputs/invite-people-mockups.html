@@ -1,0 +1,469 @@
+<title>Inviting Your People</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a review sheet. Each feature is a band of phone screens drawn in the
+     app's own tokens, then the decisions it needs. Page chrome follows the
+     viewer's theme; the phones stay in the app's light palette, as the app does. */
+  :root {
+    --pg-bg: #e9e7ec; --pg-fg: #1b1a1f; --pg-muted: #5d5b66; --pg-line: rgba(27,26,31,.14);
+    --pg-panel: #f6f5f7; --pg-accent: #8f4478; --pg-tag: rgba(143,68,120,.10);
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-inset: #f9f8fa; --surface-sunken: #eceaee;
+    --surface-inverse: #1b1a1f; --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95;
+    --text-faint: #a3a1ab; --accent: #8f4478; --accent-quiet: rgba(143,68,120,.06); --plum-tint-strong: rgba(143,68,120,.22);
+    --geo: #3d8a9c; --geo-quiet: #eef2f3; --warn: #b4553f; --stone-250: #dcdae0; --stone-700: #4a4852;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --on-ink: #ffffff; --on-ink-muted: rgba(255,255,255,.6); --scrim: rgba(27,26,31,.42);
+    --who-1: #e8d5e1; --who-2: #d3e6ea; --who-3: #ece3cf; --who-4: #dbe4d2; --who-5: #e3dcef; --who-6: #f0d9d0;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(27,26,31,.06), 0 2px 8px rgba(27,26,31,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+      --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+    --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); font: 400 14px/1.55 var(--font-sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; }
+  h1 { font: 400 34px/1.15 var(--font-serif); margin: 0 0 10px; text-wrap: balance; }
+  .lede { max-width: 70ch; color: var(--pg-muted); margin: 0; }
+  .eyebrow { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pg-accent); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { font: 600 12.5px var(--font-sans); color: var(--pg-fg); text-decoration: none; padding: 6px 12px; border: 1px solid var(--pg-line); border-radius: 999px; }
+  .toc a:hover, .toc a:focus-visible { border-color: var(--pg-accent); outline: none; }
+  section.feature { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--pg-line); }
+  section.feature > h2 { font: 400 27px/1.2 var(--font-serif); margin: 6px 0 8px; text-wrap: balance; }
+  .ask { max-width: 72ch; color: var(--pg-muted); margin: 0 0 14px; }
+  .today { max-width: 78ch; background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 24px; }
+  .today b { font-weight: 600; }
+  code { font: 400 12px var(--font-mono); background: var(--pg-tag); padding: 1px 5px; border-radius: 4px; }
+  .screens { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+  .screen-col { width: 340px; max-width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .screen-col h3 { font: 600 13.5px/1.3 var(--font-sans); margin: 0; }
+  .screen-col .note { font-size: 12.5px; color: var(--pg-muted); margin: 0; line-height: 1.5; }
+  .decide { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .decide > div { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .decide h4 { font: 600 13px var(--font-sans); margin: 0 0 8px; }
+  .decide ol, .decide ul { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+  .rec { display: inline-block; font: 600 10px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-accent); background: var(--pg-tag); padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+
+  /* ---------- phone (app palette only below here) ---------- */
+  .phone { background: var(--surface-page); color: var(--text-primary); border-radius: 30px; border: 1px solid var(--pg-line); box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; position: relative; font-size: 13px; display: flex; flex-direction: column; min-height: 640px; }
+  .phone .bar { height: 26px; flex: none; }
+  .topline { display: flex; justify-content: space-between; align-items: center; padding: 0 16px 6px; font: 500 12.5px var(--font-sans); }
+  .topline .back { color: var(--accent); }
+  .topline .skip { color: var(--text-secondary); }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .h { font: 400 22px/1.2 var(--font-serif); text-wrap: balance; }
+  .sub { font: 400 12px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .body { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .search { height: 40px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-card); display: flex; align-items: center; padding: 0 12px; color: var(--text-muted); font-size: 13px; }
+  .row-scroll { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .row-scroll::-webkit-scrollbar { display: none; }
+  .gchip { flex: none; height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 6px; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 12px var(--font-sans); color: var(--text-primary); cursor: pointer; }
+  .gchip[aria-pressed="true"] { border: 1.5px solid var(--accent); background: var(--accent-quiet); }
+  .stack { display: flex; }
+  .stack i { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--surface-card); margin-left: -7px; display: grid; place-items: center; font: 600 8.5px var(--font-sans); font-style: normal; color: var(--text-secondary); }
+  .stack i:first-child { margin-left: 0; }
+  .stack i.ghost { border: 1.5px dashed var(--text-faint); background: var(--surface-card) !important; }
+
+  .list { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); overflow: hidden; }
+  .prow { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-height: 56px; border-top: 1px solid var(--hairline); }
+  .prow:first-child { border-top: 0; }
+  .prow.dim { opacity: .5; }
+  .prow input[type=checkbox] { width: 19px; height: 19px; accent-color: var(--accent); margin: 0; flex: none; }
+  .av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--font-sans); color: var(--text-secondary); flex: none; }
+  .av.ghost { background: var(--surface-card) !important; border: 1.5px dashed var(--text-faint); color: var(--text-muted); }
+  .who { flex: 1; min-width: 0; }
+  .who .n { font: 600 13.5px var(--font-sans); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .who .t { font: 400 11.5px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .tag { font: 500 9px/1 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; padding: 3px 5px; border-radius: 4px; background: var(--surface-sunken); color: var(--stone-700); }
+  .tag.app { background: var(--geo-quiet); color: var(--geo); }
+  .tag.inv { background: var(--accent-quiet); color: var(--accent); border: 1px solid var(--plum-tint-strong); }
+  .tag.new { background: var(--surface-inverse); color: var(--on-ink); }
+  .pick { flex: none; height: 30px; padding: 0 9px; border-radius: var(--radius-pill); background: var(--accent-quiet); border: 1px solid var(--plum-tint-strong); color: var(--accent); font: 600 11px var(--font-sans); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+  .pick.plain { background: var(--surface-sunken); border-color: transparent; color: var(--stone-700); }
+  .pick svg { width: 9px; height: 9px; }
+  .swap { display: block; font: 500 10.5px var(--font-mono); color: var(--accent); margin-top: 2px; }
+  .foot-note { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-muted); padding: 0 4px; }
+
+  .footer { flex: none; background: var(--surface-card); border-top: 1px solid var(--hairline); padding: 12px 16px 16px; display: flex; align-items: center; gap: 12px; }
+  .footer .count { flex: 1; font: 400 12px var(--font-sans); color: var(--text-secondary); }
+  .btn { height: 44px; border-radius: var(--radius-lg); border: 0; padding: 0 20px; font: 600 14px var(--font-sans); background: var(--accent); color: var(--on-ink); cursor: pointer; }
+  .btn.full { width: 100%; }
+  .btn.ghost { background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-strong); }
+  .btn:focus-visible, .gchip:focus-visible, .pick:focus-visible, .seg button:focus-visible, .opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--hairline); padding: 0 16px; }
+  .tabs span { padding: 8px 0 9px; font: 600 12.5px var(--font-sans); color: var(--text-muted); }
+  .tabs span.on { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .scrim { background: var(--scrim); flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
+  .ghostpage { padding: 6px 16px; opacity: .35; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 2px; }
+  .seg { display: flex; background: var(--surface-sunken); border-radius: var(--radius-md); padding: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: 600 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-primary); box-shadow: 0 1px 3px rgba(27,26,31,.14); }
+  .opts { display: flex; flex-direction: column; gap: 7px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-card); cursor: pointer; }
+  .opt:has(input:checked) { border: 1.5px solid var(--accent); background: var(--accent-quiet); }
+  .opt input { width: 17px; height: 17px; accent-color: var(--accent); margin: 2px 0 0; flex: none; }
+  .opt .l { font: 600 13px var(--font-sans); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .opt .d { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); margin-top: 2px; }
+  .field { height: 42px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); display: flex; align-items: center; padding: 0 12px; font: 600 13.5px var(--font-sans); }
+  .field.empty { color: var(--text-muted); font-weight: 400; }
+
+  .invcard { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .invcard .tn { font: 400 20px/1.2 var(--font-serif); }
+  .callout { display: flex; gap: 10px; align-items: center; padding: 9px 11px; border-radius: var(--radius-lg); background: var(--surface-inset); border: 1px dashed var(--border-strong); font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .callout b { color: var(--text-primary); font-weight: 600; }
+  .arrow { font: 500 12px var(--font-mono); color: var(--text-muted); }
+  .two { display: flex; gap: 8px; }
+  .two .btn { flex: 1; }
+  .trip-mini { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); padding: 12px 14px; }
+  .trip-mini .tn { font: 400 17px var(--font-serif); }
+  .rhead { display: flex; justify-content: space-between; }
+  .indent { padding-left: 34px; }
+  .toast { margin: 0 16px 12px; background: var(--surface-inverse); color: var(--on-ink); border-radius: var(--radius-lg); padding: 10px 12px; font: 500 12px var(--font-sans); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Mockups · Oct 5, 2026</div>
+  <h1>Inviting your people</h1>
+  <p class="lede">Two changes. You can invite people you've planned with to a trip that already exists, and pick who they are on the traveler list (for example, swap them in for "Jonah", whom you'd listed by name). When you start a new trip, past travelers who never joined the app, like Kai and Grandma Hua, can go on the list of who's going.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#existing">1 · Invite to an existing trip</a>
+    <a href="#newtrip">2 · Past travelers on a new trip</a>
+  </nav>
+
+  <!-- ============ FEATURE 1 ============ -->
+  <section class="feature" id="existing">
+    <div class="eyebrow">Feature 1</div>
+    <h2>Invite your people to a trip you've already made</h2>
+    <p class="ask">Today, picking people you've planned with only happens on step 2 of a new trip. After that, the only way in is a link. These screens add the same people list to Trip settings and let each invite take over a traveler who's already listed.</p>
+    <div class="today"><b>What exists:</b> <code>GET /api/people</code>, direct invites (<code>trip_invites.invitee_email</code>) that wait on the invitee's Trips screen, and per-traveler links (<code>POST /travelers/{id}/invite</code>) that sign the person in <i>as</i> that traveler. <b>What's new:</b> a direct invite can carry a <code>traveler_id</code>, so it does both. The person is invited by email and claims that row when they join.</div>
+
+    <div class="screens">
+      <!-- 1a -->
+      <div class="screen-col">
+        <h3>1a · Invite people, "Your people" tab</h3>
+        <div class="phone" id="p1a">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet" style="padding-inline:0; gap:10px;">
+              <div class="grab"></div>
+              <div style="padding: 0 16px;">
+                <div class="h">Invite people to Kyoto</div>
+                <div class="sub">They'll get an invite on their Trips screen.</div>
+              </div>
+              <div class="tabs"><span class="on">Your people</span><span>Send a link</span></div>
+              <div style="display:flex; flex-direction:column; gap:10px; padding: 0 16px;">
+                <div class="search">Search your people</div>
+                <div class="cap">Everyone from a trip</div>
+                <div class="row-scroll">
+                  <button class="gchip" type="button" aria-pressed="false"><span class="stack"><i style="background:var(--who-3)">J</i><i style="background:var(--who-4)">D</i><i style="background:var(--who-1)">M</i></span>Peru · 3</button>
+                  <button class="gchip" type="button" aria-pressed="false"><span class="stack"><i style="background:var(--who-1)">M</i><i style="background:var(--who-5)">P</i></span>Taiwan · 2</button>
+                </div>
+                <div class="cap">Your people · <span data-count>2</span> selected</div>
+                <div class="list">
+                  <label class="prow">
+                    <input type="checkbox" checked data-inv>
+                    <span class="av" style="background:var(--who-3)">J</span>
+                    <span class="who"><span class="n">Jonah Reyes</span><span class="t">Peru</span><span class="swap">↻ as Jonah, already listed</span></span>
+                    <span class="pick">Companion <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span>
+                  </label>
+                  <label class="prow">
+                    <input type="checkbox" checked data-inv>
+                    <span class="av" style="background:var(--who-4)">D</span>
+                    <span class="who"><span class="n">Dana Okafor</span><span class="t">Peru</span><span class="swap">+ new traveler</span></span>
+                    <span class="pick">Planner <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span>
+                  </label>
+                  <label class="prow">
+                    <input type="checkbox" data-inv>
+                    <span class="av" style="background:var(--who-5)">P</span>
+                    <span class="who"><span class="n">Priya Shah</span><span class="t">Taiwan</span></span>
+                  </label>
+                  <div class="prow dim">
+                    <span style="width:19px"></span>
+                    <span class="av" style="background:var(--who-1)">M</span>
+                    <span class="who"><span class="n">Mei Lin</span><span class="t">Already on Kyoto</span></span>
+                  </div>
+                </div>
+              </div>
+              <div class="footer" style="border-radius:0">
+                <div class="count"><span data-count>2</span> invites</div>
+                <button class="btn" type="button">Send invites</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">Trip settings → Invite people opens on your people; the role links move to the second tab. People already on the trip stay in the list, greyed out. When a listed traveler has the same first name, the row says it will swap in for them. Otherwise it adds a new traveler.</p>
+      </div>
+
+      <!-- 1b -->
+      <div class="screen-col">
+        <h3>1b · Who is Jonah on this trip?</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div>
+                <div class="h">Jonah on Kyoto</div>
+                <div class="sub">Jonah was a companion on Peru.</div>
+              </div>
+              <div class="cap">Role</div>
+              <div class="seg" data-seg>
+                <button type="button" aria-pressed="false">Planner</button>
+                <button type="button" aria-pressed="true">Companion</button>
+                <button type="button" aria-pressed="false">Reader</button>
+              </div>
+              <div class="cap">On the traveler list</div>
+              <div class="opts">
+                <label class="opt"><input type="radio" name="b1" checked>
+                  <span><span class="l">Swap in for Jonah <span class="tag">Listed</span><span class="tag inv">Same name</span></span>
+                  <span class="d">Keeps Jonah's groups, costs, and who pays (you).</span></span></label>
+                <label class="opt"><input type="radio" name="b1">
+                  <span><span class="l">Swap in for Traveler 5 <span class="tag">Listed</span></span>
+                  <span class="d">A placeholder from when Kyoto had a headcount.</span></span></label>
+                <label class="opt"><input type="radio" name="b1">
+                  <span><span class="l">Add as a new traveler</span>
+                  <span class="d">Kyoto goes from 5 travelers to 6.</span></span></label>
+                <label class="opt"><input type="radio" name="b1">
+                  <span><span class="l">Not going, only helping plan</span></span></label>
+              </div>
+              <button class="btn full" type="button">Done</button>
+            </div>
+          </div>
+        </div>
+        <p class="note">This sheet opens from the role chip in 1a. The role picker is the one from new-trip step 2, made compact. The new part is "On the traveler list", which offers every listed traveler that no account has claimed. Travelers with an invite waiting aren't offered.</p>
+      </div>
+
+      <!-- 1c -->
+      <div class="screen-col">
+        <h3>1c · Or start from the traveler</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="h">Edit traveler</div>
+              <div class="cap">Name</div>
+              <div class="field">Traveler 5</div>
+              <div class="cap">On the app</div>
+              <div class="seg" data-seg>
+                <button type="button" aria-pressed="false">Not on app</button>
+                <button type="button" aria-pressed="true">Your people</button>
+                <button type="button" aria-pressed="false">Send a link</button>
+              </div>
+              <div class="list">
+                <label class="prow"><input type="radio" name="c1" checked style="width:17px;height:17px;accent-color:var(--accent);margin:0;flex:none"><span class="av" style="background:var(--who-5)">P</span><span class="who"><span class="n">Priya Shah</span><span class="t">Taiwan · planner</span></span></label>
+                <label class="prow"><input type="radio" name="c1" style="width:17px;height:17px;accent-color:var(--accent);margin:0;flex:none"><span class="av" style="background:var(--who-4)">D</span><span class="who"><span class="n">Dana Okafor</span><span class="t">Peru · planner</span></span></label>
+                <label class="prow"><input type="radio" name="c1" style="width:17px;height:17px;accent-color:var(--accent);margin:0;flex:none"><span class="av" style="background:var(--who-3)">J</span><span class="who"><span class="n">Jonah Reyes</span><span class="t">Peru · companion</span></span></label>
+              </div>
+              <div class="cap">Role</div>
+              <div class="seg" data-seg>
+                <button type="button" aria-pressed="true">Planner</button>
+                <button type="button" aria-pressed="false">Companion</button>
+                <button type="button" aria-pressed="false">Reader</button>
+              </div>
+              <button class="btn full" type="button">Invite Priya as Traveler 5</button>
+            </div>
+          </div>
+        </div>
+        <p class="note">You can also go the other way. Tap a listed traveler in the roster, and Edit traveler gains a "Your people" option next to the existing "invite them" link. People already on the trip aren't offered.</p>
+      </div>
+
+      <!-- 1d -->
+      <div class="screen-col">
+        <h3>1d · What Jonah sees, and the roster after</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div style="padding: 0 16px 8px;"><div class="h" style="font-size:26px">Trips</div></div>
+          <div class="body">
+            <div class="cap">Invitation</div>
+            <div class="invcard">
+              <div class="sub">You invited Jonah as a companion</div>
+              <div class="tn">Kyoto in spring</div>
+              <div class="sub" style="font-family:var(--font-mono); font-size:11px">Apr 3 – 12, 2027 · 5 travelers</div>
+              <div class="callout"><span class="av" style="width:26px;height:26px;background:var(--who-3);font-size:10px">J</span><span>You're listed as <b>Jonah</b>. Joining puts your account on that spot, with its plans and costs.</span></div>
+              <div class="two"><button class="btn ghost" type="button">Decline</button><button class="btn" type="button">Join Kyoto</button></div>
+            </div>
+            <div class="cap" style="margin-top:6px">Kyoto · Trip settings · Travelers</div>
+            <div class="list">
+              <div class="prow"><span class="av" style="background:var(--who-2)">A</span><span class="who"><span class="n">You</span><span class="t">Owner</span></span><span class="tag app">On app</span></div>
+              <div class="prow"><span class="av" style="background:var(--who-3)">J</span><span class="who"><span class="n">Jonah <span class="arrow">→ Jonah Reyes</span></span><span class="t">Invite sent · Companion</span></span><span class="tag inv">Invited</span></div>
+              <div class="prow"><span class="av" style="background:var(--who-5)">P</span><span class="who"><span class="n">Traveler 5 <span class="arrow">→ Priya Shah</span></span><span class="t">Invite sent · Planner</span></span><span class="tag inv">Invited</span></div>
+              <div class="prow"><span class="av" style="background:var(--who-4)">D</span><span class="who"><span class="n">Dana Okafor</span><span class="t">Invite sent · new traveler</span></span><span class="tag inv">Invited</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="note">The invite card names the spot they'll take. Until they join, the roster keeps the listed name with an arrow to who's coming. Declining leaves "Jonah" listed as before. It doesn't remove him, because he was on the list before the invite.</p>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Decisions to make</h4>
+        <ol>
+          <li>When they join, whose name does the row show? <span class="rec">Suggest</span> Their account name. "Traveler 5" becomes "Priya Shah". The trip owner can rename it.</li>
+          <li>Should a same-name match be picked for you? <span class="rec">Suggest</span> Yes, only when exactly one unclaimed traveler has the same first name. Otherwise default to "new traveler".</li>
+          <li>Can planners send these, or only the owner? <span class="rec">Suggest</span> Same as the links today: owner only (<code>trip:manage</code>).</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Build notes</h4>
+        <ul>
+          <li><code>POST /trips/{id}/invites/direct</code> takes <code>[{email, role, traveler_id? | new_traveler | not_going}]</code>. It reuses the <code>TripCreate.invitees</code> path.</li>
+          <li>The <code>traveler_id</code> on <code>trip_invites</code> already exists for links. A direct invite sets it too, and accepting claims that row.</li>
+          <li>This also closes a known gap: the general link stops offering a traveler who has a direct invite waiting.</li>
+          <li>Extract <code>WhoIsPlanning</code>'s list into one component that the new-trip step and the Invite sheet share.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FEATURE 2 ============ -->
+  <section class="feature" id="newtrip">
+    <div class="eyebrow">Feature 2</div>
+    <h2>Past travelers who aren't on the app, on a new trip</h2>
+    <p class="ask">"Who's planning with you?" only lists people with accounts. Kai and Grandma Hua came on Taiwan without accounts, so you'd have to add them again by hand. Here they show up in the same list. Ticking one lists them as a traveler, and nobody gets an invite.</p>
+    <div class="today"><b>Where they come from:</b> travelers with no <code>contributor_id</code> on trips you're a member of. Placeholders like "Traveler 5" are left out. <code>GET /api/people</code> returns them as entries with <code>on_app: false</code>, keyed by name and the person who paid for them, along with who paid last time.</div>
+
+    <div class="screens">
+      <!-- 2a -->
+      <div class="screen-col">
+        <h3>2a · Step 2, with past travelers mixed in</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="topline"><span class="back">‹ Back</span><span class="cap">New trip · 2 of 2</span><span class="skip">Skip</span></div>
+          <div class="body" style="padding-bottom:10px">
+            <div>
+              <div class="h">Who's coming to Iceland with you?</div>
+              <div class="sub">People on the app get an invite. Everyone else is just listed.</div>
+            </div>
+            <div class="cap">Everyone from a trip</div>
+            <div class="row-scroll">
+              <button class="gchip" type="button" aria-pressed="true"><span class="stack"><i style="background:var(--who-1)">M</i><i class="ghost">K</i><i class="ghost">G</i></span>Taiwan · 4</button>
+              <button class="gchip" type="button" aria-pressed="false"><span class="stack"><i style="background:var(--who-3)">J</i><i style="background:var(--who-4)">D</i><i class="ghost">T</i></span>Peru · 4</button>
+            </div>
+            <div class="cap">Your people · <span data-count2>3</span> selected</div>
+            <div class="list">
+              <label class="prow"><input type="checkbox" checked data-inv2><span class="av" style="background:var(--who-1)">M</span><span class="who"><span class="n">Mei Lin</span><span class="t">Taiwan, Peru</span></span><span class="pick">Planner <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span></label>
+              <label class="prow"><input type="checkbox" checked data-inv2><span class="av ghost">K</span><span class="who"><span class="n">Kai <span class="tag">Not on app</span></span><span class="t">Taiwan · Mei paid</span></span><span class="pick plain">Mei pays <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span></label>
+              <label class="prow"><input type="checkbox" checked data-inv2><span class="av ghost">G</span><span class="who"><span class="n">Grandma Hua <span class="tag">Not on app</span></span><span class="t">Taiwan · Mei paid</span></span><span class="pick plain">Mei pays <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span></label>
+              <label class="prow"><input type="checkbox" data-inv2><span class="av ghost">T</span><span class="who"><span class="n">Theo <span class="tag">Not on app</span></span><span class="t">Peru · you paid</span></span></label>
+              <label class="prow"><input type="checkbox" data-inv2><span class="av" style="background:var(--who-3)">J</span><span class="who"><span class="n">Jonah Reyes</span><span class="t">Peru</span></span></label>
+            </div>
+          </div>
+          <div class="footer">
+            <div class="count">1 invite · 2 listed</div>
+            <button class="btn" type="button">Create trip</button>
+          </div>
+        </div>
+        <p class="note">People not on the app have a dashed avatar and a "Not on app" tag, and their chip shows who pays instead of a role. A trip's chip now counts everyone who went, so Taiwan is 4. The title asks who's coming, since the list now covers more than planners.</p>
+      </div>
+
+      <!-- 2b -->
+      <div class="screen-col">
+        <h3>2b · Kai's sheet</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div>
+                <div class="h">Kai on Iceland</div>
+                <div class="sub">Kai came on Taiwan without an account. Mei paid for Kai.</div>
+              </div>
+              <div class="cap">Who pays for Kai</div>
+              <div class="opts">
+                <label class="opt"><input type="radio" name="k1" checked><span><span class="l">Mei <span class="tag">Last time</span></span></span></label>
+                <label class="opt"><input type="radio" name="k1"><span><span class="l">You</span></span></label>
+                <label class="opt"><input type="radio" name="k1"><span><span class="l">Kai pays their own way</span></span></label>
+              </div>
+              <div class="cap">On the app</div>
+              <div class="seg" data-seg>
+                <button type="button" aria-pressed="true">Just list Kai</button>
+                <button type="button" aria-pressed="false">Invite Kai</button>
+              </div>
+              <div class="foot-note" style="padding:0">If Kai gets an account later, invite them from Trip settings and they'll take over this row.</div>
+              <button class="btn full" type="button">Done</button>
+            </div>
+          </div>
+        </div>
+        <p class="note">Who paid last time carries over, but only when that payer is on the new trip too: you, or someone ticked. If you untick Mei, Kai's payer falls back to you. "Invite Kai" asks for an email, and then the invite works like the ones in feature 1.</p>
+      </div>
+
+      <!-- 2c -->
+      <div class="screen-col">
+        <h3>2c · The new trip's travelers</h3>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="toast">Iceland is ready. Mei has an invite, and 2 travelers are listed.</div>
+          <div class="body">
+            <div class="rhead"><span class="cap">Travelers · 4</span><span class="cap">Paid by</span></div>
+            <div class="list">
+              <div class="prow"><span class="av" style="background:var(--who-2)">A</span><span class="who"><span class="n">You</span><span class="t">Owner</span></span><span class="tag app">On app</span></div>
+              <div class="prow"><span class="av" style="background:var(--who-1)">M</span><span class="who"><span class="n">Mei Lin</span><span class="t">Invite sent · Planner</span></span><span class="tag inv">Invited</span></div>
+              <div class="prow indent"><span class="av ghost">K</span><span class="who"><span class="n">Kai</span><span class="t">From Taiwan · no account</span></span><span class="tag">Listed</span></div>
+              <div class="prow indent"><span class="av ghost">G</span><span class="who"><span class="n">Grandma Hua</span><span class="t">From Taiwan · no account</span></span><span class="tag">Listed</span></div>
+            </div>
+            <div class="foot-note">Mei's household is grouped already, so Expenses splits Kai's and Grandma Hua's shares to Mei from day one, even before Mei joins.</div>
+          </div>
+        </div>
+        <p class="note">They go into the roster the same way someone added by hand would: Listed, with the payer set. Nothing is linked back to Taiwan's row. The People tab can show them too, under a "Not on the app" heading, so you can see them when you aren't making a trip.</p>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Decisions to make</h4>
+        <ol>
+          <li>How do we tell it's the same Kai across trips? <span class="rec">Suggest</span> Same name and same payer's email. Two Kais paid for by different people stay as two rows. No new identity table.</li>
+          <li>Who sees these people? <span class="rec">Suggest</span> Anyone who shared the trip. Kai is listed on Mei's trip, so you see Kai too. The alternative is to show them only to the person who paid.</li>
+          <li>Do they show on the People tab? <span class="rec">Suggest</span> Yes, in their own section without a role, read-only.</li>
+          <li>Should the same list come to feature 1's Invite sheet, to add Kai to an existing trip? <span class="rec">Suggest</span> Yes. It costs nothing more once the list component is shared.</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Build notes</h4>
+        <ul>
+          <li><code>PersonOut</code> gains <code>on_app</code>, <code>key</code> (email, or <code>name|payer-email</code>) and <code>last_paid_by</code>. Pick state in <code>NewTrip</code> is keyed by <code>key</code> instead of email.</li>
+          <li><code>TripCreate</code> gains <code>listed: [{name, paid_by: "me" | email | null}]</code>. Payers are resolved after the invitees' travelers exist.</li>
+          <li>A "Traveler N" placeholder from the headcount migration is never offered.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Light interactivity: segmented controls, group chips, and the selected counts.
+  document.querySelectorAll('[data-seg]').forEach(seg => {
+    seg.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    });
+  });
+  document.querySelectorAll('.gchip').forEach(c => c.addEventListener('click', () => {
+    c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true'));
+  }));
+  function wire(sel, countSel) {
+    const boxes = document.querySelectorAll(sel);
+    const upd = () => { const n = [...boxes].filter(b => b.checked).length; document.querySelectorAll(countSel).forEach(el => el.textContent = n); };
+    boxes.forEach(b => b.addEventListener('change', upd));
+  }
+  wire('[data-inv]', '[data-count]');
+  wire('[data-inv2]', '[data-count2]');
+</script>
