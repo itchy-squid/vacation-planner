@@ -8,10 +8,33 @@ import { outsideTrip } from "../../lib/tripWhen";
 // trip's days themselves (lib/tripWhen.js):
 //
 //   - a trip planned before its dates are known numbers its days from the
-//     day you arrive, and the dates can be set any time;
+//     day you arrive, and the dates can be set any time. Once read it can
+//     be dismissed; that's remembered per trip in this browser only;
 //   - when the dates moved and things were kept on the dates they were on,
 //     whatever ended up outside the trip is set aside, not deleted. It
 //     comes back if the dates move back, or can be cleared here.
+// Per-browser, like the last-opened trip (state/PlannerContext.jsx): a
+// convenience for the viewer, not trip data. Storage can throw (private
+// browsing), and then the notice just comes back next time.
+const NO_DATES_DISMISSED_KEY = "vacationPlanner:noDatesNoticeDismissed";
+
+function readDismissed() {
+  try {
+    return JSON.parse(window.localStorage.getItem(NO_DATES_DISMISSED_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function rememberDismissed(tripId) {
+  try {
+    const ids = readDismissed().filter((id) => id !== tripId);
+    window.localStorage.setItem(NO_DATES_DISMISSED_KEY, JSON.stringify([...ids, tripId]));
+  } catch {
+    // ignore — storage unavailable
+  }
+}
+
 export default function TripDaysNotice() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
@@ -20,6 +43,7 @@ export default function TripDaysNotice() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [dismissedIds, setDismissedIds] = useState(readDismissed);
 
   const outside = outsideTrip({ plans, dayPlaces }, trip.dayCount);
   // A plan in a vote goes when the vote does; it isn't cleared from here.
@@ -78,9 +102,14 @@ export default function TripDaysNotice() {
     );
   }
 
-  if (!trip.startDate && trip.dayCount) {
+  if (!trip.startDate && trip.dayCount && !dismissedIds.includes(trip.id)) {
     return (
-      <Notice>
+      <Notice
+        onDismiss={() => {
+          rememberDismissed(trip.id);
+          setDismissedIds((ids) => [...ids, trip.id]);
+        }}
+      >
         <div>
           <b style={{ color: "var(--text-primary)", fontWeight: 600 }}>No dates yet.</b> Days are counted from the day you arrive. When you set the
           dates, Day 1 becomes the first of them and the rest follow.
@@ -93,14 +122,15 @@ export default function TripDaysNotice() {
   return null;
 }
 
-function Notice({ tone, children }) {
+function Notice({ tone, onDismiss, children }) {
   const warn = tone === "warn";
   return (
     <div
       role="note"
       style={{
+        position: "relative",
         margin: "0 var(--gutter-screen) 12px",
-        padding: "9px 11px",
+        padding: onDismiss ? "9px 30px 9px 11px" : "9px 11px",
         borderRadius: "var(--radius-lg)",
         border: `1px dashed ${warn ? "var(--warn)" : "var(--border-strong)"}`,
         background: warn ? "rgba(180, 85, 63, 0.05)" : "var(--surface-inset)",
@@ -112,6 +142,27 @@ function Notice({ tone, children }) {
       }}
     >
       {children}
+      {onDismiss ? (
+        <button
+          type="button"
+          aria-label="Dismiss"
+          onClick={onDismiss}
+          style={{
+            position: "absolute",
+            top: 4,
+            right: 4,
+            width: 24,
+            height: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            font: "400 15px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          ×
+        </button>
+      ) : null}
     </div>
   );
 }
