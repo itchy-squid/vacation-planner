@@ -16,23 +16,17 @@ import { plansOnDay } from "./dayGrid.js";
 export const NO_PLACES = Object.freeze({ stay: null, lodgingPinId: null, visits: Object.freeze([]) });
 
 /**
- * The ISO date ("YYYY-MM-DD") of each day of the trip, in order. A trip
- * without a start date has no days to say anything about, so [].
+ * Each day of the trip, in order, as the day number (1 is the first day)
+ * places are kept by (backend app/tripdays.py). A trip with neither dates
+ * nor a length has no days to say anything about, so [].
  */
-export function tripDates(startDate, endDate) {
-  const start = parseISODate(startDate);
-  if (!start) return [];
-  const end = parseISODate(endDate) ?? start;
-  const first = Date.UTC(start.year, start.month - 1, start.day);
-  const last = Date.UTC(end.year, end.month - 1, end.day);
-  const dates = [];
-  for (let t = first; t <= last; t += 86400000) dates.push(new Date(t).toISOString().slice(0, 10));
-  return dates;
+export function tripDayNumbers(trip) {
+  return Array.from({ length: trip?.dayCount ?? 0 }, (_, i) => i + 1);
 }
 
-/** The places set on `date`, or NO_PLACES. `dayPlaces` is date -> day. */
-export function placesOn(dayPlaces, date) {
-  return (date && dayPlaces[date]) || NO_PLACES;
+/** The places set on day `day`, or NO_PLACES. `dayPlaces` is day -> places. */
+export function placesOn(dayPlaces, day) {
+  return (day && dayPlaces[day]) || NO_PLACES;
 }
 
 /** Every place on a day: the stay first, then the day trips in order. */
@@ -177,8 +171,8 @@ export function dayRangeLabel(dayNumbers) {
  * { title, region } per pin in a non-draft plan touching that day, in
  * calendar order. Travel items have no region, so they're left out.
  */
-export function calendarPlacesOnDay(plans, pins, startDate, dayIndex) {
-  const entries = plansOnDay(plans.filter((p) => p.status !== "draft"), startDate, dayIndex);
+export function calendarPlacesOnDay(plans, pins, dayIndex) {
+  const entries = plansOnDay(plans.filter((p) => p.status !== "draft"), dayIndex);
   const out = [];
   entries.forEach(({ plan }) =>
     plan.items.forEach((item) => {

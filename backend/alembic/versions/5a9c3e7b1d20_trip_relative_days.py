@@ -14,12 +14,19 @@ nothing on its calendar can be pinned to a real date any more
   day;
 - trip_day_places: `date` becomes `day`, 1 for the first day;
 - pins: `cost_start_date`/`cost_end_date` become `cost_start_day`/
-  `cost_end_day`, numbered the same way.
+  `cost_end_day`, numbered the same way;
+- availability rules and overrides kept their days as days of the month
+  (the frontend keyed its grid by them); they become days of the trip.
 
 Each row is converted against its trip's start_date. A trip without one
 can't have had places for a day (the API refused them), but nothing stopped
 a plan; for such a trip the earliest date on its calendar is taken as day 1,
 and the trip is given a length that covers everything on it.
+
+A day of the month is matched to the day of the trip that falls on it, or
+failing that read as that day of the trip's first month. On a trip without
+dates the grid already numbered its days from 1, so those are left as
+they are.
 
 The downgrade converts back the same way, against the trip's start_date,
 or its creation date for a trip that has none.
@@ -27,6 +34,8 @@ or its creation date for a trip that has none.
 from datetime import date, datetime, timedelta, timezone
 
 from alembic import op
+import json
+
 import sqlalchemy as sa
 
 
@@ -79,6 +88,42 @@ def _day_ones(bind) -> dict[int, date]:
     out = dict(earliest)
     out.update({trip_id: start for trip_id, start in starts.items() if start is not None})
     return out
+
+
+def _trip_starts(bind) -> dict[int, tuple[date, int]]:
+    """Each trip with dates: its start, and how many days it has."""
+    out = {}
+    for row in bind.execute(sa.text('SELECT id, start_date, end_date FROM trips WHERE start_date IS NOT NULL')):
+        start = _as_date(row.start_date)
+        end = _as_date(row.end_date) or start
+        out[row.id] = (start, max(1, (end - start).days + 1))
+    return out
+
+
+def _convert_availability(bind, convert) -> None:
+    """Every pin's available days and overrides, through `convert(trip_id,
+    day)`."""
+    pin_trip = {row.id: row.trip_id for row in bind.execute(sa.text('SELECT id, trip_id FROM pins'))}
+    for row in bind.execute(sa.text('SELECT id, pin_id, days FROM availability_rules')).all():
+        days = json.loads(row.days) if isinstance(row.days, str) else row.days
+        if not days:
+            continue
+        moved = [convert(pin_trip[row.pin_id], d) for d in days]
+        bind.execute(sa.text('UPDATE availability_rules SET days = :d WHERE id = :id'), {'d': json.dumps(moved), 'id': row.id})
+
+    overrides = bind.execute(sa.text('SELECT id, pin_id, day, band FROM availability_overrides')).all()
+    # Every override steps out of the way first, so none collides with
+    # another's old (pin, day, band) on the way to its new one.
+    for row in overrides:
+        bind.execute(sa.text('UPDATE availability_overrides SET day = :d WHERE id = :id'), {'d': -1_000_000 - row.id, 'id': row.id})
+    seen = set()
+    for row in overrides:
+        day = convert(pin_trip[row.pin_id], row.day)
+        if (row.pin_id, day, row.band) in seen:
+            bind.execute(sa.text('DELETE FROM availability_overrides WHERE id = :id'), {'id': row.id})
+            continue
+        seen.add((row.pin_id, day, row.band))
+        bind.execute(sa.text('UPDATE availability_overrides SET day = :d WHERE id = :id'), {'d': day, 'id': row.id})
 
 
 def upgrade() -> None:
@@ -142,6 +187,22 @@ def upgrade() -> None:
         batch.drop_column('cost_start_date')
         batch.drop_column('cost_end_date')
 
+    starts = _trip_starts(bind)
+
+    def trip_day(trip_id: int, day_of_month: int) -> int:
+        if trip_id not in starts:
+            return day_of_month
+        start, count = starts[trip_id]
+        for i in range(count):
+            if (start + timedelta(days=i)).day == day_of_month:
+                return i + 1
+        try:
+            return (start.replace(day=day_of_month) - start).days + 1
+        except ValueError:
+            return day_of_month
+
+    _convert_availability(bind, trip_day)
+
     # A trip with things on its calendar but no dates gets a length that
     # covers them, so they stay on days it has.
     for row in bind.execute(sa.text('SELECT id FROM trips WHERE start_date IS NULL')).all():
@@ -200,6 +261,15 @@ def downgrade() -> None:
     with op.batch_alter_table('pins') as batch:
         batch.drop_column('cost_start_day')
         batch.drop_column('cost_end_day')
+
+    starts = _trip_starts(bind)
+
+    def day_of_month(trip_id: int, day: int) -> int:
+        if trip_id not in starts:
+            return day
+        return (starts[trip_id][0] + timedelta(days=day - 1)).day
+
+    _convert_availability(bind, day_of_month)
 
     with op.batch_alter_table('trips') as batch:
         batch.drop_column('rough_month')

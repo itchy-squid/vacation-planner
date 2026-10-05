@@ -8,7 +8,7 @@ import { membersOf, namesOf, planIncludes } from "../lib/splits";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
-import { dayIndexForDate, clockLabel } from "../lib/planTime";
+import { clockLabel } from "../lib/planTime";
 
 // Screen 7 — "read the locked plan," now data-driven across every day of
 // the trip instead of a fixed FINISHED_DAYS mock with Day 5 special-
@@ -38,13 +38,13 @@ export default function FinalItinerary() {
   const [mine, setMine] = useState(true);
   const showMine = mine && hasSplits && myId != null;
 
-  const tripDays = useMemo(() => getTripDays(TRIP.startDate, TRIP.endDate), [TRIP.startDate, TRIP.endDate]);
+  const tripDays = useMemo(() => getTripDays(TRIP), [TRIP]);
 
   const dayViews = useMemo(() => {
     return tripDays.map((_, i) => {
       const dayIndex = i + 1;
       const dayPlans = plans
-        .filter((p) => p.startDt && dayIndexForDate(p.startDt, TRIP.startDate) === dayIndex)
+        .filter((p) => p.startDt && p.startDt?.dayIndex === dayIndex)
         .sort((a, b) => a.startDt.minuteOfDay - b.startDt.minuteOfDay);
       const hasOpenContest = dayPlans.some((p) => p.status === "contested");
       const settledPlans = dayPlans.filter((p) => p.status === "placed" || p.status === "pencilled" || p.status === "locked");
@@ -104,14 +104,14 @@ export default function FinalItinerary() {
       return {
         elsewhere,
         dayIndex,
-        label: tripDayLabel(dayIndex, TRIP.startDate, TRIP.endDate),
+        label: tripDayLabel(dayIndex, TRIP),
         stops,
         settled: !hasOpenContest && settledPlans.length > 0,
         hasOpenContest,
         firstContestId: dayPlans.find((p) => p.status === "contested")?.contestId ?? null,
       };
     });
-  }, [tripDays, plans, TRIP.startDate, TRIP.endDate, showMine, myId, travelers]);
+  }, [tripDays, plans, TRIP, showMine, myId, travelers]);
 
   const finishedCount = dayViews.filter((d) => d.settled).length;
 

@@ -215,15 +215,16 @@ def seed_taiwan(db: Session) -> None:
     db.flush()
 
     # Availability rules — the seven Xiaoliuqiu pins the day 5 contest is
-    # built around (frontend/src/data/pins.js AVAILABILITY_RULES).
+    # built around (frontend/src/data/pins.js AVAILABILITY_RULES). Days are
+    # days of the trip: 5 and 6 are Oct 7–8.
     availability = {
-        "p1": ([7, 8], ["PM"], ["On Xiaoliuqiu only: Oct 7–8", "Needs low tide — 13:00–16:00"]),
-        "p2": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Snorkel boats stop at 16:00"]),
-        "p3": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Closes 17:00 on weekdays"]),
-        "p4": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Unlit trail — daylight only"]),
-        "p5": ([7, 8], ["PM", "EVE"], ["On Xiaoliuqiu only: Oct 7–8", "Sunset side — afternoon or later"]),
-        "p6": ([7, 8], ["AM"], ["On Xiaoliuqiu only: Oct 7–8", "Fish market winds down by 10:00"]),
-        "p7": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Ticket office 08:00–16:30"]),
+        "p1": ([5, 6], ["PM"], ["On Xiaoliuqiu only: Oct 7–8", "Needs low tide — 13:00–16:00"]),
+        "p2": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Snorkel boats stop at 16:00"]),
+        "p3": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Closes 17:00 on weekdays"]),
+        "p4": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Unlit trail — daylight only"]),
+        "p5": ([5, 6], ["PM", "EVE"], ["On Xiaoliuqiu only: Oct 7–8", "Sunset side — afternoon or later"]),
+        "p6": ([5, 6], ["AM"], ["On Xiaoliuqiu only: Oct 7–8", "Fish market winds down by 10:00"]),
+        "p7": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Ticket office 08:00–16:30"]),
     }
     for local_id, (days, bands, reasons) in availability.items():
         db.add(AvailabilityRule(pin_id=pins_by_local_id[local_id].id, days=days, bands=bands, reasons=reasons))

@@ -9,7 +9,7 @@ import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTrave
 import { api } from "../lib/api";
 import TripHeader from "../components/core/TripHeader";
 import { fmtMin, slackColor } from "../data/derive";
-import { clockLabel } from "../lib/planTime";
+import { clockLabel, dayIndexOfMinute } from "../lib/planTime";
 import { coordsForPin } from "../lib/mapLayout";
 import { namesOf, travelersWithIds } from "../lib/splits";
 import AvatarStack from "../components/planner/AvatarStack";
@@ -118,7 +118,7 @@ export default function CompareSets() {
   // are the contest's own — not something to re-read off whichever plan
   // happens to be selected.
   const windowLabel = contest
-    ? `${clockLabel(minuteOfDay(contest.starts_at))}–${clockLabel(minuteOfDay(contest.ends_at))}`
+    ? `${clockLabel(contest.start_min)}–${clockLabel(contest.end_min)}`
     : "";
 
   // Who may change an option. The set already on the board has no author —
@@ -192,7 +192,7 @@ export default function CompareSets() {
     if (busy) return;
     setNotice("");
     setBusy(true);
-    const dayIndex = dayIndexOf(contest.starts_at, trip.startDate);
+    const dayIndex = dayIndexOfMinute(contest.start_min);
     try {
       await api.pickSet(contestId, planId);
       await dispatch({ type: "REFRESH_PLANS_AND_ITEMS" });
@@ -216,7 +216,7 @@ export default function CompareSets() {
   }
 
   function backToSchedule() {
-    const dayIndex = contest ? dayIndexOf(contest.starts_at, trip.startDate) : 1;
+    const dayIndex = contest ? dayIndexOfMinute(contest.start_min) : 1;
     navigate(`/trips/${trip.id}/schedule/${dayIndex}`);
   }
 
@@ -412,21 +412,5 @@ export default function CompareSets() {
       </div>
     </div>
   );
-}
-
-function minuteOfDay(iso) {
-  const m = /T(\d{2}):(\d{2})/.exec(iso);
-  if (!m) return 0;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
-
-function dayIndexOf(iso, startDate) {
-  const dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (!dm || !startDate) return 1;
-  const start = /^(\d{4})-(\d{2})-(\d{2})/.exec(startDate);
-  if (!start) return 1;
-  const dUTC = Date.UTC(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]));
-  const sUTC = Date.UTC(Number(start[1]), Number(start[2]) - 1, Number(start[3]));
-  return Math.round((dUTC - sUTC) / 86400000) + 1;
 }
 

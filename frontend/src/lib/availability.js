@@ -8,10 +8,9 @@
 // on one screen and a hatched cell on another, five seconds apart — so
 // both callers come through here.
 //
-// Currency note: `day` is a **calendar day-of-month** (data/trip.js
-// getTripDays' `d.n`), not a 1-based trip day index. That is what
-// AvailabilityRule.days and the override keys have always held; see
-// pages/EditVisit.jsx for the conversion from a trip-relative dayIndex.
+// `day` is a day of the trip (1 is the first; data/trip.js getTripDays'
+// `d.day`), like everything else on the calendar (backend app/tripdays.py).
+// That is what AvailabilityRule.days and the override keys hold.
 
 // A rule constrains an axis only when it actually lists something on it.
 // PlannerContext.normalizePin hands every pin a rule object — `{days:

@@ -7,7 +7,6 @@
 // "where this bundle's chrome differs from the real app, the real app
 // wins" rule, the app's gutter is what stays.
 
-import { dayIndexForDate } from "./planTime.js";
 
 export const PX_PER_MIN = 1;
 export const DAY_START_MIN = 0; // 00:00 — the grid always shows the full midnight-to-midnight day
@@ -86,9 +85,9 @@ export function planEndMinute(plan) {
 // grid laid other blocks over it, the hour picker counted zero items in
 // hours that were taken, and a placement there came back as a 409 naming
 // a plan that wasn't on screen.
-export function planOnDay(plan, tripStartDate, dayIndex) {
+export function planOnDay(plan, dayIndex) {
   if (!plan.startDt) return null;
-  const planDayIndex = dayIndexForDate(plan.startDt, tripStartDate);
+  const planDayIndex = plan.startDt?.dayIndex;
   if (planDayIndex == null) return null;
   const startMin = planStartMinute(plan) + (planDayIndex - dayIndex) * 1440;
   const endMin = startMin + planDurationMinutes(plan);
@@ -103,9 +102,9 @@ export function planOnDay(plan, tripStartDate, dayIndex) {
 }
 
 // Every plan touching `dayIndex`, in the order the grid wants them.
-export function plansOnDay(plans, tripStartDate, dayIndex) {
+export function plansOnDay(plans, dayIndex) {
   return plans
-    .map((plan) => planOnDay(plan, tripStartDate, dayIndex))
+    .map((plan) => planOnDay(plan, dayIndex))
     .filter(Boolean)
     .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
 }

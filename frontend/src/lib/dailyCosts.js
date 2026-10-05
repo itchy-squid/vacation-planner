@@ -10,38 +10,40 @@
 // rental charges days. Where those days come from:
 //
 //   a stay       the nights it's picked as where the group is staying in
-//                "Where we'll be" (dayPlaces, by date). Each such night is
+//                "Where we'll be" (dayPlaces, by day). Each such night is
 //                one day's worth: staying the 12th to the 15th, checking
 //                out the 16th, is 4.
-//   anything     its own first and last day (costStartDate/costEndDate),
+//   anything     its own first and last day (costStartDay/costEndDay),
 //   else         at least one day's worth even when they're the same day.
 //
 // A stay paid once counts once, if it's booked for any night at all.
 //
 // Everyone on the trip shares it, the same rule stopMoney applies to a
 // stop on a plan for everyone.
-import { formatDateRange } from "./format.js";
+//
+// Days are days of the trip (1 is the first; backend app/tripdays.py), so
+// a trip can be costed before it has dates.
+import { formatDateRange, parseISODate } from "./format.js";
 
-const DAY_MS = 86400000;
-
-function dayNumber(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return Date.UTC(y, m - 1, d) / DAY_MS;
-}
-
-function isoOf(dayNum) {
-  return new Date(dayNum * DAY_MS).toISOString().slice(0, 10);
-}
-
-/** n days from `first` to `last` (ISO dates, inclusive) is n - 1 days' worth, never less than one. */
+/** n days from `first` to `last` (days of the trip, inclusive) is n - 1 days' worth, never less than one. */
 export function daysCharged(first, last) {
-  if (!first || !last) return 0;
-  return Math.max(1, dayNumber(last) - dayNumber(first));
+  if (first == null || last == null) return 0;
+  return Math.max(1, last - first);
 }
 
-/** The nights `pinId` is where the group stays, among `dates` (the trip's days), in order. */
-export function nightsAt(dayPlaces, dates, pinId) {
-  return dates.filter((date) => dayPlaces[date]?.lodgingPinId === pinId);
+/** The nights `pinId` is where the group stays, among `days` (the trip's days), in order. */
+export function nightsAt(dayPlaces, days, pinId) {
+  return days.filter((day) => dayPlaces[day]?.lodgingPinId === pinId);
+}
+
+// "Mar 12 – 16" when the trip has dates, else "Days 1–5".
+function daysLabel(first, last, trip) {
+  const start = parseISODate(trip?.startDate);
+  if (start) {
+    const iso = (day) => new Date(Date.UTC(start.year, start.month - 1, start.day + day - 1)).toISOString().slice(0, 10);
+    return formatDateRange(iso(first), iso(last));
+  }
+  return first === last ? `Day ${first}` : `Days ${first}–${last}`;
 }
 
 /** Whether an idea's cost is counted here rather than through the plans. */
@@ -53,19 +55,20 @@ export function countedByTheDay(pin) {
  * How many days of an idea's price are paid, and which days those are:
  * { count, first, last, label } — `count` 0 while none are known yet.
  * `last` is the day it ends (a stay's check-out), so `label` reads
- * "Mar 12 – 16" for four nights from the 12th.
+ * "Mar 12 – 16" for four nights from the 12th (or "Days 1–5" on a trip
+ * without dates).
  */
-export function chargedDays(pin, { dayPlaces = {}, dates = [] } = {}) {
+export function chargedDays(pin, { dayPlaces = {}, days = [], trip = null } = {}) {
   if (pin.kind === "stay") {
-    const nights = nightsAt(dayPlaces, dates, pin.id);
+    const nights = nightsAt(dayPlaces, days, pin.id);
     if (!nights.length) return { count: 0, first: null, last: null, label: "" };
     const first = nights[0];
-    const last = isoOf(dayNumber(nights[nights.length - 1]) + 1);
-    return { count: pin.costPer === "day" ? nights.length : 1, nights: nights.length, first, last, label: formatDateRange(first, last) };
+    const last = nights[nights.length - 1] + 1;
+    return { count: pin.costPer === "day" ? nights.length : 1, nights: nights.length, first, last, label: daysLabel(first, last, trip) };
   }
-  const count = daysCharged(pin.costStartDate, pin.costEndDate);
+  const count = daysCharged(pin.costStartDay, pin.costEndDay);
   if (!count) return { count: 0, first: null, last: null, label: "" };
-  return { count, first: pin.costStartDate, last: pin.costEndDate, label: formatDateRange(pin.costStartDate, pin.costEndDate) };
+  return { count, first: pin.costStartDay, last: pin.costEndDay, label: daysLabel(pin.costStartDay, pin.costEndDay, trip) };
 }
 
 /** "4 nights" for a stay, "3 days" for anything else. */
@@ -89,12 +92,13 @@ export function dailyMoney(pin, count, headcount) {
  * days yet, so the screen can say what's missing.
  *
  *   pins       every idea on the trip (state.pins, by id)
- *   dayPlaces  date -> { lodgingPinId, ... }
- *   dates      the trip's days, ISO
+ *   dayPlaces  day -> { lodgingPinId, ... }
+ *   days       the trip's days (lib/dayPlaces.js tripDayNumbers)
+ *   trip       the trip, for its dates
  *   travelers  the roster, who shares it
  *   shownIds   the travelers whose part of it is being shown
  */
-export function buildDailyCosts(pins, { dayPlaces, dates, travelers, shownIds }) {
+export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travelers, shownIds }) {
   const shown = new Set(shownIds);
   const sharers = travelers.map((t) => t.id);
   const mine = sharers.filter((id) => shown.has(id));
@@ -105,7 +109,7 @@ export function buildDailyCosts(pins, { dayPlaces, dates, travelers, shownIds })
     .filter(countedByTheDay)
     .forEach((pin) => {
       if (pin.costCents == null) return; // a price this viewer can't see
-      const days = chargedDays(pin, { dayPlaces, dates });
+      const days = chargedDays(pin, { dayPlaces, days: tripDays, trip });
       if (!days.count) {
         if (pin.costCents > 0) waiting.push({ key: `daily-${pin.id}`, pinId: pin.id, title: pin.title, kind: pin.kind });
         return;
@@ -132,7 +136,7 @@ export function buildDailyCosts(pins, { dayPlaces, dates, travelers, shownIds })
       });
     });
 
-  rows.sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : a.title.localeCompare(b.title)));
+  rows.sort((a, b) => a.first - b.first || a.title.localeCompare(b.title));
   waiting.sort((a, b) => a.title.localeCompare(b.title));
   return { rows, waiting };
 }

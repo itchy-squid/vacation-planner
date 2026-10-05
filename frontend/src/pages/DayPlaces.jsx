@@ -6,7 +6,6 @@ import DayPlacesSheet from "../components/places/DayPlacesSheet";
 import ChoosePlaceSheet from "../components/places/ChoosePlaceSheet";
 import { useCan, usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 import { getTripDays, tripDayTitle } from "../data/trip";
-import { formatDateRange } from "../lib/format";
 import {
   NO_PLACES,
   calendarPlacesOnDay,
@@ -19,7 +18,7 @@ import {
   stayBefore,
   stayRun,
   timelineAt,
-  tripDates,
+  tripDayNumbers,
   withStay,
   withVisit,
 } from "../lib/dayPlaces";
@@ -38,8 +37,8 @@ export default function DayPlaces() {
   const { trip, dayPlaces, plans, pins } = usePlannerState();
   const canEdit = can("plans:write");
 
-  const dates = useMemo(() => tripDates(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
-  const labels = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const dates = useMemo(() => tripDayNumbers(trip), [trip]);
+  const labels = useMemo(() => getTripDays(trip), [trip]);
   const back = `/trips/${trip.id}/schedule/${location.state?.fromDay ?? 1}`;
 
   const [openIndex, setOpenIndex] = useState(null);
@@ -55,8 +54,8 @@ export default function DayPlaces() {
 
   // Where the calendar already puts an unset day, offered as its stay.
   const suggestions = useMemo(
-    () => dates.map((_, i) => distinctRegions(calendarPlacesOnDay(plans, pins, trip.startDate, i + 1))),
-    [dates, plans, pins, trip.startDate]
+    () => dates.map((_, i) => distinctRegions(calendarPlacesOnDay(plans, pins, i + 1))),
+    [dates, plans, pins]
   );
 
   async function save(days, message) {
@@ -138,7 +137,7 @@ export default function DayPlaces() {
           {trip.name}
         </div>
         <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>
-          {formatDateRange(trip.startDate, trip.endDate)}
+          {trip.dateLine}
           {dates.length ? ` · ${setCount} of ${dates.length} days set` : ""}
         </div>
         {error ? (
@@ -158,7 +157,7 @@ export default function DayPlaces() {
                 key={date}
                 number={i + 1}
                 label={labels[i]}
-                title={tripDayTitle(i + 1, trip.startDate, trip.endDate)}
+                title={tripDayTitle(i + 1, trip)}
                 day={placesOn(dayPlaces, date)}
                 run={stayRun(dayPlaces, dates, i)}
                 timeline={timelineAt(dayPlaces, dates, i)}

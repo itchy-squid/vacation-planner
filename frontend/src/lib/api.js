@@ -427,12 +427,12 @@ export const api = {
   createSplit: (tripId, payload) => request(`/api/trips/${tripId}/splits`, { method: "POST", body: payload }),
   reshapeSplit: (splitId, branches) => request(`/api/splits/${splitId}`, { method: "PUT", body: { branches } }),
   retimeSplit: (splitId, startsAt, endsAt) =>
-    request(`/api/splits/${splitId}/hours`, { method: "PUT", body: { starts_at: startsAt, ends_at: endsAt } }),
+    request(`/api/splits/${splitId}/hours`, { method: "PUT", body: { start_min: startsAt, end_min: endsAt } }),
   mergeSplit: (splitId, keepBranchId) =>
     request(`/api/splits/${splitId}/merge`, { method: "POST", body: { keep_branch_id: keepBranchId } }),
   joinBranch: (branchId) => request(`/api/branches/${branchId}/join`, { method: "POST" }),
 
-  // Propose a block: { starts_at, ends_at, label?, rationale?, items:
+  // Propose a block: { start_min, end_min, label?, rationale?, items:
   // [{ pin_id | travel_item_id, duration_minutes? }] }. There's no
   // against_plan_id any more — a proposal claims a range of hours, and the
   // server captures whatever is already in them into one "on the board"
@@ -455,7 +455,7 @@ export const api = {
   // see backend/app/routers/contests.py::withdraw_proposal).
   withdrawProposal: (planId) => request(`/api/plans/${planId}/withdraw`, { method: "POST" }),
   // Move a proposal that is the only option in its vote to new hours:
-  // { starts_at, ends_at }. The contest and its plan move together, stops
+  // { start_min, end_min }. The contest and its plan move together, stops
   // and all; votes for it are cleared. 409s once anything competes for the
   // hours, or when the new ones are taken (see backend/app/routers/
   // contests.py::move_lone_proposal).

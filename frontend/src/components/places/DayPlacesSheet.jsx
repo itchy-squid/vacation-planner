@@ -14,7 +14,7 @@ import {
   placesOn,
   samePlace,
   stayRun,
-  tripDates,
+  tripDayNumbers,
   withLodging,
   withStay,
   withVisit,
@@ -37,12 +37,12 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
   const names = useKnownRegions();
   const [error, setError] = useState("");
 
-  const dates = useMemo(() => tripDates(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const dates = useMemo(() => tripDayNumbers(trip), [trip]);
   const date = dates[index];
   const day = placesOn(dayPlaces, date);
   const yesterday = index > 0 ? placesOn(dayPlaces, dates[index - 1]) : NO_PLACES;
   const { movedFrom } = stayRun(dayPlaces, dates, index);
-  const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, trip.startDate, index + 1), [plans, pins, trip.startDate, index]);
+  const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, index + 1), [plans, pins, index]);
   const listed = placeNames(day);
 
   async function save(next) {
@@ -63,7 +63,7 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="mono-caption">Day {index + 1} · changes save as you go</div>
           <div className="serif-place" style={{ fontSize: 21, lineHeight: 1.2, color: "var(--text-primary)", marginTop: 2 }}>
-            {tripDayTitle(index + 1, trip.startDate, trip.endDate)}
+            {tripDayTitle(index + 1, trip)}
           </div>
         </div>
         <button type="button" onClick={onClose} style={{ font: "600 13.5px var(--font-sans)", color: "var(--accent)", paddingTop: 4 }}>

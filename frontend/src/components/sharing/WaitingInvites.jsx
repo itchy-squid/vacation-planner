@@ -3,7 +3,7 @@ import Button from "../core/Button";
 import { Avatar } from "./PeopleList";
 import { api } from "../../lib/api";
 import { ROLES, roleLabel } from "../../lib/roles";
-import { formatDateRange } from "../../lib/format";
+import { formatTripWhen } from "../../lib/format";
 import { usePlannerDispatch } from "../../state/PlannerContext";
 
 // Invites sent straight to you — someone you've planned with picked you on
@@ -111,7 +111,7 @@ function InviteCard({ invite, onDone }) {
         {invite.trip_name}
       </div>
       <div style={{ font: "400 12.5px var(--font-sans)", color: "var(--text-secondary)", marginTop: 2 }}>
-        {formatDateRange(invite.start_date, invite.end_date)}
+        {formatTripWhen(invite)}
         {others > 0 ? ` · ${others} other${others === 1 ? "" : "s"} on it` : ""}
       </div>
 

@@ -43,8 +43,8 @@ function formatOneDate({ year, month, day }) {
 
 // Renders a trip's start/end dates as the short copy the design wants
 // ("Oct 3 – 10") instead of the raw ISO values the API returns. Day-level
-// scheduling (Day 5, availability rules) intentionally does NOT derive
-// from these — see frontend/src/data/trip.js — so this is purely the
+// scheduling (Day 5, availability rules) is kept by day of the trip, not
+// by date — see frontend/src/data/trip.js — so this is purely the
 // trip-level display line.
 export function formatDateRange(startDate, endDate) {
   const start = parseISODate(startDate);
@@ -73,4 +73,25 @@ export function formatDuration(minutes) {
   const m = total % 60;
   if (!h) return `${m}m`;
   return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+export const FULL_MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+// "About 5 days" for a trip planned before its dates are known.
+export function formatLength(lengthDays) {
+  if (lengthDays === 7) return "About a week";
+  if (lengthDays === 14) return "About two weeks";
+  return `About ${lengthDays} ${lengthDays === 1 ? "day" : "days"}`;
+}
+
+// When a trip is, as the trip-level line: its dates ("Oct 3 – 10"), or for
+// a trip planned before its dates are known its length and rough month
+// ("About 5 days · March"). Takes the API's own field names, so it reads
+// a trip, an invite or a link preview alike.
+export function formatTripWhen({ start_date, end_date, length_days, rough_month }) {
+  if (start_date || end_date || !length_days) return formatDateRange(start_date, end_date);
+  return rough_month ? `${formatLength(length_days)} · ${FULL_MONTH_NAMES[rough_month - 1]}` : formatLength(length_days);
 }

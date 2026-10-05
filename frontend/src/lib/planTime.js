@@ -1,14 +1,11 @@
-import { parseISODate } from "./format.js";
+// Everything on a trip's calendar is stored by day of the trip rather
+// than by date (backend app/tripdays.py), so a trip can be planned before
+// its dates are known and moved without anything losing its day. A time
+// comes back from the API as a "trip minute": minutes from 00:00 on the
+// trip's first day, so 09:00 on day 3 is 2 * 1440 + 540. It's wall-clock
+// time wherever the trip is; there's no timezone in it.
 
-// Plan.starts_at/ends_at come back from the API as ISO datetimes, but
-// they're not real UTC instants — the backend has nowhere to store a
-// trip's real timezone yet, so it tags them tzinfo=UTC purely as a
-// bookkeeping convention for "trip-local wall-clock time" (see
-// backend/app/seed.py's TAIWAN_TRIP_START comment). Reading them with
-// `new Date(iso).getHours()` would run them through the browser's local
-// timezone and shift the clock time, so every read/write here works off
-// the string's own Y-M-D/H:M digits directly — the same sidestep
-// lib/format.js's parseISODate already makes for plain dates.
+export const MINUTES_PER_DAY = 1440;
 
 const BAND_MINUTE_RANGES = {
   AM: [360, 720], // 06:00–12:00
@@ -16,27 +13,27 @@ const BAND_MINUTE_RANGES = {
   EVE: [1080, 1440], // 18:00–24:00
 };
 
-export function parseApiDateTime(iso) {
-  if (!iso) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso);
-  if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-  const hour = Number(m[4]);
-  const minute = Number(m[5]);
-  return { year, month, day, hour, minute, minuteOfDay: hour * 60 + minute };
+// { dayIndex, minuteOfDay } for a trip minute: dayIndex is 1-based, and
+// minuteOfDay is within that day (0..1439).
+export function dayTime(tripMin) {
+  if (tripMin == null) return null;
+  const dayCarry = Math.floor(tripMin / MINUTES_PER_DAY);
+  return { dayIndex: dayCarry + 1, minuteOfDay: tripMin - dayCarry * MINUTES_PER_DAY };
 }
 
-// 1-based day-of-trip for a {year,month,day} against the trip's
-// start_date ("YYYY-MM-DD"), matching how backend/app/seed.py seeds
-// day_index. Returns null when the trip has no start date yet.
-export function dayIndexForDate({ year, month, day }, startDate) {
-  const start = parseISODate(startDate);
-  if (!start) return null;
-  const startUTC = Date.UTC(start.year, start.month - 1, start.day);
-  const dUTC = Date.UTC(year, month - 1, day);
-  return Math.round((dUTC - startUTC) / 86400000) + 1;
+// The trip minute for `minuteOfDay` on day `dayIndex` (1-based) — the
+// inverse of dayTime. `minuteOfDay` is deliberately NOT confined to one
+// day: a plan that crosses midnight — a night crossing, a red-eye, a
+// hotel — ends at minute 1800 of the day it began, and a continuation
+// block dragged on the following day can ask for a negative one. Both
+// simply land on the neighbouring day.
+export function tripMinute(dayIndex, minuteOfDay) {
+  return (dayIndex - 1) * MINUTES_PER_DAY + minuteOfDay;
+}
+
+// The day of the trip (1-based) a trip minute falls on.
+export function dayIndexOfMinute(tripMin) {
+  return Math.floor(tripMin / MINUTES_PER_DAY) + 1;
 }
 
 export function bandForMinuteOfDay(minuteOfDay) {
@@ -65,41 +62,9 @@ export function bandsForMinuteRange(startMin, endMin) {
 // {dayIndex, band} for a normalized plan (see state/PlannerContext.jsx
 // normalizePlan, which attaches startDt) — used wherever a plan needs to
 // be shown against the day/band-shaped AvailabilityGrid.
-export function dayIndexAndBandForPlan(plan, startDate) {
+export function dayIndexAndBandForPlan(plan) {
   if (!plan?.startDt) return null;
-  const dayIndex = dayIndexForDate(plan.startDt, startDate);
-  if (dayIndex == null) return null;
-  return { dayIndex, band: bandForMinuteOfDay(plan.startDt.minuteOfDay) };
-}
-
-// The inverse of parseApiDateTime + dayIndexForDate: given a trip's
-// start_date, a 1-based day index, and a minute-of-day, builds the same
-// tzinfo=UTC-tagged wall-clock ISO string the backend writes (see
-// backend/app/seed.py _taiwan_dt) so a round trip through the API lands
-// back on the exact clock time the user tapped.
-//
-// `minuteOfDay` is an offset from that day's 00:00 and is deliberately
-// NOT confined to one day: a plan that crosses midnight — a night
-// crossing, a red-eye, a hotel — ends at minute 1800 of the day it began,
-// and a continuation block dragged on the following day can ask for a
-// negative one. Both carry into the DATE rather than into the hour field.
-// Without the carry this built "…T30:00:00+00:00", which is not a
-// datetime at all: every overnight placement came back from the API as a
-// 422, which is why nothing in the app could hold a night.
-export function isoForDayMinute(startDate, dayIndex, minuteOfDay) {
-  const start = parseISODate(startDate);
-  if (!start) return null;
-  const startUTC = Date.UTC(start.year, start.month - 1, start.day);
-  // Math.floor, not a truncating divide, so a negative minute rolls back
-  // a whole day rather than towards zero.
-  const dayCarry = Math.floor(minuteOfDay / 1440);
-  const withinDay = minuteOfDay - dayCarry * 1440;
-  const dayUTC = startUTC + (dayIndex - 1 + dayCarry) * 86400000;
-  const d = new Date(dayUTC);
-  const hour = Math.floor(withinDay / 60);
-  const minute = withinDay % 60;
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(hour)}:${pad(minute)}:00+00:00`;
+  return { dayIndex: plan.startDt.dayIndex, band: bandForMinuteOfDay(plan.startDt.minuteOfDay) };
 }
 
 export function clockLabel(minuteOfDay) {
