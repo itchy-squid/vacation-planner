@@ -1,5 +1,7 @@
 import { chargedDays, dailyMoney, daysWord } from "../../lib/dailyCosts";
+import { tripDayNumbers } from "../../lib/dayPlaces";
 import { formatMoney } from "../../data/expenses";
+import { tripDayLabel } from "../../data/trip";
 
 // Under a cost paid by the day (components/forms/CostField.jsx): which
 // days it covers, and what it comes to. A stay's days are its nights in
@@ -7,14 +9,15 @@ import { formatMoney } from "../../data/expenses";
 // first and last day from the trip's days. n days from first to last is
 // n - 1 days' worth (lib/dailyCosts.js).
 //
-//   pin        the idea as drafted: { id, kind, costPer, costCents, costBasis, costStartDate, costEndDate }
-//   dates      the trip's days, ISO
-//   dayPlaces  date -> { lodgingPinId, ... }
+//   pin        the idea as drafted: { id, kind, costPer, costCents, costBasis, costStartDay, costEndDay }
+//   trip       the trip: its days, and the dates they fall on if it has them
+//   dayPlaces  day -> { lodgingPinId, ... }
 //   headcount  how many travelers share it
 //   onDays     ({ first, last }) — only for an idea that isn't a stay
 //   onPlaces   open Where we'll be — only for a stay
-export default function CostDays({ pin, dates, dayPlaces, headcount, onDays, onPlaces, disabled = false }) {
-  const days = chargedDays(pin, { dayPlaces, dates });
+export default function CostDays({ pin, trip, dayPlaces, headcount, onDays, onPlaces, disabled = false }) {
+  const tripDays = tripDayNumbers(trip);
+  const days = chargedDays(pin, { dayPlaces, days: tripDays, trip });
   const stay = pin.kind === "stay";
   const daily = pin.costPer === "day";
 
@@ -32,28 +35,30 @@ export default function CostDays({ pin, dates, dayPlaces, headcount, onDays, onP
           ) : null}
         </div>
       ) : daily ? (
-        dates.length ? (
+        tripDays.length ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <DaySelect
               id="cost-first-day"
               label="First day"
-              value={pin.costStartDate ?? ""}
-              dates={dates}
+              value={pin.costStartDay}
+              days={tripDays}
+              trip={trip}
               disabled={disabled}
-              onChange={(first) => onDays({ first, last: pin.costEndDate && pin.costEndDate >= first ? pin.costEndDate : first })}
+              onChange={(first) => onDays({ first, last: pin.costEndDay != null && pin.costEndDay >= first ? pin.costEndDay : first })}
             />
             <DaySelect
               id="cost-last-day"
               label="Last day"
-              value={pin.costEndDate ?? ""}
-              dates={dates.filter((d) => !pin.costStartDate || d >= pin.costStartDate)}
+              value={pin.costEndDay}
+              days={tripDays.filter((d) => pin.costStartDay == null || d >= pin.costStartDay)}
+              trip={trip}
               disabled={disabled}
-              onChange={(last) => onDays({ first: pin.costStartDate ?? last, last })}
+              onChange={(last) => onDays({ first: pin.costStartDay ?? last, last })}
             />
           </div>
         ) : (
           <div style={{ font: "400 12px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
-            Set the trip’s dates to pick which days this is for.
+            Set the trip’s dates, or how long it is, to pick which days this is for.
           </div>
         )
       ) : null}
@@ -101,15 +106,15 @@ function Receipt({ pin, days, headcount }) {
   );
 }
 
-function DaySelect({ id, label, value, dates, onChange, disabled }) {
+function DaySelect({ id, label, value, days, trip, onChange, disabled }) {
   return (
     <label htmlFor={id} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <span className="mono-caption">{label}</span>
       <select
         id={id}
-        value={value}
+        value={value ?? ""}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(Number(e.target.value))}
         style={{
           height: 40,
           borderRadius: "var(--radius-lg)",
@@ -120,18 +125,13 @@ function DaySelect({ id, label, value, dates, onChange, disabled }) {
           color: "var(--text-primary)",
         }}
       >
-        {value ? null : <option value="">Pick a day</option>}
-        {dates.map((date) => (
-          <option key={date} value={date}>
-            {dayLabel(date)}
+        {value != null ? null : <option value="">Pick a day</option>}
+        {days.map((day) => (
+          <option key={day} value={day}>
+            {tripDayLabel(day, trip)}
           </option>
         ))}
       </select>
     </label>
   );
-}
-
-function dayLabel(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }

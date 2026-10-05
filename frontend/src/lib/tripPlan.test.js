@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's built-in test runner, no dependencies).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseApiDateTime, isoForDayMinute } from "./planTime.js";
+import { dayTime, tripMinute } from "./planTime.js";
 import {
   blockingProblem,
   buildTrip,
@@ -18,7 +18,6 @@ import {
   tripStopIds,
 } from "./tripPlan.js";
 
-const START = "2026-10-17";
 const DAY = 3;
 
 const HOTEL = { id: 1, title: "Our hotel", dur: 60 };
@@ -28,15 +27,17 @@ const TULUM = { id: 4, title: "Tulum Ruins", dur: 180 };
 
 let nextPlanId = 100;
 function plan(pin, startMin, endMin, { status = "placed", day = DAY, title } = {}) {
-  const startsAt = isoForDayMinute(START, day, startMin);
-  const endsAt = isoForDayMinute(START, day, endMin);
+  const startsAt = tripMinute(day, startMin);
+  const endsAt = tripMinute(day, endMin);
   return {
     id: nextPlanId++,
     status,
     forEveryone: true,
     label: title ?? "",
-    startDt: parseApiDateTime(startsAt),
-    endDt: parseApiDateTime(endsAt),
+    startsAt,
+    endsAt,
+    startDt: dayTime(startsAt),
+    endDt: dayTime(endsAt),
     items: [{ pinId: pin.id, title: pin.title, startMinuteOfDay: startMin, durationMinutes: endMin - startMin }],
   };
 }
@@ -45,7 +46,7 @@ function trip({ stops, plans = [], lodging = [HOTEL.id], legs, leave = 540, visi
   return buildTrip({
     stops,
     lodgingIds: lodging,
-    calendar: dayCalendar(plans, START, DAY),
+    calendar: dayCalendar(plans, DAY),
     legMinutes: legs ?? stops.slice(1).map(() => 30),
     leaveMinute: leave,
     visitMinutes: visits,
@@ -141,9 +142,9 @@ test("a proposal can overlap plans, but never a pinned one", () => {
 
 test("a visit can be lengthened, and the proposal trims the stop to match", () => {
   const t = trip({ stops: [HOTEL, COBA, HOTEL], legs: [110, 110], visits: { [COBA.id]: 180 } });
-  const body = proposalBody(t, { 0: 901, 1: 902 }, { startDate: START, dayIndex: DAY, label: "Cobá" });
-  assert.equal(body.starts_at, "2026-10-19T09:00:00+00:00");
-  assert.equal(body.ends_at, "2026-10-19T15:40:00+00:00");
+  const body = proposalBody(t, { 0: 901, 1: 902 }, { dayIndex: DAY, label: "Cobá" });
+  assert.equal(body.start_min, tripMinute(DAY, 540));
+  assert.equal(body.end_min, tripMinute(DAY, 940));
   assert.deepEqual(body.items, [
     { travel_item_id: 901, offset_minutes: 0 },
     { pin_id: COBA.id, offset_minutes: 110, duration_minutes: 180 },
@@ -154,7 +155,7 @@ test("a visit can be lengthened, and the proposal trims the stop to match", () =
 test("an anchor inside the proposal keeps its own clock time", () => {
   const tulum = plan(TULUM, 660, 840);
   const t = trip({ stops: [HOTEL, CENOTE, TULUM, HOTEL], plans: [tulum], legs: [45, 20, 50] });
-  const body = proposalBody(t, [1, 2, 3], { startDate: START, dayIndex: DAY });
+  const body = proposalBody(t, [1, 2, 3], { dayIndex: DAY });
   assert.deepEqual(
     body.items.map((i) => [i.pin_id ?? `ride ${i.travel_item_id}`, i.offset_minutes]),
     [["ride 1", 0], [CENOTE.id, 45], ["ride 2", 165], [TULUM.id, 185], ["ride 3", 365]]
@@ -204,15 +205,15 @@ test("each ride becomes a travel item and, when nothing's new, a placed plan", (
     cost_basis: "per_head",
     notes: "Walk 5m · Bus 50m",
   });
-  assert.deepEqual(ridePlacements(t, [77], { startDate: START, dayIndex: DAY }), [
-    { starts_at: "2026-10-19T10:00:00+00:00", ends_at: "2026-10-19T11:00:00+00:00", status: "placed", items: [{ travel_item_id: 77 }] },
+  assert.deepEqual(ridePlacements(t, [77], { dayIndex: DAY }), [
+    { start_min: tripMinute(DAY, 600), end_min: tripMinute(DAY, 660), status: "placed", items: [{ travel_item_id: 77 }] },
   ]);
 });
 
 test("drafts and split-group plans aren't on the day; proposals are busy but not stops", () => {
   const draft = plan(TULUM, 660, 840, { status: "draft" });
   const proposed = plan(COBA, 600, 700, { status: "contested" });
-  const cal = dayCalendar([draft, proposed, { ...plan(CENOTE, 700, 760), forEveryone: false }], START, DAY);
+  const cal = dayCalendar([draft, proposed, { ...plan(CENOTE, 700, 760), forEveryone: false }], DAY);
   assert.deepEqual(cal.busy.map((b) => b.id), [proposed.id]);
   assert.equal(cal.stops.size, 0);
 });
@@ -235,7 +236,7 @@ test("a stop with no place happens where the group is, with no ride to it", () =
     ["Cenote Dos Ojos", 900, 1020],
   ]);
   assert.deepEqual(t.stops.map((s) => stopLetter(t, s)), ["A", "B", "•", "C"]);
-  const body = proposalBody(t, [71, 72], { startDate: START, dayIndex: DAY });
+  const body = proposalBody(t, [71, 72], { dayIndex: DAY });
   assert.deepEqual(body.items[2], { travel_item_id: 9, offset_minutes: 260 });
 });
 
@@ -248,9 +249,9 @@ test("one stop with no ride is a proposal of its own", () => {
 
 test("a set joining a vote spans the vote's hours, with the trip inside them", () => {
   const t = trip({ stops: [HOTEL, COBA], legs: [30], leave: 780 });
-  const body = proposalBody(t, [71], { startDate: START, dayIndex: DAY, window: { start: 720, end: 1020 } });
-  assert.equal(body.starts_at, isoForDayMinute(START, DAY, 720));
-  assert.equal(body.ends_at, isoForDayMinute(START, DAY, 1020));
+  const body = proposalBody(t, [71], { dayIndex: DAY, window: { start: 720, end: 1020 } });
+  assert.equal(body.start_min, tripMinute(DAY, 720));
+  assert.equal(body.end_min, tripMinute(DAY, 1020));
   assert.deepEqual(body.items.map((it) => it.offset_minutes), [60, 90]);
 });
 
@@ -288,4 +289,12 @@ test("a group's block that runs long stretches its split instead of stopping", (
     (({ startMin, endMin, earlier, later }) => ({ startMin, endMin, earlier, later }))(ask(8, 510, 600)),
     { startMin: 510, endMin: 720, earlier: true, later: false }
   );
+});
+
+test("a plan's length runs across days, so an overnight one isn't cut to its stops", async () => {
+  const { planDurationMinutes } = await import("./dayGrid.js");
+  const overnight = { startDt: dayTime(tripMinute(2, 1320)), endDt: dayTime(tripMinute(3, 120)), totalDurationMinutes: 75 };
+  assert.equal(planDurationMinutes(overnight), 240);
+  const contest = { startDt: dayTime(tripMinute(1, 780)), endDt: dayTime(tripMinute(1, 900)), totalDurationMinutes: 90 };
+  assert.equal(planDurationMinutes(contest), 120);
 });

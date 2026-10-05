@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { NO_PLACES, describeDay, lodgingFor, withLodging, withStay, withVisit } from "./dayPlaces.js";
 
-const DATES = ["2026-10-17", "2026-10-18", "2026-10-19"];
+const DATES = [1, 2, 3];
 
 test("the place stayed at survives a change to the day, but not a change of town", () => {
   const day = withLodging(withStay(NO_PLACES, "Playa del Carmen"), 7);

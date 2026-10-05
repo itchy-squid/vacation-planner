@@ -1,7 +1,7 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl, dragSplitEdge, openPlan, tapLane } from "../support/calendar.js";
 import { startAt } from "../support/planner.js";
-import { contestsOf, placePlan, plansOf, splitDay, splitsOf } from "../support/seed.js";
+import { contestsOf, placePlan, plansOf, splitDay, splitsOf, clockOf } from "../support/seed.js";
 
 // The group splitting up for part of a day (backend/app/splits.py): a split
 // is a stretch of hours with a lane per group, and each plan in those hours
@@ -63,7 +63,7 @@ test.describe("splitting the group", () => {
     await expect(page.getByText("Shaved ice", { exact: true })).toBeVisible();
     const placed = (await plansOf(api, trip)).find((p) => p.items[0]?.pin?.title === "Shaved ice");
     expect(placed.branch_id).toBe(lake.id);
-    expect(placed.starts_at).toContain("T11:00");
+    expect(clockOf(placed.start_min)).toBe("11:00");
   });
 
   // A proposal during a split is for one group: the viewer's own by
@@ -102,7 +102,7 @@ test.describe("splitting the group", () => {
 
     const [contest] = await contestsOf(api, trip);
     expect(contest.branch_id).toBe(lake.id);
-    expect(contest.starts_at).toContain("T10:00");
+    expect(clockOf(contest.start_min)).toBe("10:00");
     // The other group's plan was never touched.
     const gorgePlan = (await plansOf(api, trip)).find((p) => p.items[0]?.pin?.title === "Gorge trail");
     expect(gorgePlan).toMatchObject({ status: "placed", branch_id: gorge.id });
@@ -135,10 +135,10 @@ test.describe("splitting the group", () => {
     await expect(page).toHaveURL(/\/contests\/\d+/);
 
     const [split] = await splitsOf(api, trip);
-    expect(split.starts_at).toContain("T09:00");
-    expect(split.ends_at).toContain("T13:00");
+    expect(clockOf(split.start_min)).toBe("09:00");
+    expect(clockOf(split.end_min)).toBe("13:00");
     const [contest] = await contestsOf(api, trip);
-    expect(contest.ends_at).toContain("T13:00");
+    expect(clockOf(contest.end_min)).toBe("13:00");
   });
 
   test("a route can't stretch the split over a plan for everyone", async ({ page, api, seed }) => {
@@ -193,8 +193,8 @@ test.describe("splitting the group", () => {
     await expect(page.getByRole("separator", { name: /^Split starts 08:00/ })).toBeVisible();
 
     const [after] = await splitsOf(api, trip);
-    expect(after.starts_at).toContain("T08:00");
-    expect(after.ends_at).toContain("T13:00");
+    expect(clockOf(after.start_min)).toBe("08:00");
+    expect(clockOf(after.end_min)).toBe("13:00");
     const plans = await plansOf(api, trip);
     expect(plans.find((p) => p.items[0]?.pin?.title === "Gorge trail").branch_id).toBe(gorge.id);
   });

@@ -8,11 +8,10 @@ import DayGrid from "../components/planner/DayGrid";
 import AddSheet from "../components/planner/AddSheet";
 import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
 import { DayPlacesLine, DayTripDot, PlacesMismatch, StayBar } from "../components/places/DayPlacesLine";
-import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDates, withVisit } from "../lib/dayPlaces";
+import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDayNumbers, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
-import { getTripDays } from "../data/trip";
-import { dayHeaderLabel } from "../data/schedule";
-import { dayIndexForDate, isoForDayMinute, clockLabel } from "../lib/planTime";
+import { getTripDays, tripDayLabel } from "../data/trip";
+import { tripMinute, clockLabel } from "../lib/planTime";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
@@ -35,6 +34,7 @@ import {
 } from "../lib/dayGrid";
 import { dragKind } from "../lib/planDrag";
 import TripHeader from "../components/core/TripHeader";
+import TripDaysNotice from "../components/trip/TripDaysNotice";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
@@ -76,8 +76,8 @@ export default function DaySchedule() {
   // planOnDay). Entries carry the plan plus its minutes relative to this
   // day, which is what everything below lays out and tests against.
   const dayEntries = useMemo(
-    () => plansOnDay(plans.filter((p) => p.status !== "draft"), trip.startDate, dayIndex),
-    [plans, trip.startDate, dayIndex]
+    () => plansOnDay(plans.filter((p) => p.status !== "draft"), dayIndex),
+    [plans, dayIndex]
   );
 
   // "N blocks open" — hours on this day already out for a vote.
@@ -90,16 +90,16 @@ export default function DaySchedule() {
           p.status === "draft" &&
           p.createdById === currentUser.id &&
           p.startDt &&
-          dayIndexForDate(p.startDt, trip.startDate) === dayIndex
+          p.startDt?.dayIndex === dayIndex
       ),
-    [plans, currentUser.id, trip.startDate, dayIndex]
+    [plans, currentUser.id, dayIndex]
   );
 
   // Where the group has split up (lib/splits.js). Each split's hours are
   // divided into one lane per group — a group with nothing planned still
   // gets its lane, so there is somewhere to tap to plan for it. "Just me"
   // keeps only your own group's lane, so the day reads as your day.
-  const daySplits = useMemo(() => splitsOnDay(splits, trip.startDate, dayIndex), [splits, trip.startDate, dayIndex]);
+  const daySplits = useMemo(() => splitsOnDay(splits, dayIndex), [splits, dayIndex]);
   const branches = useMemo(() => branchesById(splits), [splits]);
   const dayHasSplit = daySplits.length > 0;
   const [justMe, setJustMe] = useState(false);
@@ -143,15 +143,15 @@ export default function DaySchedule() {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [pins]);
 
-  const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const tripDays = useMemo(() => getTripDays(trip), [trip]);
 
   // Where the group is today ("Where we'll be", lib/dayPlaces.js). Once
   // set, it's what the header says and what "+ Add" shows first, in place
   // of the regions guessed from the calendar above.
   const { dayPlaces } = state;
-  const dates = useMemo(() => tripDates(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const dates = useMemo(() => tripDayNumbers(trip), [trip]);
   const today = placesOn(dayPlaces, dates[dayIndex - 1]);
-  const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, trip.startDate, dayIndex), [plans, pins, trip.startDate, dayIndex]);
+  const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, dayIndex), [plans, pins, dayIndex]);
   const addSheetRegions = isSet(today) ? placeNames(today) : dayRegions;
   const addDayTrip = (region) => dispatch({ type: "SAVE_DAY_PLACES", days: { [dates[dayIndex - 1]]: withVisit(today, region) } });
 
@@ -296,8 +296,8 @@ export default function DaySchedule() {
     }
 
     setMoveError("");
-    const startsAt = isoForDayMinute(trip.startDate, dayIndex, startMinute);
-    const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
+    const startsAt = tripMinute(dayIndex, startMinute);
+    const endsAt = tripMinute(dayIndex, endMinute);
     const result = await dispatch({ type: "PLACE_AT", startsAt, endsAt, dayIndex, startMinute, branchId });
     if (result && !result.ok && result.error) setMoveError(result.error);
   }
@@ -496,8 +496,8 @@ export default function DaySchedule() {
       return;
     }
 
-    const startsAt = isoForDayMinute(trip.startDate, dayIndex, previewStart);
-    const endsAt = isoForDayMinute(trip.startDate, dayIndex, endMinute);
+    const startsAt = tripMinute(dayIndex, previewStart);
+    const endsAt = tripMinute(dayIndex, endMinute);
     const contestId = info.kind === "contest" ? plan.contestId : null;
     const result = await dispatch({ type: "MOVE_PLAN", planId: plan.id, contestId, startsAt, endsAt });
     if (!result.ok) {
@@ -549,8 +549,8 @@ export default function DaySchedule() {
     const result = await dispatch({
       type: "RETIME_SPLIT",
       splitId: daySplit.split.id,
-      startsAt: isoForDayMinute(trip.startDate, dayIndex, next.startMin),
-      endsAt: isoForDayMinute(trip.startDate, dayIndex, next.endMin),
+      startsAt: tripMinute(dayIndex, next.startMin),
+      endsAt: tripMinute(dayIndex, next.endMin),
     });
     setSplitPreview(null);
     if (!result.ok) setMoveError(result.error || "Couldn't change the split's hours — try again.");
@@ -562,8 +562,8 @@ export default function DaySchedule() {
 
   async function confirmPropose() {
     if (!proposeSheet) return;
-    const startsAt = isoForDayMinute(trip.startDate, proposeSheet.dayIndex, proposeSheet.startMinute);
-    const endsAt = isoForDayMinute(trip.startDate, proposeSheet.dayIndex, proposeSheet.startMinute + proposeSheet.durationMinutes);
+    const startsAt = tripMinute(proposeSheet.dayIndex, proposeSheet.startMinute);
+    const endsAt = tripMinute(proposeSheet.dayIndex, proposeSheet.startMinute + proposeSheet.durationMinutes);
     const result = await dispatch({ type: "CONFIRM_PROPOSE", startsAt, endsAt });
     if (result.ok && result.contestId) {
       navigate(`/trips/${trip.id}/contests/${result.contestId}`);
@@ -627,7 +627,7 @@ export default function DaySchedule() {
               which the header's trip name doesn't say. */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div className="serif-place" style={{ flex: 1, minWidth: 0, fontSize: 24, marginTop: 2, color: "var(--text-primary)" }}>
-              {dayHeaderLabel(dayIndex, trip.startDate, trip.endDate)}
+              {tripDayLabel(dayIndex, trip)}
             </div>
             {/* Hidden at zero — an empty "0 blocks open" would be chrome
                 announcing nothing. Goes to the first of them; the Compare
@@ -682,7 +682,7 @@ export default function DaySchedule() {
                       scrollSnapAlign: "center",
                     }}
                   >
-                    <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow}</div>
+                    <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow || "DAY"}</div>
                     <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
                     {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
                   </button>
@@ -706,6 +706,8 @@ export default function DaySchedule() {
             </button>
           )}
         </div>
+
+        <TripDaysNotice />
 
         {/* Whose day to show. Pinned to the header with the day strip so it
             stays in reach wherever the grid is scrolled — inside the scroll

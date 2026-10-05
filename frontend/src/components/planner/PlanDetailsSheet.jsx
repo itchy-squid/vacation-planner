@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { usePlannerState, usePlannerDispatch, useCan } from "../../state/PlannerContext";
 import { getTripDays, tripDayTitle } from "../../data/trip";
 import { fmtMin } from "../../data/derive";
-import { dayIndexForDate, isoForDayMinute, clockLabel } from "../../lib/planTime";
+import { tripMinute, clockLabel } from "../../lib/planTime";
 import { planDurationMinutes } from "../../lib/dayGrid";
 import { externalHref } from "../../lib/externalHref";
 import Stepper from "../forms/Stepper";
@@ -51,7 +51,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   const { trip, plans, pins } = state;
 
   const plan = plans.find((p) => p.id === planId);
-  const tripDays = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const tripDays = useMemo(() => getTripDays(trip), [trip]);
 
   const [dayIndex, setDayIndex] = useState(1);
   const [startMinute, setStartMinute] = useState(540);
@@ -86,10 +86,10 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     const key = `${plan.id}:${plan.startsAt}:${plan.endsAt}`;
     if (syncedKey.current === key) return;
     syncedKey.current = key;
-    setDayIndex(dayIndexForDate(plan.startDt, trip.startDate) ?? 1);
+    setDayIndex(plan.startDt?.dayIndex ?? 1);
     setStartMinute(plan.startDt?.minuteOfDay ?? 540);
     setDurationMinutes(planDurationMinutes(plan));
-  }, [plan, trip.startDate]);
+  }, [plan]);
 
   // Every open is a clean slate for both confirm states and any error,
   // whether it's the same plan reopened or a different one.
@@ -144,8 +144,8 @@ export default function PlanDetailsSheet({ planId, onClose }) {
   async function applyChange(nextDayIndex, nextStartMinute, nextDurationMinutes) {
     const clampedDuration = Math.max(15, nextDurationMinutes);
     const clampedStart = Math.min(Math.max(nextStartMinute, 0), DAY_END_MIN - 15);
-    const startsAt = isoForDayMinute(trip.startDate, nextDayIndex, clampedStart);
-    const endsAt = isoForDayMinute(trip.startDate, nextDayIndex, clampedStart + clampedDuration);
+    const startsAt = tripMinute(nextDayIndex, clampedStart);
+    const endsAt = tripMinute(nextDayIndex, clampedStart + clampedDuration);
 
     const prev = { dayIndex, startMinute, durationMinutes };
     setDayIndex(nextDayIndex);
@@ -189,7 +189,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
 
   // Changing duration here has to stay in lockstep with the pin/travel
   // item's own duration_minutes field, so it can't just reuse applyChange
-  // (which only ever touches the plan's own starts_at/ends_at). Resize the
+  // (which only ever touches the plan's own start_min/end_min). Resize the
   // plan's window first — same overlap check and revert-on-409 as any
   // other move — and only once that succeeds, patch the item's own
   // duration to match. That order means a rejected resize (slot taken)
@@ -200,8 +200,8 @@ export default function PlanDetailsSheet({ planId, onClose }) {
     const clampedDuration = Math.max(15, durationMinutes + delta);
     if (clampedDuration === durationMinutes) return;
     const clampedStart = Math.min(Math.max(startMinute, 0), DAY_END_MIN - 15);
-    const startsAt = isoForDayMinute(trip.startDate, dayIndex, clampedStart);
-    const endsAt = isoForDayMinute(trip.startDate, dayIndex, clampedStart + clampedDuration);
+    const startsAt = tripMinute(dayIndex, clampedStart);
+    const endsAt = tripMinute(dayIndex, clampedStart + clampedDuration);
 
     const prevDuration = durationMinutes;
     setDurationMinutes(clampedDuration);
@@ -430,7 +430,7 @@ export default function PlanDetailsSheet({ planId, onClose }) {
           <DayStepper
             value={dayIndex}
             count={tripDays.length}
-            detail={tripDayTitle(dayIndex, trip.startDate, trip.endDate)}
+            detail={tripDayTitle(dayIndex, trip)}
             onChange={handleDayChange}
             disabled={!editable}
           />

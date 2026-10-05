@@ -1,7 +1,7 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl } from "../support/calendar.js";
 import { ok } from "../support/api.js";
-import { dayDate, dayPlacesOf, placePlan, setDayPlaces } from "../support/seed.js";
+import { dayPlacesOf, placePlan, setDayPlaces } from "../support/seed.js";
 
 // "Where we'll be" (backend routers/day_places.py): the place the group
 // stays in each day, plus any day trips. Set from the whole-trip list
@@ -49,7 +49,7 @@ test.describe("where we'll be", () => {
     await expect(page.getByRole("button", { name: "Taipei", pressed: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Longshan Temple/ })).toBeVisible();
 
-    expect(await dayPlacesOf(api, trip)).toEqual([{ date: dayDate(2), stay: "Taipei", lodging_pin_id: null, visits: ["North Coast", "Jiufen"] }]);
+    expect(await dayPlacesOf(api, trip)).toEqual([{ day: 2, stay: "Taipei", lodging_pin_id: null, visits: ["North Coast", "Jiufen"] }]);
   });
 
   test("sets several days at once and undoes clearing them", async ({ page, api, seed }) => {
@@ -88,18 +88,18 @@ test.describe("where we'll be", () => {
     await expect
       .poll(() => dayPlacesOf(api, trip))
       .toEqual([
-        { date: dayDate(1), stay: "Kaohsiung", lodging_pin_id: null, visits: [] },
-        { date: dayDate(2), stay: "Kaohsiung", lodging_pin_id: null, visits: [] },
-        { date: dayDate(3), stay: "Kenting", lodging_pin_id: null, visits: [] },
+        { day: 1, stay: "Kaohsiung", lodging_pin_id: null, visits: [] },
+        { day: 2, stay: "Kaohsiung", lodging_pin_id: null, visits: [] },
+        { day: 3, stay: "Kenting", lodging_pin_id: null, visits: [] },
       ]);
   });
 
   test("edits and clears one day, and clears every day after asking", async ({ page, api, seed }) => {
     const trip = await seed();
     await setDayPlaces(api, trip, {
-      [dayDate(1)]: { stay: "Taipei" },
-      [dayDate(2)]: { stay: "Taipei", visits: ["North Coast", "Jiufen"] },
-      [dayDate(3)]: { stay: "Hualien" },
+      1: { stay: "Taipei" },
+      2: { stay: "Taipei", visits: ["North Coast", "Jiufen"] },
+      3: { stay: "Hualien" },
     });
     await page.goto(placesUrl(trip));
 
@@ -116,8 +116,8 @@ test.describe("where we'll be", () => {
     await expect
       .poll(() => dayPlacesOf(api, trip))
       .toEqual([
-        { date: dayDate(1), stay: "Taipei", lodging_pin_id: null, visits: [] },
-        { date: dayDate(2), stay: "Taipei", lodging_pin_id: null, visits: ["Jiufen"] },
+        { day: 1, stay: "Taipei", lodging_pin_id: null, visits: [] },
+        { day: 2, stay: "Taipei", lodging_pin_id: null, visits: ["Jiufen"] },
       ]);
 
     await page.getByRole("button", { name: "Clear every day…" }).click();
@@ -145,7 +145,7 @@ test.describe("where we'll be", () => {
       }),
       "store Hualien's location"
     );
-    await setDayPlaces(api, trip, { [dayDate(1)]: { stay: "Kenting" } });
+    await setDayPlaces(api, trip, { 1: { stay: "Kenting" } });
 
     const choices = async () => {
       await page.goto(placesUrl(trip));
@@ -158,7 +158,7 @@ test.describe("where we'll be", () => {
     }
 
     await ok(api.delete(`/api/pins/${trip.pins["Taroko Gorge"]}`), "delete Taroko Gorge");
-    await setDayPlaces(api, trip, { [dayDate(1)]: {} });
+    await setDayPlaces(api, trip, { 1: {} });
 
     stayIn = await choices();
     await expect(stayIn.getByRole("button", { name: "Tainan", exact: true })).toBeVisible();
@@ -178,7 +178,7 @@ test.describe("where we'll be", () => {
 
     await page.goto(dayUrl(trip, 4));
     await expect(page.getByText("Staying in Kaohsiung")).toBeVisible();
-    expect(await dayPlacesOf(api, trip)).toEqual([{ date: dayDate(4), stay: "Kaohsiung", lodging_pin_id: null, visits: [] }]);
+    expect(await dayPlacesOf(api, trip)).toEqual([{ day: 4, stay: "Kaohsiung", lodging_pin_id: null, visits: [] }]);
   });
 
   test("chooses the idea the group is staying at, and copies it to the next night", async ({ page, api, seed }) => {
@@ -189,7 +189,7 @@ test.describe("where we'll be", () => {
       ],
     });
     const hotel = trip.pins["Hotel Proverbs"];
-    await setDayPlaces(api, trip, { [dayDate(1)]: { stay: "Taipei" }, [dayDate(2)]: { stay: "Taipei" } });
+    await setDayPlaces(api, trip, { 1: { stay: "Taipei" }, 2: { stay: "Taipei" } });
     await page.goto(placesUrl(trip));
 
     await dayRow(page, 1).click();
@@ -209,8 +209,8 @@ test.describe("where we'll be", () => {
     await expect
       .poll(() => dayPlacesOf(api, trip))
       .toEqual([
-        { date: dayDate(1), stay: "Taipei", lodging_pin_id: hotel, visits: [] },
-        { date: dayDate(2), stay: "Taipei", lodging_pin_id: hotel, visits: [] },
+        { day: 1, stay: "Taipei", lodging_pin_id: hotel, visits: [] },
+        { day: 2, stay: "Taipei", lodging_pin_id: hotel, visits: [] },
       ]);
   });
 });

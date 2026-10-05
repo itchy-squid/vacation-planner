@@ -157,8 +157,8 @@ def split_over(client, trip, plan, stay, leave, newcomers=None):
     res = client.post(
         f"/api/trips/{trip.id}/splits",
         json={
-            "starts_at": plan.starts_at.isoformat(),
-            "ends_at": plan.ends_at.isoformat(),
+            "start_min": plan.start_min,
+            "end_min": plan.end_min,
             "branches": [
                 {"traveler_ids": sorted(tid(trip, k) for k in stay), "takes_newcomers": newcomers == "stay"},
                 {"traveler_ids": sorted(tid(trip, k) for k in leave), "takes_newcomers": newcomers == "leave"},
@@ -207,7 +207,7 @@ def test_travelers_without_an_account_dont_count_as_voters(client, trip, db):
     split = client.post(
         f"/api/trips/{trip.id}/splits",
         json={
-            "starts_at": at(1, 480).isoformat(), "ends_at": at(1, 720).isoformat(),
+            "start_min": at(1, 480), "end_min": at(1, 720),
             "branches": [
                 {"traveler_ids": sorted([tid(trip, "jae"), kai["id"]])},
                 {"traveler_ids": sorted([tid(trip, "mei"), tid(trip, "ana"), tid(trip, "lin")])},
@@ -218,7 +218,7 @@ def test_travelers_without_an_account_dont_count_as_voters(client, trip, db):
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 540).isoformat(), "ends_at": at(1, 720).isoformat(),
+            "start_min": at(1, 540), "end_min": at(1, 720),
             "items": [{"pin_id": trip.pins["vase"].id}],
             "branch_id": split["branches"][0]["id"],
         },

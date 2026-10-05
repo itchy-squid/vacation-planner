@@ -123,13 +123,35 @@ class ListedTravelerIn(BaseModel):
     paid_by_email: str | None = Field(default=None, max_length=320)
 
 
+# A trip planned before its dates are known: how many days ("about 5
+# days"), and optionally the month it's roughly in. See app/tripdays.py.
+LengthDays = Annotated[int, Field(ge=1, le=366)]
+RoughMonth = Annotated[int, Field(ge=1, le=12)]
+
+
+def _check_trip_when(trip: BaseModel) -> None:
+    start, end = trip.start_date, trip.end_date
+    if start is not None and end is not None and end < start:
+        raise ValueError("The trip can't end before it starts")
+
+
 class TripCreate(BaseModel):
+    """A new trip has dates, or a length and maybe a month, or neither.
+    Dates win: a length sent alongside them is ignored."""
+
     name: str
     region_line: str = ""
     start_date: date | None = None
     end_date: date | None = None
+    length_days: LengthDays | None = None
+    rough_month: RoughMonth | None = None
     invitees: list[TripInviteeIn] = Field(default_factory=list, max_length=50)
     listed: list[ListedTravelerIn] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def _when(self) -> "TripCreate":
+        _check_trip_when(self)
+        return self
 
 
 class DirectInviteIn(TripInviteeIn):
@@ -163,6 +185,12 @@ class TripOut(BaseModel):
     region_line: str
     start_date: date | None
     end_date: date | None
+    # A trip without dates yet: how long, and roughly when (app/tripdays.py).
+    length_days: int | None = None
+    rough_month: int | None = None
+    # How many days there are to plan, from the dates or the length; None
+    # for a trip with neither.
+    day_count: int | None = None
     phase: str
     # How many travelers are listed (models.Traveler) — the people the
     # trip is for and the costs are split between.
@@ -244,6 +272,19 @@ class TripUpdate(BaseModel):
     region_line: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    length_days: LengthDays | None = None
+    rough_month: RoughMonth | None = None
+    # What happens to the calendar when the start date moves from one date
+    # to another: "shift" keeps day 1 as day 1, so everything moves with
+    # the trip; "keep_dates" leaves everything on the date it was on.
+    # Required when the start moves and there's anything on the calendar
+    # (409 move_required otherwise), so the choice is never made silently.
+    move: Literal["shift", "keep_dates"] | None = None
+
+    @model_validator(mode="after")
+    def _when(self) -> "TripUpdate":
+        _check_trip_when(self)
+        return self
 
 
 def _redact_costs(model: BaseModel, *fields: str, added_by_id: int | None = None) -> None:
@@ -317,6 +358,8 @@ class DirectInviteOut(BaseModel):
     trip_name: str
     start_date: date | None
     end_date: date | None
+    length_days: int | None = None
+    rough_month: int | None = None
     phase: str
     role: Literal["planner", "companion", "reader"]
     invited_by: TripOwnerOut | None
@@ -353,6 +396,9 @@ class InvitePreviewOut(BaseModel):
     region_line: str
     start_date: date | None
     end_date: date | None
+    # A trip without dates yet: how long, and roughly when (app/tripdays.py).
+    length_days: int | None = None
+    rough_month: int | None = None
     phase: str
     role: Literal["planner", "companion", "reader"]
     owner: TripOwnerOut | None
@@ -386,11 +432,11 @@ def _check_cost_days(pin: BaseModel, fields_set: set[str] | None = None) -> None
     """The days a per-day price covers are both given or neither (on an
     update, both sent or neither; both null clears them), and run
     forwards."""
-    if fields_set is not None and ("cost_start_date" in fields_set) != ("cost_end_date" in fields_set):
-        raise ValueError("cost_start_date and cost_end_date must be given together")
-    if (pin.cost_start_date is None) != (pin.cost_end_date is None):
-        raise ValueError("cost_start_date and cost_end_date must be given together")
-    if pin.cost_start_date is not None and pin.cost_end_date < pin.cost_start_date:
+    if fields_set is not None and ("cost_start_day" in fields_set) != ("cost_end_day" in fields_set):
+        raise ValueError("cost_start_day and cost_end_day must be given together")
+    if (pin.cost_start_day is None) != (pin.cost_end_day is None):
+        raise ValueError("cost_start_day and cost_end_day must be given together")
+    if pin.cost_start_day is not None and pin.cost_end_day < pin.cost_start_day:
         raise ValueError("The last day can't be before the first")
 
 
@@ -442,8 +488,8 @@ class PinCreate(BaseModel):
     cost_cents: int = 0
     cost_basis: CostBasis = "per_head"
     cost_per: CostPer = "once"
-    cost_start_date: date | None = None
-    cost_end_date: date | None = None
+    cost_start_day: int | None = None
+    cost_end_day: int | None = None
     notes: str = ""
     link: WebLink = ""
     tags: list[str] = Field(default_factory=list)
@@ -472,8 +518,8 @@ class PinUpdate(BaseModel):
     cost_basis: CostBasis | None = None
     cost_per: CostPer | None = None
     # Send together; both null clears them.
-    cost_start_date: date | None = None
-    cost_end_date: date | None = None
+    cost_start_day: int | None = None
+    cost_end_day: int | None = None
     notes: str | None = None
     link: WebLink | None = None
     tags: list[str] | None = None
@@ -540,11 +586,11 @@ PlaceName = Annotated[str, Field(max_length=120), AfterValidator(_place_name)]
 
 
 class DayPlaces(BaseModel):
-    """The places for one date: where the group stays that night, and its
-    day trips in the order they're gone to. No stay and no day trips means
-    the day isn't set."""
+    """The places for one day of the trip (1 is the first): where the
+    group stays that night, and its day trips in the order they're gone
+    to. No stay and no day trips means the day isn't set."""
 
-    date: date
+    day: int
     stay: PlaceName | None = None
     # The idea the group is staying at that night (the hotel), when one
     # has been picked. Only a day with a stay can have one.
@@ -565,16 +611,16 @@ class DayPlaces(BaseModel):
 
 class DayPlacesUpdate(BaseModel):
     """PUT /api/trips/{id}/day-places: replaces the places on each listed
-    date; a day with no stay and no day trips is cleared. Dates not listed
+    day; a day with no stay and no day trips is cleared. Days not listed
     are left alone."""
 
     days: list[DayPlaces] = Field(min_length=1, max_length=366)
 
     @model_validator(mode="after")
-    def _each_date_once(self) -> "DayPlacesUpdate":
-        dates = [day.date for day in self.days]
-        if len(set(dates)) != len(dates):
-            raise ValueError("A date is listed twice")
+    def _each_day_once(self) -> "DayPlacesUpdate":
+        days = [day.day for day in self.days]
+        if len(set(days)) != len(days):
+            raise ValueError("A day is listed twice")
         return self
 
 
@@ -595,8 +641,8 @@ class PinOut(BaseModel):
     cost_cents: int | None
     cost_basis: str = "per_head"
     cost_per: str = "once"
-    cost_start_date: date | None = None
-    cost_end_date: date | None = None
+    cost_start_day: int | None = None
+    cost_end_day: int | None = None
     notes: str
     link: str
     tags: list[str]
@@ -775,8 +821,8 @@ class PlanCreate(BaseModel):
     other contributor's reads (feature spec §6.4), so nothing is claimed by
     creating one."""
 
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
     status: Literal["placed", "pencilled", "draft"] = "placed"
     label: str = ""
     rationale: str = ""
@@ -811,20 +857,20 @@ class ContestMove(BaseModel):
     nothing competing for it moves as one block, stops and all (their
     offsets are relative to the window's start, so they ride along)."""
 
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
 
 
 class PlanMove(BaseModel):
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
+    start_min: int | None = None
+    end_min: int | None = None
 
 
 class PlanOut(BaseModel):
     id: int
     trip_id: int
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
     label: str
     color: str
     status: PlanStatusLiteral
@@ -860,8 +906,8 @@ class ContestProposeCreate(BaseModel):
     safe — see routers/contests.py::open_block_contest and the feature
     spec's decision 1."""
 
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
     label: str = ""
     rationale: str = ""
     items: list[PlanItemCreate] = Field(default_factory=list)
@@ -887,8 +933,8 @@ class ContestOut(BaseModel):
     status: Literal["open", "resolved"]
     winning_plan_id: int | None
     # The hours under contest. Every option spans exactly these.
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
     # Who the decision is for, and so who votes (app/splits.py).
     branch_id: int | None = None
     party_members: list[int] = Field(default_factory=list)
@@ -950,8 +996,8 @@ class SplitCreate(BaseModel):
     already planned in those hours goes to the group at index
     `keep_plans_with`; the others start with an empty calendar."""
 
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
     branches: list[SplitBranchIn] = Field(min_length=2)
     keep_plans_with: int = 0
 
@@ -967,8 +1013,8 @@ class SplitHours(BaseModel):
     """Change a split's hours — PUT /api/splits/{split_id}/hours. Nothing
     changes hands; see app/splits.py retime_split for what's refused."""
 
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
 
 
 class SplitMerge(BaseModel):
@@ -989,8 +1035,8 @@ class SplitBranchOut(BaseModel):
 class SplitOut(BaseModel):
     id: int
     trip_id: int
-    starts_at: datetime
-    ends_at: datetime
+    start_min: int
+    end_min: int
     branches: list[SplitBranchOut]
 
 

@@ -1,4 +1,3 @@
-import { dayIndexForDate } from "../lib/planTime";
 import { tripDayLabel } from "./trip";
 
 // What the trip costs, derived from the plans the app has already fetched
@@ -71,7 +70,7 @@ export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) 
   plans
     .filter((plan) => SCHEDULED_STATUSES.includes(plan.status))
     .forEach((plan) => {
-      const dayIndex = plan.startDt ? dayIndexForDate(plan.startDt, trip.startDate) : null;
+      const dayIndex = plan.startDt?.dayIndex ?? null;
       plan.items.forEach((item, index) => {
         if (item.totalCents == null) return; // a price this viewer can't see
         const sharers = item.sharerIds ?? [];
@@ -110,7 +109,7 @@ export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) 
     .sort((a, b) => a[0] - b[0])
     .map(([dayIndex, dayRows]) => ({
       dayIndex,
-      label: tripDayLabel(dayIndex, trip.startDate, trip.endDate),
+      label: tripDayLabel(dayIndex, trip),
       rows: [...dayRows].sort((a, b) => (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0)),
     }));
 

@@ -17,8 +17,8 @@ import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { getTripDays, tripDayTitle } from "../data/trip";
 import { formatMoney } from "../data/expenses";
 import { api } from "../lib/api";
-import { lodgingFor, tripDates } from "../lib/dayPlaces";
-import { clockLabel, isoForDayMinute } from "../lib/planTime";
+import { lodgingFor, tripDayNumbers } from "../lib/dayPlaces";
+import { clockLabel, dayTime, tripMinute } from "../lib/planTime";
 import { contestWindowsFrom, planStartMinute, plansOnDay } from "../lib/dayGrid";
 import { branchName, branchesById, scopeForAnchor, splitHoursProblem, splitsOnDay } from "../lib/splits";
 import { MODES, nextDeparture } from "../lib/routes";
@@ -133,8 +133,8 @@ function Planner({ seed }) {
   const { mode } = seed;
   const fixed = seed.window; // { start, end } of a running vote, or null
 
-  const dates = useMemo(() => tripDates(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
-  const days = useMemo(() => getTripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate]);
+  const dates = useMemo(() => tripDayNumbers(trip), [trip]);
+  const days = useMemo(() => getTripDays(trip), [trip]);
   const onMap = useMemo(() => Object.values(pins).filter((p) => p.lat != null && p.lng != null), [pins]);
   const spotted = useCallback((id) => (id != null && pins[id]?.lat != null ? id : null), [pins]);
 
@@ -190,7 +190,7 @@ function Planner({ seed }) {
   const { estimates, retry } = useRideEstimates(rideLegs, departure);
   const choices = rideLegs.map((leg) => chooseRide(estimates[leg.key], modes[leg.key]));
 
-  const daySplits = useMemo(() => splitsOnDay(splits, trip.startDate, dayIndex), [splits, trip.startDate, dayIndex]);
+  const daySplits = useMemo(() => splitsOnDay(splits, dayIndex), [splits, dayIndex]);
   const branches = useMemo(() => branchesById(splits), [splits]);
   const groupName = useCallback((id) => (branches.get(id) ? branchName(branches.get(id), travelers) : "that group"), [branches, travelers]);
 
@@ -216,9 +216,9 @@ function Planner({ seed }) {
   const splitSpans = daySplits.map((s) => ({ startMin: s.startMin, endMin: s.endMin, title: "The group is split up" }));
   // A set in a running vote isn't in the way of the other sets in it.
   const others = useMemo(() => (seed.contestId ? plans.filter((p) => p.contestId !== seed.contestId) : plans), [plans, seed.contestId]);
-  const everyone = dayCalendar(others, trip.startDate, dayIndex, null);
+  const everyone = dayCalendar(others, dayIndex, null);
   let audience = fixed ? seed.branchId : null;
-  let calendar = fixed ? dayCalendar(others, trip.startDate, dayIndex, audience) : everyone;
+  let calendar = fixed ? dayCalendar(others, dayIndex, audience) : everyone;
   let model = build(calendar, leaveMinute ?? DEFAULT_LEAVE_MIN);
   const anchored = model.stops.find((s) => s.role === "anchor" && !s.repeat) ?? null;
   const length = model.windowEnd - model.windowStart;
@@ -236,7 +236,7 @@ function Planner({ seed }) {
       : null;
     if (home) {
       audience = scopeForAnchor([home], Math.max(model.windowStart, home.startMin), branchPref, myTraveler?.id ?? null);
-      calendar = dayCalendar(others, trip.startDate, dayIndex, audience);
+      calendar = dayCalendar(others, dayIndex, audience);
       model = build(calendar, leave);
     }
   }
@@ -254,11 +254,10 @@ function Planner({ seed }) {
       contestWindowsFrom(
         plansOnDay(
           plans.filter((p) => p.status !== "draft" && (p.branchId ?? null) === (audience ?? null)),
-          trip.startDate,
           dayIndex
         )
       ),
-    [plans, trip.startDate, dayIndex, audience]
+    [plans, dayIndex, audience]
   );
   const joins = !fixed && !direct ? runningVotes.find((w) => w.startMin === model.windowStart && w.endMin === model.windowEnd) ?? null : null;
   const straddles = !fixed && !direct && !joins
@@ -278,13 +277,13 @@ function Planner({ seed }) {
       : `Start at ${clockLabel(stretch.daySplit.startMin)} or later.`;
     const what = stretch.later ? `This runs past the split, which ends at ${clockLabel(stretch.daySplit.endMin)}.` : `This starts before the split, which begins at ${clockLabel(stretch.daySplit.startMin)}.`;
     if (!can("plans:write")) return `${what} Only a planner can keep the group apart longer. ${fix}`;
-    const entries = plansOnDay(others.filter((p) => p.status !== "draft"), trip.startDate, dayIndex);
+    const entries = plansOnDay(others.filter((p) => p.status !== "draft"), dayIndex);
     const blocked = splitHoursProblem(stretch.daySplit, stretch.startMin, stretch.endMin, { daySplits, entries, travelers });
     return blocked ? `${what} Keeping the group apart ${clockLabel(stretch.startMin)}–${clockLabel(stretch.endMin)} doesn’t work: ${blocked} Or: ${fix}` : null;
   })();
 
   const problem = (() => {
-    if (!trip.startDate) return "Set the trip’s dates to put routes on the calendar.";
+    if (!trip.dayCount) return "Set the trip’s dates, or how long it is, to put routes on the calendar.";
     const basic = blockingProblem({ ...model, direct });
     if (basic) return basic;
     if (fixed) {
@@ -429,7 +428,7 @@ function Planner({ seed }) {
     setSending(true);
     setError("");
     const rides = model.legs.map((leg) => rideItem(leg, choices[leg.index], choices[leg.index].mode));
-    const where = { startDate: trip.startDate, dayIndex };
+    const where = { dayIndex };
     const rationale = why.trim();
     let action;
     if (as === "rides") {
@@ -447,8 +446,8 @@ function Planner({ seed }) {
       dispatch({
         type: "RETIME_SPLIT",
         splitId: stretch.daySplit.split.id,
-        startsAt: isoForDayMinute(trip.startDate, dayIndex, from),
-        endsAt: isoForDayMinute(trip.startDate, dayIndex, to),
+        startsAt: tripMinute(dayIndex, from),
+        endsAt: tripMinute(dayIndex, to),
       });
     const stretching = stretch && as === "proposal";
     if (stretching) {
@@ -519,7 +518,7 @@ function Planner({ seed }) {
   }
 
   if (reviewing) {
-    const dayTitle = tripDayTitle(dayIndex, trip.startDate, trip.endDate);
+    const dayTitle = tripDayTitle(dayIndex, trip);
     return (
       <TripReview
         trip={model}
@@ -634,14 +633,14 @@ function Planner({ seed }) {
           <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             {days.length > 1 && !fixed ? (
               <div style={{ flex: 1, minWidth: 0 }}>
-                <DayStepper value={dayIndex} count={days.length} detail={tripDayTitle(dayIndex, trip.startDate, trip.endDate)} onChange={setDayIndex} />
+                <DayStepper value={dayIndex} count={days.length} detail={tripDayTitle(dayIndex, trip)} onChange={setDayIndex} />
               </div>
             ) : (
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 4px" }}>
                 <span className="mono-caption">Day</span>
                 <span style={{ font: "600 14px var(--font-sans)" }}>
                   Day {dayIndex}
-                  {tripDayTitle(dayIndex, trip.startDate, trip.endDate) ? ` · ${tripDayTitle(dayIndex, trip.startDate, trip.endDate)}` : ""}
+                  {tripDayTitle(dayIndex, trip) ? ` · ${tripDayTitle(dayIndex, trip)}` : ""}
                 </span>
               </div>
             )}
@@ -932,8 +931,8 @@ function signature(state) {
 // ---- where the planner starts ---------------------------------------------
 
 function seedFor({ params, contest, editPlanId, draft, plans, pins, travelItems, trip, dayPlaces }) {
-  const dates = tripDates(trip.startDate, trip.endDate);
-  const dayCount = getTripDays(trip.startDate, trip.endDate).length;
+  const dates = tripDayNumbers(trip);
+  const dayCount = getTripDays(trip).length;
   const spotted = (id) => (id != null && pins[id]?.lat != null ? id : null);
   const lodgingOn = (d) => (dates.length ? lodgingFor(dayPlaces, dates, d - 1) : { start: null, end: null });
   // Only offer tapping the map first when there's something on it to tap.
@@ -941,10 +940,9 @@ function seedFor({ params, contest, editPlanId, draft, plans, pins, travelItems,
   const base = { name: null, why: "", visits: {}, modes: {}, branchId: null, window: null, banner: null, draftId: null, editPlanId: null, contestId: null, voteCount: 0 };
 
   if (contest) {
-    const start = minuteOfIso(contest.starts_at);
-    let end = minuteOfIso(contest.ends_at);
-    if (end <= start) end += 1440;
-    const dayIndex = dayIndexOf(contest.starts_at, trip.startDate);
+    // The vote's hours, in minutes from 00:00 on the day they start.
+    const { dayIndex, minuteOfDay: start } = dayTime(contest.start_min);
+    const end = contest.end_min - tripMinute(dayIndex, 0);
     const option = editPlanId ? contest.plans.find((p) => p.id === editPlanId) ?? null : null;
     const letter = option?.set_letter ?? setLetter(contest.plans.length);
     const loaded = option ? fromItems(option.items.map(rawItem), start, { pins, travelItems, lodging: lodgingOn(dayIndex), spotted }) : null;
@@ -968,7 +966,7 @@ function seedFor({ params, contest, editPlanId, draft, plans, pins, travelItems,
   }
 
   if (draft) {
-    const dayIndex = draft.startDt ? dayIndexOf(draft.startsAt, trip.startDate) : 1;
+    const dayIndex = draft.startDt?.dayIndex ?? 1;
     const loaded = fromItems(draft.items, planStartMinute(draft), { pins, travelItems, lodging: lodgingOn(dayIndex), spotted });
     return {
       ...base,
@@ -988,7 +986,7 @@ function seedFor({ params, contest, editPlanId, draft, plans, pins, travelItems,
 
   const fromDay = Number(params.get("day")) || null;
   const toId = Number(params.get("to")) || null;
-  const start = initialTrip({ toId, fromDay, pins, plans, dayPlaces, dates, startDate: trip.startDate, dayCount, spotted });
+  const start = initialTrip({ toId, fromDay, pins, plans, dayPlaces, dates, dayCount, spotted });
   const fromSchedule = params.get("from") === "schedule";
   return {
     ...base,
@@ -1013,13 +1011,13 @@ function startingStops(lodging, spotted) {
  * where the group woke up that day (the day asked for, or Day 1). With
  * nowhere known to start, the first tap on the map picks it.
  */
-function initialTrip({ toId, fromDay, pins, plans, dayPlaces, dates, startDate, dayCount, spotted }) {
+function initialTrip({ toId, fromDay, pins, plans, dayPlaces, dates, dayCount, spotted }) {
   let dayIndex = fromDay && fromDay <= dayCount ? fromDay : 1;
   let before = null;
   const target = toId != null && pins[toId]?.lat != null ? toId : null;
   if (target != null) {
     for (let d = 1; d <= dayCount; d += 1) {
-      const calendar = dayCalendar(plans, startDate, d);
+      const calendar = dayCalendar(plans, d);
       const at = calendar.stops.get(target);
       if (!at) continue;
       dayIndex = d;
@@ -1105,17 +1103,6 @@ function rawItem(it) {
     offsetMinutes: it.offset_minutes ?? null,
     position: it.position,
   };
-}
-
-function minuteOfIso(iso) {
-  const m = /T(\d{2}):(\d{2})/.exec(iso ?? "");
-  return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
-}
-
-function dayIndexOf(iso, startDate) {
-  const day = /^(\d{4}-\d{2}-\d{2})/.exec(iso ?? "")?.[1];
-  if (!day || !startDate) return 1;
-  return Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1;
 }
 
 // A, B, C … then AA, AB — the same run the server letters sets with.

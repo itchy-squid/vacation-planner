@@ -111,4 +111,3 @@ def test_a_plan_spanning_midnight_still_reads_a_wall_clock_time(trip):
     plan = trip.place(start=1380, end=1440, items=[("ice", None)])  # 23:00
     assert item_start_minutes(plan, plan.items[0]) == 0
     assert isinstance(plan.items[0], PlanItem)
-    assert at(1, 1380).hour == 23

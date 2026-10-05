@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.models import Contest, Plan, PlanStatus, TravelItem, Vote
 
-from conftest import as_user
+from conftest import as_user, at
 from test_window_contests import propose, reload
 
 JAE = as_user("jae@example.com")
@@ -53,8 +53,8 @@ def test_withdrawing_over_the_board_puts_the_board_back(client, trip, db):
     assert body["contest"] is None
     (placed,) = body["placed_plans"]
     assert placed["status"] == "placed"
-    assert placed["starts_at"].startswith("2026-10-03T14:00")
-    assert placed["ends_at"].startswith("2026-10-03T15:10")  # the pin's own 70 minutes
+    assert placed["start_min"] == at(1, 840)
+    assert placed["end_min"] == at(1, 910)  # the pin's own 70 minutes
 
     reload(db)
     assert db.get(Contest, contest["id"]) is None
@@ -67,8 +67,8 @@ def test_withdrawing_one_of_several_sets_keeps_the_vote(client, trip, db):
     other = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": contest["starts_at"],
-            "ends_at": contest["ends_at"],
+            "start_min": contest["start_min"],
+            "end_min": contest["end_min"],
             "items": [{"pin_id": trip.pins["tide"].id}],
         },
         headers=MEI,
@@ -91,8 +91,8 @@ def test_a_custom_event_only_the_withdrawn_set_used_is_forgotten(client, trip, d
     contest = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": "2026-10-03T13:00:00+08:00",
-            "ends_at": "2026-10-03T15:00:00+08:00",
+            "start_min": at(1, 780),
+            "end_min": at(1, 900),
             "items": [{"travel_item_id": trip.travel_items["ferry"].id}],
         },
         headers=JAE,

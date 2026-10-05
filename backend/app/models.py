@@ -16,7 +16,7 @@ Scheduling model (Plan/PlanItem/Contest/Vote/TravelItem — see
 docs/features/scheduling-feature-spec.md) replaces an earlier
 Block/CandidateSet design: instead of pre-carved fixed-length "blocks" on a
 day with pre-seeded candidate groupings, contributors place pins and
-TravelItems directly onto a real starts_at/ends_at range; a conflict is
+TravelItems directly onto a start_min/end_min range; a conflict is
 resolved by proposing competing Plans against each other (a Contest) rather
 than always having exactly two pre-existing options.
 """
@@ -61,13 +61,16 @@ class Trip(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     region_line: Mapped[str] = mapped_column(String(300), default="")
-    # Structured so schedule/availability screens could eventually compute
-    # real calendar dates from them — see frontend/src/data/trip.js, which
-    # deliberately does NOT do that yet (Day labels stay hand-authored
-    # relative numbers; only the trip's own display line derives from
-    # these — see frontend/src/lib/format.js formatDateRange).
+    # When the trip is. Everything on its calendar is stored by day of the
+    # trip, not by date (TripDayPlace.day, Plan.start_min, ...), so these
+    # only say which real dates those days fall on. A trip whose dates
+    # aren't known yet has neither, and `length_days` says how many days
+    # to plan instead ("about 5 days"), with `rough_month` (1-12) as an
+    # optional "sometime in March". See app/tripdays.py.
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    length_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rough_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     phase: Mapped[TripPhase] = mapped_column(Enum(TripPhase), default=TripPhase.ideation)
     # There is no traveller count any more: the people going are the
     # Traveler rows below, and how many there are is simply how many are
@@ -172,18 +175,20 @@ class TripDayPlace(Base):
     in the order they're gone to). Places are region names, the same
     free-text names pins use, matched on `name_key` whatever the case.
 
-    Days are stored by date rather than day number, like plans, so a place
-    stays on its day when the trip's dates change; one outside the trip's
-    dates is kept but not shown.
+    Days are stored by day of the trip (1 is the first day), like plans,
+    so a trip can be planned before it has dates. When the dates move,
+    the person moving them chooses whether these move too
+    (app/tripdays.py); a day that ends up outside the trip is kept but
+    not shown.
 
     `position` 0 is the stay and 1.. are the day trips in order, which is
     what lets the database hold "one stay per day" (the unique position per
-    date plus the check below) without a partial index."""
+    day plus the check below) without a partial index."""
 
     __tablename__ = "trip_day_places"
     __table_args__ = (
-        UniqueConstraint("trip_id", "date", "position", name="uq_trip_day_place_position"),
-        UniqueConstraint("trip_id", "date", "name_key", name="uq_trip_day_place_name"),
+        UniqueConstraint("trip_id", "day", "position", name="uq_trip_day_place_position"),
+        UniqueConstraint("trip_id", "day", "name_key", name="uq_trip_day_place_name"),
         CheckConstraint("kind IN ('stay', 'visit')", name="ck_trip_day_place_kind"),
         CheckConstraint("(kind = 'stay') = (position = 0)", name="ck_trip_day_place_stay_first"),
         CheckConstraint("pin_id IS NULL OR kind = 'stay'", name="ck_trip_day_place_lodging_on_stay"),
@@ -191,7 +196,7 @@ class TripDayPlace(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
-    date: Mapped[date] = mapped_column(Date)
+    day: Mapped[int] = mapped_column(Integer)
     name: Mapped[str] = mapped_column(String(120))
     name_key: Mapped[str] = mapped_column(String(120))
     kind: Mapped[str] = mapped_column(String(8))
@@ -328,8 +333,9 @@ class Pin(Base):
     # stay (a rental car: picked up, dropped off). Both or neither. A
     # stay's days come from "Where we'll be" instead — the nights it's
     # picked as where the group is staying (TripDayPlace.pin_id).
-    cost_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    cost_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Days of the trip (1 is the first), like TripDayPlace.day.
+    cost_start_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_end_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -471,7 +477,7 @@ class ContestStatus(str, enum.Enum):
 
 class Plan(Base):
     """One scheduled placement of one or more pins/travel items onto a
-    real starts_at/ends_at range. `contest_id` is set only once this plan
+    start_min/end_min range. `contest_id` is set only once this plan
     is competing against at least one alternative (see Contest below);
     a plan with no contest_id is freely placed/pencilled/locked.
 
@@ -485,8 +491,10 @@ class Plan(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Minutes from 00:00 on the trip's first day: 09:00 on day 3 is
+    # 2 * 1440 + 540. Wall-clock time wherever the trip is (app/tripdays.py).
+    start_min: Mapped[int] = mapped_column(Integer)
+    end_min: Mapped[int] = mapped_column(Integer)
     label: Mapped[str] = mapped_column(String(200), default="")
     color: Mapped[str] = mapped_column(String(32), default="var(--accent)")
     # The proposer's case for this plan, shown to voters on the compare
@@ -554,7 +562,7 @@ class PlanItem(Base):
     # placement is deliberately shorter (or longer) than the item's own
     # duration — the proposal flow's "SHORTENED FROM 3H".
     duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Start, in minutes from plan.starts_at. NULL = packed end to end in
+    # Start, in minutes from plan.start_min. NULL = packed end to end in
     # position order, which is what a plan built by the proposal flow
     # always is. Set explicitly when several plans are captured into one
     # incumbent option (routers/contests.py) so the captured stops keep
@@ -573,7 +581,7 @@ class Contest(Base):
     pick_set); `resolved`/`winning_plan_id` only appear on rows settled by
     the older lock-the-whole-window behaviour.
 
-    The contest owns the window, not its plans: `starts_at`/`ends_at` are
+    The contest owns the window, not its plans: `start_min`/`end_min` are
     the hours being decided, and every option in the contest spans exactly
     those hours. That's what makes locking safe — everything that was in
     those hours was captured into an option, so there's nothing left
@@ -584,8 +592,10 @@ class Contest(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"))
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Minutes from 00:00 on the trip's first day: 09:00 on day 3 is
+    # 2 * 1440 + 540. Wall-clock time wherever the trip is (app/tripdays.py).
+    start_min: Mapped[int] = mapped_column(Integer)
+    end_min: Mapped[int] = mapped_column(Integer)
     status: Mapped[ContestStatus] = mapped_column(Enum(ContestStatus), default=ContestStatus.open)
     # The group this decision is for, same meaning as Plan.branch_id. Every
     # option in the contest is in it, only its travelers vote, and the
@@ -621,8 +631,10 @@ class Split(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Minutes from 00:00 on the trip's first day: 09:00 on day 3 is
+    # 2 * 1440 + 540. Wall-clock time wherever the trip is (app/tripdays.py).
+    start_min: Mapped[int] = mapped_column(Integer)
+    end_min: Mapped[int] = mapped_column(Integer)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

@@ -8,7 +8,7 @@ import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import CostField from "../components/forms/CostField";
 import CostDays from "../components/forms/CostDays";
 import KindField from "../components/forms/KindField";
-import { tripDates } from "../lib/dayPlaces";
+import { tripDayNumbers } from "../lib/dayPlaces";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
 import { usePlannerState, usePlannerDispatch, useIdeaAccess, usePinHeart } from "../state/PlannerContext";
 import PinHearts from "../components/planner/PinHearts";
@@ -16,7 +16,7 @@ import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
 import { getTripDays } from "../data/trip";
-import { dayIndexAndBandForPlan, isoForDayMinute } from "../lib/planTime";
+import { dayIndexAndBandForPlan, tripMinute } from "../lib/planTime";
 import { externalHref } from "../lib/externalHref";
 import { isMapsConfigured } from "../lib/googleMaps";
 import RegionPicker from "../components/forms/RegionPicker";
@@ -81,9 +81,9 @@ function baselineFrom(pin) {
     cost: pin.costCents == null ? null : pin.costCents / 100,
     costBasis: pin.costBasis ?? "per_head",
     costPer: pin.costPer ?? "once",
-    // The first and last day of a per-day price ({ first, last }, ISO), or
-    // null. A stay's days come from Where we'll be instead.
-    costDays: pin.costStartDate ? { first: pin.costStartDate, last: pin.costEndDate } : null,
+    // The first and last day of a per-day price ({ first, last }, days of
+    // the trip), or null. A stay's days come from Where we'll be instead.
+    costDays: pin.costStartDay != null ? { first: pin.costStartDay, last: pin.costEndDay } : null,
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
@@ -308,10 +308,10 @@ export default function EditVisit() {
   // pages/DaySchedule.jsx already derives its day strip from, so the
   // "when this one can happen" grid tracks the trip's actual length and
   // start date instead of always showing a fixed calendar.
-  const tripDays = getTripDays(state.trip.startDate, state.trip.endDate);
-  // The same days by ISO date, which is how Where we'll be and a per-day
+  const tripDays = getTripDays(state.trip);
+  // The same days by number, which is how Where we'll be and a per-day
   // price's first and last day are kept.
-  const dates = tripDates(state.trip.startDate, state.trip.endDate);
+  const dayNumbers = tripDayNumbers(state.trip);
   const isStay = form.kind === "stay";
   const who = state.contributors.find((c) => c.id === pin.who);
 
@@ -319,20 +319,10 @@ export default function EditVisit() {
   // in one active plan at a time. Drives both the "placed" dot on the
   // availability grid and the contested-plan footnote below.
   const placingPlan = state.plans.find((p) => p.items.some((it) => it.pinId === pinId));
-  // dayIndexAndBandForPlan's `dayIndex` is trip-relative (Oct 21 on a trip
-  // that starts Oct 17 is day 5) — right for routing (destination() below,
-  // DaySchedule's /schedule/:day) and for syncPlanDuration's math, but
-  // AvailabilityGrid keys every cell by calendar day-of-month instead
-  // (`d.n` from data/trip.js getTripDays — the same currency
-  // pin.availabilityRule.days and the override keys already use). Building
-  // placedDayBand straight from dayIndex compared trip-day numbers against
-  // day-of-month keys and could never match, so no pin's current
-  // placement — locked or not — ever lit up as "placed" here. Converting
-  // through tripDays (already computed above) fixes that without
-  // disturbing dayIndex's other, correct uses.
-  const placedDayIndexAndBand = placingPlan ? dayIndexAndBandForPlan(placingPlan, state.trip.startDate) : null;
-  const placedCalendarDay = placedDayIndexAndBand ? tripDays[placedDayIndexAndBand.dayIndex - 1]?.n ?? null : null;
-  const placedDayBand = placedCalendarDay != null ? `${placedCalendarDay}-${placedDayIndexAndBand.band}` : null;
+  // Availability is keyed by day of the trip, the same as a plan's
+  // dayIndex, so a placement lights up its own cell.
+  const placedDayIndexAndBand = placingPlan ? dayIndexAndBandForPlan(placingPlan) : null;
+  const placedDayBand = placedDayIndexAndBand ? `${placedDayIndexAndBand.dayIndex}-${placedDayIndexAndBand.band}` : null;
   // A locked plan's cell should read as "placed" on the grid below even
   // when it doesn't currently "work" per the rule/overrides — see
   // components/planner/AvailabilityGrid.jsx's placedLocked prop for why.
@@ -368,8 +358,8 @@ export default function EditVisit() {
     setSaveError("");
     setDraft((current) => {
       const base = current ?? baseline;
-      const fill = costPer === "day" && base.kind !== "stay" && !base.costDays && dates.length > 0;
-      return { ...base, costPer, ...(fill ? { costDays: { first: dates[0], last: dates[dates.length - 1] } } : {}) };
+      const fill = costPer === "day" && base.kind !== "stay" && !base.costDays && dayNumbers.length > 0;
+      return { ...base, costPer, ...(fill ? { costDays: { first: dayNumbers[0], last: dayNumbers[dayNumbers.length - 1] } } : {}) };
     });
   }
 
@@ -420,9 +410,7 @@ export default function EditVisit() {
     ) {
       return true;
     }
-    const endsAt = isoForDayMinute(
-      state.trip.startDate,
-      placedDayIndexAndBand.dayIndex,
+    const endsAt = tripMinute(placedDayIndexAndBand.dayIndex,
       placingPlan.startDt.minuteOfDay + nextDur
     );
     const result = await dispatch({ type: "MOVE_PLAN", planId: placingPlan.id, startsAt: placingPlan.startsAt, endsAt });
@@ -766,10 +754,10 @@ export default function EditVisit() {
                   costPer: form.costPer,
                   costCents: Math.round((form.cost ?? 0) * 100),
                   costBasis: form.costBasis,
-                  costStartDate: form.costDays?.first ?? null,
-                  costEndDate: form.costDays?.last ?? null,
+                  costStartDay: form.costDays?.first ?? null,
+                  costEndDay: form.costDays?.last ?? null,
                 }}
-                dates={dates}
+                trip={state.trip}
                 dayPlaces={state.dayPlaces}
                 headcount={state.travelers.length}
                 onDays={(costDays) => setField("costDays", costDays)}

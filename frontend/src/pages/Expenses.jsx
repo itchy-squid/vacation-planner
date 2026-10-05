@@ -5,7 +5,7 @@ import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
 import { buildExpenses, formatMoney, payerOf, travelersFor } from "../data/expenses";
 import { getTripDays } from "../data/trip";
 import { buildDailyCosts } from "../lib/dailyCosts";
-import { tripDates } from "../lib/dayPlaces";
+import { tripDayNumbers } from "../lib/dayPlaces";
 import { clockLabel } from "../lib/planTime";
 
 // Screen 8 — "what does the planned trip cost, and what's my part of it."
@@ -72,17 +72,18 @@ export default function Expenses() {
     () =>
       buildDailyCosts(pins, {
         dayPlaces,
-        dates: tripDates(trip.startDate, trip.endDate),
+        days: tripDayNumbers(trip),
+        trip,
         travelers,
         shownIds: shown.map((t) => t.id),
       }),
-    [pins, dayPlaces, trip.startDate, trip.endDate, travelers, shown]
+    [pins, dayPlaces, trip, travelers, shown]
   );
   const expenses = useMemo(
     () => buildExpenses(plans, { trip, travelers, shownIds: shown.map((t) => t.id), daily: dailyCosts.rows }),
     [plans, trip, travelers, shown, dailyCosts]
   );
-  const dayCount = useMemo(() => getTripDays(trip.startDate, trip.endDate).length, [trip.startDate, trip.endDate]);
+  const dayCount = useMemo(() => getTripDays(trip).length, [trip]);
   const payingFor = myId != null ? travelers.filter((t) => payerOf(t) === myId) : [];
 
   const summaryLabel =

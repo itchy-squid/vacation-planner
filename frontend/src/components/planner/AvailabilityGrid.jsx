@@ -4,7 +4,7 @@ import { worksOn } from "../../lib/availability";
 
 // Sunday-starting week grid, where each row is a calendar week and each
 // week's 7 columns are Sun..Sat — callers pass `days` from data/trip.js
-// getTripDays(trip.startDate, trip.endDate), whose `weekday` field (0=Sun)
+// getTripDays(trip), whose `weekday` field (0=Sun)
 // is what lines a real trip day up under the right column. Cell states:
 // works (teal tint), ruled out (hatch), placed (solid plum with a white
 // dot); a user override rings the cell. Always explain the hatching with
@@ -104,7 +104,7 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
   let workingCount = 0;
   for (const d of days) {
     for (const band of BANDS) {
-      if (works(d.n, band)) workingCount += 1;
+      if (works(d.day, band)) workingCount += 1;
     }
   }
 
@@ -234,9 +234,9 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
                     <div className="mono-data-sm" style={{ width: 30, flex: "none", color: "var(--text-faint)" }}>{band}</div>
                     {week.map((d, di) => {
                       if (!d) return <div key={di} style={{ flex: 1, minWidth: 0, height: 26 }} />;
-                      const key = `${pinId}|${d.n}-${band}`;
+                      const key = `${pinId}|${d.day}-${band}`;
                       const overridden = Boolean(overrides[key]);
-                      const cellWorks = works(d.n, band);
+                      const cellWorks = works(d.day, band);
                       // A locked plan can't be moved off this cell (spec
                       // "Moving / unplacing" — only placed/pencilled can
                       // resize/move), so its "placed" marker can't depend
@@ -246,14 +246,14 @@ export default function AvailabilityGrid({ pinId, rule, overrides, placedDayBand
                       // unplaced. A non-locked plan keeps the old
                       // works-gated check, since it can still be moved to
                       // a working square.
-                      const isPlacedCell = placedDayBand === `${d.n}-${band}`;
+                      const isPlacedCell = placedDayBand === `${d.day}-${band}`;
                       const placed = isPlacedCell && (placedLocked || cellWorks);
                       return (
                         <div
                           key={key}
                           // No onToggle = read-only (a viewer without
                           // ideas:write — see pages/EditVisit.jsx).
-                          onClick={onToggle ? () => onToggle(d.n, band) : undefined}
+                          onClick={onToggle ? () => onToggle(d.day, band) : undefined}
                           style={{
                             cursor: onToggle ? "pointer" : "default",
                             flex: 1,

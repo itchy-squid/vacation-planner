@@ -23,7 +23,7 @@ router = APIRouter(tags=["pins"])
 logger = logging.getLogger(__name__)
 
 
-_COST_FIELDS = ("cost_cents", "cost_basis", "cost_per", "cost_start_date", "cost_end_date")
+_COST_FIELDS = ("cost_cents", "cost_basis", "cost_per", "cost_start_day", "cost_end_day")
 
 
 def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:
@@ -166,7 +166,7 @@ def delete_pin(pin_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Se
     db.commit()
     bus.publish(trip_id, "pin.removed", {"pin_id": pin_id})
     if lodging_days:
-        bus.publish(trip_id, "day_places.updated", {"dates": sorted({d.date.isoformat() for d in lodging_days})})
+        bus.publish(trip_id, "day_places.updated", {"days": sorted({d.day for d in lodging_days})})
     return None
 
 

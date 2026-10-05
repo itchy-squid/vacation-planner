@@ -13,12 +13,13 @@ real use; see infra/README.md.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .tripdays import MINUTES_PER_DAY
 from .models import (
     AvailabilityRule,
     Contest,
@@ -40,11 +41,6 @@ from .models import (
 SEEDED_TRIP_NAMES = ["Taiwan", "Japan, spring", "Iceland ring road"]
 
 # The Taiwan trip's day 1 is Oct 3, 2026 — see seed_taiwan's Trip row below.
-# Plan.starts_at/ends_at are tz-aware DateTime columns, but nothing in this
-# schema stores a trip's real timezone (see models.py Plan docstring), so a
-# fixed tzinfo=UTC is used purely as a bookkeeping convention for
-# "trip-local wall-clock time" — the same sidestep the frontend's own
-# parseISODate already makes. It should never be read as a real UTC instant.
 TAIWAN_TRIP_START = date(2026, 10, 3)
 
 
@@ -54,13 +50,11 @@ def _wipe_seeded_trips(db: Session) -> None:
     db.commit()
 
 
-def _taiwan_dt(day_index: int, minute_of_day: int) -> datetime:
-    """day_index is 1-based, matching the old Block model's day_index and
-    the AvailabilityRule "days" values below (e.g. day_index=5 is Oct 7,
+def _taiwan_dt(day_index: int, minute_of_day: int) -> int:
+    """A trip minute (app/tripdays.py). day_index is 1-based, matching the
+    AvailabilityRule "days" values below (e.g. day_index=5 is Oct 7,
     matching those rules' "Oct 7-8")."""
-    d = TAIWAN_TRIP_START + timedelta(days=day_index - 1)
-    hour, minute = divmod(minute_of_day, 60)
-    return datetime(d.year, d.month, d.day, hour, minute, tzinfo=timezone.utc)
+    return (day_index - 1) * MINUTES_PER_DAY + minute_of_day
 
 
 def _add_pin(db: Session, trip: Trip, contributors: dict[str, Contributor], **kw) -> Pin:
@@ -90,8 +84,8 @@ def _placed_plan(
     nothing schedule-specific to store beyond the Plan + its one PlanItem."""
     plan = Plan(
         trip_id=trip.id,
-        starts_at=_taiwan_dt(day_index, start_minute),
-        ends_at=_taiwan_dt(day_index, end_minute),
+        start_min=_taiwan_dt(day_index, start_minute),
+        end_min=_taiwan_dt(day_index, end_minute),
         status=status,
         created_by_id=created_by.id if created_by else None,
         branch_id=branch.id if branch else None,
@@ -221,15 +215,16 @@ def seed_taiwan(db: Session) -> None:
     db.flush()
 
     # Availability rules — the seven Xiaoliuqiu pins the day 5 contest is
-    # built around (frontend/src/data/pins.js AVAILABILITY_RULES).
+    # built around (frontend/src/data/pins.js AVAILABILITY_RULES). Days are
+    # days of the trip: 5 and 6 are Oct 7–8.
     availability = {
-        "p1": ([7, 8], ["PM"], ["On Xiaoliuqiu only: Oct 7–8", "Needs low tide — 13:00–16:00"]),
-        "p2": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Snorkel boats stop at 16:00"]),
-        "p3": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Closes 17:00 on weekdays"]),
-        "p4": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Unlit trail — daylight only"]),
-        "p5": ([7, 8], ["PM", "EVE"], ["On Xiaoliuqiu only: Oct 7–8", "Sunset side — afternoon or later"]),
-        "p6": ([7, 8], ["AM"], ["On Xiaoliuqiu only: Oct 7–8", "Fish market winds down by 10:00"]),
-        "p7": ([7, 8], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Ticket office 08:00–16:30"]),
+        "p1": ([5, 6], ["PM"], ["On Xiaoliuqiu only: Oct 7–8", "Needs low tide — 13:00–16:00"]),
+        "p2": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Snorkel boats stop at 16:00"]),
+        "p3": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Closes 17:00 on weekdays"]),
+        "p4": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Unlit trail — daylight only"]),
+        "p5": ([5, 6], ["PM", "EVE"], ["On Xiaoliuqiu only: Oct 7–8", "Sunset side — afternoon or later"]),
+        "p6": ([5, 6], ["AM"], ["On Xiaoliuqiu only: Oct 7–8", "Fish market winds down by 10:00"]),
+        "p7": ([5, 6], ["AM", "PM"], ["On Xiaoliuqiu only: Oct 7–8", "Ticket office 08:00–16:30"]),
     }
     for local_id, (days, bands, reasons) in availability.items():
         db.add(AvailabilityRule(pin_id=pins_by_local_id[local_id].id, days=days, bands=bands, reasons=reasons))
@@ -244,16 +239,16 @@ def seed_taiwan(db: Session) -> None:
     contest = Contest(
         trip_id=trip.id,
         status=ContestStatus.open,
-        starts_at=_taiwan_dt(5, 780),
-        ends_at=_taiwan_dt(5, 960),
+        start_min=_taiwan_dt(5, 780),
+        end_min=_taiwan_dt(5, 960),
     )
     db.add(contest)
     db.flush()
 
     plan_a = Plan(
         trip_id=trip.id,
-        starts_at=_taiwan_dt(5, 780),
-        ends_at=_taiwan_dt(5, 960),
+        start_min=_taiwan_dt(5, 780),
+        end_min=_taiwan_dt(5, 960),
         status=PlanStatus.contested,
         contest_id=contest.id,
         label="Set A",
@@ -261,8 +256,8 @@ def seed_taiwan(db: Session) -> None:
     )
     plan_b = Plan(
         trip_id=trip.id,
-        starts_at=_taiwan_dt(5, 780),
-        ends_at=_taiwan_dt(5, 960),
+        start_min=_taiwan_dt(5, 780),
+        end_min=_taiwan_dt(5, 960),
         status=PlanStatus.contested,
         contest_id=contest.id,
         label="Set B",
@@ -321,7 +316,7 @@ def seed_taiwan(db: Session) -> None:
     # The lake group takes newcomers, so anyone added to the trip later
     # lands with them rather than on the gorge trail.
     t = travelers
-    hualien = Split(trip_id=trip.id, starts_at=_taiwan_dt(7, 480), ends_at=_taiwan_dt(7, 660))
+    hualien = Split(trip_id=trip.id, start_min=_taiwan_dt(7, 480), end_min=_taiwan_dt(7, 660))
     gorge = SplitBranch(label="Taroko Gorge", position=0, traveler_ids=sorted([t["ana"].id, t["lin"].id]))
     lake = SplitBranch(
         label="Liyu Lake",

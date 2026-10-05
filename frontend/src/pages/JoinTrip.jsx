@@ -6,7 +6,7 @@ import Button from "../components/core/Button";
 import RoleTag from "../components/core/RoleTag";
 import { api } from "../lib/api";
 import { ROLES } from "../lib/roles";
-import { formatDateRange } from "../lib/format";
+import { formatTripWhen } from "../lib/format";
 import { usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 
 // /join/:token — where an invite link lands. Shows which trip it is, who
@@ -162,7 +162,7 @@ export default function JoinTrip() {
                 {preview.trip_name}
               </div>
               <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>
-                {formatDateRange(preview.start_date, preview.end_date)}
+                {formatTripWhen(preview)}
                 {locations}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>

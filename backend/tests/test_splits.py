@@ -28,8 +28,8 @@ def place(client, trip, *, start, end, pin, branch=None, user=MEI, day=1):
     return client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(day, start).isoformat(),
-            "ends_at": at(day, end).isoformat(),
+            "start_min": at(day, start),
+            "end_min": at(day, end),
             "items": [{"pin_id": trip.pins[pin].id}],
             "branch_id": branch.id if branch else None,
         },
@@ -41,8 +41,8 @@ def propose(client, trip, *, start, end, stops, branch=None, user=JAE):
     return client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, start).isoformat(),
-            "ends_at": at(1, end).isoformat(),
+            "start_min": at(1, start),
+            "end_min": at(1, end),
             "items": [{"pin_id": trip.pins[k].id} for k in stops],
             "branch_id": branch.id if branch else None,
         },
@@ -54,8 +54,8 @@ def create_split(client, trip, *, start, end, groups, keep_plans_with=0, newcome
     return client.post(
         f"/api/trips/{trip.id}/splits",
         json={
-            "starts_at": at(1, start).isoformat(),
-            "ends_at": at(1, end).isoformat(),
+            "start_min": at(1, start),
+            "end_min": at(1, end),
             "branches": [
                 {"traveler_ids": ids(trip, *keys), "label": label, "takes_newcomers": newcomers == i}
                 for i, (label, keys) in enumerate(groups)
@@ -73,7 +73,7 @@ def reshape(client, split_id, branches, user=MEI):
 def retime(client, split_id, *, start, end, user=MEI):
     return client.put(
         f"/api/splits/{split_id}/hours",
-        json={"starts_at": at(1, start).isoformat(), "ends_at": at(1, end).isoformat()},
+        json={"start_min": at(1, start), "end_min": at(1, end)},
         headers=user,
     )
 
@@ -122,7 +122,7 @@ def test_a_groups_plan_stays_inside_its_split(client, trip):
 
 
 def test_a_group_from_another_trip_is_refused(client, trip, db):
-    other = Split(trip_id=trip.id + 1000, starts_at=at(1, 480), ends_at=at(1, 720))
+    other = Split(trip_id=trip.id + 1000, start_min=at(1, 480), end_min=at(1, 720))
     other.branches.append(SplitBranch(traveler_ids=[], position=0))
     db.add(other)
     db.commit()
@@ -136,13 +136,13 @@ def test_moving_a_groups_plan_only_meets_its_own_group(client, trip):
     swim = trip.place(start=480, end=540, pin="tide", branch=lake)
     moved = client.patch(
         f"/api/plans/{swim.id}",
-        json={"starts_at": at(1, 600).isoformat(), "ends_at": at(1, 660).isoformat()},
+        json={"start_min": at(1, 600), "end_min": at(1, 660)},
         headers=MEI,
     )
     assert moved.status_code == 200, moved.text
     out_of_split = client.patch(
         f"/api/plans/{swim.id}",
-        json={"starts_at": at(1, 700).isoformat(), "ends_at": at(1, 760).isoformat()},
+        json={"start_min": at(1, 700), "end_min": at(1, 760)},
         headers=MEI,
     )
     assert out_of_split.status_code == 409
@@ -205,7 +205,7 @@ def test_only_one_group_takes_newcomers(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/splits",
         json={
-            "starts_at": at(1, 540).isoformat(), "ends_at": at(1, 720).isoformat(),
+            "start_min": at(1, 540), "end_min": at(1, 720),
             "branches": [
                 {"traveler_ids": ids(trip, "mei"), "takes_newcomers": True},
                 {"traveler_ids": ids(trip, "ana"), "takes_newcomers": True},
@@ -264,8 +264,8 @@ def test_a_splits_hours_grow_and_shrink_around_its_groups_plans(client, trip, db
 
     grown = retime(client, split_id, start=420, end=780)
     assert grown.status_code == 200, grown.text
-    assert grown.json()["starts_at"].startswith("2026-10-03T07:00")
-    assert grown.json()["ends_at"].startswith("2026-10-03T13:00")
+    assert grown.json()["start_min"] == at(1, 420)
+    assert grown.json()["end_min"] == at(1, 780)
     # The new hours are the groups' to plan in.
     assert place(client, trip, start=720, end=780, pin="tide", branch=lake).status_code == 201
 
@@ -552,8 +552,8 @@ def test_a_groups_draft_publishes_into_the_groups_vote(client, trip):
     draft = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(1, 540).isoformat(),
-            "ends_at": at(1, 720).isoformat(),
+            "start_min": at(1, 540),
+            "end_min": at(1, 720),
             "status": "draft",
             "items": [{"pin_id": trip.pins["vase"].id}],
             "branch_id": lake.id,

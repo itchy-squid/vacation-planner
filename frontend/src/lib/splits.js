@@ -14,7 +14,7 @@
 // are for right now) and `forEveryone`, so screens that only want faces or
 // names never need to look the branch up.
 
-import { clockLabel, dayIndexForDate } from "./planTime.js";
+import { clockLabel } from "./planTime.js";
 
 // Every branch of every split, by id.
 export function branchesById(splits) {
@@ -73,10 +73,10 @@ export function unassigned(split, travelers) {
 // One split as it sits on one day, in minutes from that day's 00:00 (the
 // same shape lib/dayGrid.js planOnDay gives a plan). Null when it doesn't
 // touch the day.
-export function splitOnDay(split, tripStartDate, dayIndex) {
+export function splitOnDay(split, dayIndex) {
   if (!split.startDt || !split.endDt) return null;
-  const startDay = dayIndexForDate(split.startDt, tripStartDate);
-  const endDay = dayIndexForDate(split.endDt, tripStartDate);
+  const startDay = split.startDt?.dayIndex;
+  const endDay = split.endDt?.dayIndex;
   if (startDay == null || endDay == null) return null;
   const startMin = split.startDt.minuteOfDay + (startDay - dayIndex) * 1440;
   const endMin = split.endDt.minuteOfDay + (endDay - dayIndex) * 1440;
@@ -84,9 +84,9 @@ export function splitOnDay(split, tripStartDate, dayIndex) {
   return { split, startMin, endMin };
 }
 
-export function splitsOnDay(splits, tripStartDate, dayIndex) {
+export function splitsOnDay(splits, dayIndex) {
   return splits
-    .map((split) => splitOnDay(split, tripStartDate, dayIndex))
+    .map((split) => splitOnDay(split, dayIndex))
     .filter(Boolean)
     .sort((a, b) => a.startMin - b.startMin);
 }

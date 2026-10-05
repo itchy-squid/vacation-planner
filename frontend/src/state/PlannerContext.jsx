@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { coordsForPin } from "../lib/mapLayout";
-import { formatDateRange, relativeTime } from "../lib/format";
+import { formatTripWhen, relativeTime } from "../lib/format";
+import { dayTime } from "../lib/planTime";
 import { regionKey } from "../lib/regions";
-import { parseApiDateTime } from "../lib/planTime";
 import { roleLabel } from "../lib/roles";
 
 // Remembers which trip was last active so a page refresh reopens it
@@ -111,6 +111,20 @@ function normalizeTraveler(t) {
   };
 }
 
+// When the trip is (backend app/tripdays.py): its dates, or for a trip
+// planned before they're known its length and rough month, and how many
+// days there are to plan either way (null for a trip with neither).
+function tripWhen(t) {
+  return {
+    dateLine: formatTripWhen(t),
+    startDate: t.start_date,
+    endDate: t.end_date,
+    lengthDays: t.length_days ?? null,
+    roughMonth: t.rough_month ?? null,
+    dayCount: t.day_count ?? null,
+  };
+}
+
 // Where one of the trip's regions is (backend TripRegion), keyed in state
 // by regionKey(name) so pins find theirs whatever the case.
 function normalizeRegion(r) {
@@ -118,12 +132,12 @@ function normalizeRegion(r) {
 }
 
 // Where the group is each day (backend routers/day_places.py), keyed in
-// state by ISO date: { stay: name | null, lodgingPinId: pin id | null,
-// visits: [name, ...] }. Unset days have no entry (lib/dayPlaces.js
+// state by day of the trip (1 is the first): { stay: name | null,
+// lodgingPinId: pin id | null, visits: [name, ...] }. Unset days have no entry (lib/dayPlaces.js
 // placesOn reads them as NO_PLACES).
 function normalizeDayPlaces(list) {
   return Object.fromEntries(
-    list.map((d) => [d.date, { stay: d.stay ?? null, lodgingPinId: d.lodging_pin_id ?? null, visits: d.visits ?? [] }])
+    list.map((d) => [d.day, { stay: d.stay ?? null, lodgingPinId: d.lodging_pin_id ?? null, visits: d.visits ?? [] }])
   );
 }
 
@@ -157,11 +171,11 @@ function normalizePin(p, contributorsById) {
     // sharing it) — see backend/app/derive.py item_money.
     costBasis: p.cost_basis ?? "per_head",
     // "once", or "day": a price per 24 hours, counted over its days by
-    // lib/dailyCosts.js. The dates are the first and last day of one
-    // that isn't a stay (ISO, or null).
+    // lib/dailyCosts.js. The days are the first and last day of the trip
+    // one that isn't a stay is paid for (day numbers, or null).
     costPer: p.cost_per ?? "once",
-    costStartDate: p.cost_start_date ?? null,
-    costEndDate: p.cost_end_date ?? null,
+    costStartDay: p.cost_start_day ?? null,
+    costEndDay: p.cost_end_day ?? null,
     who: addedBy?.id ?? null,
     whoName: addedBy?.name ?? "Someone",
     addedAgo: relativeTime(p.added_at),
@@ -242,10 +256,12 @@ function normalizePlan(p) {
   return {
     id: p.id,
     tripId: p.trip_id,
-    startsAt: p.starts_at,
-    endsAt: p.ends_at,
-    startDt: parseApiDateTime(p.starts_at),
-    endDt: parseApiDateTime(p.ends_at),
+    // Trip minutes (lib/planTime.js): minutes from 00:00 on day 1.
+    startsAt: p.start_min,
+    endsAt: p.end_min,
+    // The same, as { dayIndex, minuteOfDay }.
+    startDt: dayTime(p.start_min),
+    endDt: dayTime(p.end_min),
     label: p.label,
     color: p.color,
     status: p.status, // "draft" | "placed" | "pencilled" | "contested" | "locked"
@@ -274,10 +290,10 @@ function normalizeSplit(s) {
   return {
     id: s.id,
     tripId: s.trip_id,
-    startsAt: s.starts_at,
-    endsAt: s.ends_at,
-    startDt: parseApiDateTime(s.starts_at),
-    endDt: parseApiDateTime(s.ends_at),
+    startsAt: s.start_min,
+    endsAt: s.end_min,
+    startDt: dayTime(s.start_min),
+    endDt: dayTime(s.end_min),
     branches: (s.branches ?? []).map((b) => ({
       id: b.id,
       splitId: s.id,
@@ -301,8 +317,8 @@ function proposalConflict(err) {
     return {
       conflict: "contest",
       contestId: detail.contest_id,
-      contestStartsAt: detail.starts_at,
-      contestEndsAt: detail.ends_at,
+      contestStartsAt: detail.start_min,
+      contestEndsAt: detail.end_min,
       message: detail.message,
     };
   }
@@ -465,9 +481,7 @@ async function loadTripView(tripId, trips) {
     name: trip.name,
     regionLine: trip.region_line,
     locationsLine,
-    dateLine: formatDateRange(trip.start_date, trip.end_date),
-    startDate: trip.start_date,
-    endDate: trip.end_date,
+    ...tripWhen(trip),
     phase: trip.phase,
     contributorCount: contributors.length,
     // How many travelers are listed — the people going, which is not how
@@ -574,9 +588,9 @@ function reducer(state, action) {
     case "APPLY_DAY_PLACES": {
       if (action.all) return { ...state, dayPlaces: action.all };
       const dayPlaces = { ...state.dayPlaces };
-      Object.entries(action.days).forEach(([date, day]) => {
-        if (day && (day.stay || day.visits.length)) dayPlaces[date] = day;
-        else delete dayPlaces[date];
+      Object.entries(action.days).forEach(([number, day]) => {
+        if (day && (day.stay || day.visits.length)) dayPlaces[number] = day;
+        else delete dayPlaces[number];
       });
       return { ...state, dayPlaces };
     }
@@ -832,8 +846,8 @@ export function PlannerProvider({ children }) {
           if (!placing || !state.trip) return { ok: false };
           try {
             await api.createPlan(state.trip.id, {
-              starts_at: action.startsAt,
-              ends_at: action.endsAt,
+              start_min: action.startsAt,
+              end_min: action.endsAt,
               status: "placed",
               items: [placing.kind === "pin" ? { pin_id: placing.refId } : { travel_item_id: placing.refId }],
               // Which group's lane the tap landed in on a split day.
@@ -866,8 +880,8 @@ export function PlannerProvider({ children }) {
         }
 
         // Drag-to-reschedule (pages/DaySchedule.jsx's pointer-drag handling)
-        // — keeps the block's duration fixed and only changes starts_at/
-        // ends_at, per spec "Moving / unplacing". A placed/pencilled plan
+        // — keeps the block's duration fixed and only changes start_min/
+        // end_min, per spec "Moving / unplacing". A placed/pencilled plan
         // moves itself; a proposal alone in its vote (`contestId` set)
         // moves its contest, whose hours it spans (lib/planDrag.js).
         // Unlike PLACE_AT, this has no tray item or "placing" state behind
@@ -875,7 +889,7 @@ export function PlannerProvider({ children }) {
         // reported back as an occupied error for the caller to show and
         // revert, rather than opening the propose-alternative sheet.
         case "MOVE_PLAN": {
-          const fields = { starts_at: action.startsAt, ends_at: action.endsAt };
+          const fields = { start_min: action.startsAt, end_min: action.endsAt };
           try {
             if (action.contestId != null) {
               await api.moveContest(action.contestId, fields);
@@ -913,8 +927,8 @@ export function PlannerProvider({ children }) {
           if (!state.trip) return { ok: false };
           try {
             const contest = await api.proposeBlock(state.trip.id, {
-              starts_at: action.startsAt,
-              ends_at: action.endsAt,
+              start_min: action.startsAt,
+              end_min: action.endsAt,
               label: action.label ?? "",
               rationale: action.rationale ?? "",
               items: action.items,
@@ -995,8 +1009,8 @@ export function PlannerProvider({ children }) {
           if (!state.trip) return { ok: false };
           try {
             const plan = await api.createPlan(state.trip.id, {
-              starts_at: action.startsAt,
-              ends_at: action.endsAt,
+              start_min: action.startsAt,
+              end_min: action.endsAt,
               status: "draft",
               label: action.label ?? "",
               rationale: action.rationale ?? "",
@@ -1050,8 +1064,8 @@ export function PlannerProvider({ children }) {
           try {
             if (action.type === "CREATE_SPLIT") {
               await api.createSplit(state.trip.id, {
-                starts_at: action.startsAt,
-                ends_at: action.endsAt,
+                start_min: action.startsAt,
+                end_min: action.endsAt,
                 branches: action.branches,
                 keep_plans_with: action.keepPlansWith ?? 0,
               });
@@ -1299,19 +1313,27 @@ export function PlannerProvider({ children }) {
 
         case "UPDATE_TRIP": {
           // Trip settings (see pages/TripSettings.jsx) — name, regions,
-          // and start/end dates on the currently-active trip only (there's
+          // and when the trip is on the currently-active trip only (there's
           // no flow yet for editing a trip you haven't opened — see
           // OPEN_TRIP just below for how "active" gets set). Reuses
           // APPLY_TRIP, which shallow-merges into state.trip.
+          //
+          // `fields.move` is "keep_dates" when the start date moved and
+          // everything stays on the date it was on: the server renumbers
+          // every day of the calendar (backend app/tripdays.py), so the
+          // whole trip is loaded again, the same way OPEN_TRIP does.
           const updated = await api.updateTrip(state.trip.id, action.fields);
+          if (action.fields.move === "keep_dates") {
+            const trips = await api.listTrips();
+            dispatch({ type: "LOADED", payload: await loadTripView(state.trip.id, trips) });
+            return updated;
+          }
           dispatch({
             type: "APPLY_TRIP",
             trip: {
               name: updated.name,
               regionLine: updated.region_line,
-              dateLine: formatDateRange(updated.start_date, updated.end_date),
-              startDate: updated.start_date,
-              endDate: updated.end_date,
+              ...tripWhen(updated),
               phase: updated.phase,
             },
           });
@@ -1354,21 +1376,21 @@ export function PlannerProvider({ children }) {
         // Where a region is, stored for the whole trip (components/map/
         // useRegionLocations.js, components/newpin/ByHandForm.jsx). Returns
         // a result for the same reason PATCH_PIN does.
-        // Sets the places on some days: `days` is { date: { stay, visits } }
+        // Sets the places on some days: `days` is { day: { stay, visits } }
         // (no stay and no day trips clears a day). Shown straight away so
         // tapping through chips doesn't wait on the network; put back if
         // the save fails. Only the newest save's answer is applied, so a
         // slow earlier one can't overwrite a later tap.
         case "SAVE_DAY_PLACES": {
           const tripId = state.trip.id;
-          const previous = Object.fromEntries(Object.keys(action.days).map((date) => [date, state.dayPlaces[date] ?? null]));
+          const previous = Object.fromEntries(Object.keys(action.days).map((day) => [day, state.dayPlaces[day] ?? null]));
           const saveId = ++daySaveCounter.current;
           dispatch({ type: "APPLY_DAY_PLACES", days: action.days });
           try {
             const saved = await api.putDayPlaces(
               tripId,
-              Object.entries(action.days).map(([date, day]) => ({
-                date,
+              Object.entries(action.days).map(([number, day]) => ({
+                day: Number(number),
                 stay: day?.stay ?? null,
                 lodging_pin_id: day?.stay ? day?.lodgingPinId ?? null : null,
                 visits: day?.visits ?? [],
@@ -1406,11 +1428,11 @@ export function PlannerProvider({ children }) {
           if ("costBasis" in f) backendFields.cost_basis = f.costBasis;
           if ("kind" in f) backendFields.kind = f.kind;
           if ("costPer" in f) backendFields.cost_per = f.costPer;
-          // { first, last } ISO dates, or null to clear them. Always sent
-          // whole; the API refuses one without the other.
+          // { first, last } days of the trip, or null to clear them.
+          // Always sent whole; the API refuses one without the other.
           if ("costDays" in f) {
-            backendFields.cost_start_date = f.costDays?.first ?? null;
-            backendFields.cost_end_date = f.costDays?.last ?? null;
+            backendFields.cost_start_day = f.costDays?.first ?? null;
+            backendFields.cost_end_day = f.costDays?.last ?? null;
           }
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;

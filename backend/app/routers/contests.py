@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -11,7 +11,6 @@ from ..events import bus
 from ..models import Contest, ContestStatus, Contributor, Plan, PlanItem, PlanStatus, Vote
 from ..permissions import PLANS_DECIDE, PLANS_PROPOSE, PLANS_READ, VOTES_WRITE, VOTING_ROLES, Access, require
 from ..splits import audience, names, resolve_branch, roster_ids, voter_ids
-from ..tripclock import minutes_between, same_moment
 from ..schemas import (
     ContestMove,
     ContestOut,
@@ -118,8 +117,8 @@ def _contest_to_schema(contest: Contest, db: Session, viewer: Contributor | None
         trip_id=contest.trip_id,
         status=contest.status.value,
         winning_plan_id=contest.winning_plan_id,
-        starts_at=contest.starts_at,
-        ends_at=contest.ends_at,
+        start_min=contest.start_min,
+        end_min=contest.end_min,
         branch_id=contest.branch_id,
         party_members=sorted(audience(contest.branch, roster)),
         for_everyone=contest.branch_id is None,
@@ -160,7 +159,7 @@ def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan])
 
     stops: list[tuple[int, int, int | None, int | None]] = []
     for plan in captured:
-        base = minutes_between(plan.starts_at, contest.starts_at)
+        base = plan.start_min - contest.start_min
         for item in plan.items:
             stops.append(
                 (
@@ -174,8 +173,8 @@ def _capture_into_incumbent(db: Session, contest: Contest, captured: list[Plan])
 
     incumbent = Plan(
         trip_id=contest.trip_id,
-        starts_at=contest.starts_at,
-        ends_at=contest.ends_at,
+        start_min=contest.start_min,
+        end_min=contest.end_min,
         # Keeps whatever identity the board already had, so the "on the
         # board" column doesn't change colour the moment it's contested.
         label=captured[0].label,
@@ -237,8 +236,8 @@ def open_block_contest(
     db: Session,
     trip_id: int,
     *,
-    starts_at: datetime,
-    ends_at: datetime,
+    start_min: int,
+    end_min: int,
     label: str,
     rationale: str,
     items: list[PlanItemCreate],
@@ -267,9 +266,9 @@ def open_block_contest(
     # Stops carry their own start times, so "do they fit" is a layout,
     # checked the same way here, on a published draft, on an edited set
     # and on direct placement.
-    validate_block(db, trip_id, starts_at, ends_at, items)
+    validate_block(db, trip_id, start_min, end_min, items)
 
-    branch = resolve_branch(db, trip_id, branch_id, starts_at, ends_at)
+    branch = resolve_branch(db, trip_id, branch_id, start_min, end_min)
     branch_id = branch.id if branch else None
 
     # A locked plan is a fixed hour, not a proposal: the ferry leaves when
@@ -277,7 +276,7 @@ def open_block_contest(
     # crossing it (feature spec §6.5), so reaching here means a race or a
     # client that skipped the clip — either way, refusing is what keeps
     # "everything in the window is in the contest" true.
-    locked = find_overlapping_plans(db, trip_id, starts_at, ends_at, (PlanStatus.locked,), branch_id=branch_id)
+    locked = find_overlapping_plans(db, trip_id, start_min, end_min, (PlanStatus.locked,), branch_id=branch_id)
     if locked:
         raise HTTPException(
             status_code=409,
@@ -287,7 +286,7 @@ def open_block_contest(
             },
         )
 
-    overlapping = find_overlapping_plans(db, trip_id, starts_at, ends_at, _CAPTURABLE_STATUSES, branch_id=branch_id)
+    overlapping = find_overlapping_plans(db, trip_id, start_min, end_min, _CAPTURABLE_STATUSES, branch_id=branch_id)
 
     open_contests: list[Contest] = []
     for plan in overlapping:
@@ -299,7 +298,7 @@ def open_block_contest(
 
     contest: Contest
     if open_contests:
-        exact = [c for c in open_contests if same_moment(c.starts_at, starts_at) and same_moment(c.ends_at, ends_at)]
+        exact = [c for c in open_contests if c.start_min == start_min and c.end_min == end_min]
         if len(open_contests) > 1 or not exact:
             # Two contests can't share hours, and a half-overlapping
             # proposal would mean settling one could invalidate the other.
@@ -311,8 +310,8 @@ def open_block_contest(
                 detail={
                     "message": "Some of those hours are already out for a vote.",
                     "contest_id": clash.id,
-                    "starts_at": clash.starts_at.isoformat(),
-                    "ends_at": clash.ends_at.isoformat(),
+                    "start_min": clash.start_min,
+                    "end_min": clash.end_min,
                 },
             )
         # Exactly the same hours: this is a further option on the same
@@ -322,8 +321,8 @@ def open_block_contest(
         contest = Contest(
             trip_id=trip_id,
             status=ContestStatus.open,
-            starts_at=starts_at,
-            ends_at=ends_at,
+            start_min=start_min,
+            end_min=end_min,
             branch_id=branch_id,
         )
         db.add(contest)
@@ -334,15 +333,15 @@ def open_block_contest(
             "contest.opened",
             {
                 "contest_id": contest.id,
-                "starts_at": contest.starts_at.isoformat(),
-                "ends_at": contest.ends_at.isoformat(),
+                "start_min": contest.start_min,
+                "end_min": contest.end_min,
             },
         )
 
     proposal = Plan(
         trip_id=trip_id,
-        starts_at=starts_at,
-        ends_at=ends_at,
+        start_min=start_min,
+        end_min=end_min,
         label=label,
         rationale=rationale,
         branch_id=contest.branch_id,
@@ -374,8 +373,8 @@ def propose_block(
     contest = open_block_contest(
         db,
         trip_id,
-        starts_at=payload.starts_at,
-        ends_at=payload.ends_at,
+        start_min=payload.start_min,
+        end_min=payload.end_min,
         label=payload.label,
         rationale=payload.rationale,
         items=payload.items,
@@ -412,8 +411,8 @@ def publish_plan(
     contest = open_block_contest(
         db,
         trip_id,
-        starts_at=plan.starts_at,
-        ends_at=plan.ends_at,
+        start_min=plan.start_min,
+        end_min=plan.end_min,
         label=plan.label,
         rationale=plan.rationale,
         items=items,
@@ -490,7 +489,7 @@ def update_proposal(
             detail="Only the person who proposed this set, or the trip owner, can edit it",
         )
 
-    validate_block(db, plan.trip_id, plan.starts_at, plan.ends_at, payload.items)
+    validate_block(db, plan.trip_id, plan.start_min, plan.end_min, payload.items)
 
     plan.label = payload.label
     plan.rationale = payload.rationale
@@ -634,21 +633,21 @@ def move_lone_proposal(
             detail="Only the person who proposed this set, or the trip owner, can move it",
         )
 
-    validate_block(db, contest.trip_id, payload.starts_at, payload.ends_at, _stops_of(plan))
-    resolve_branch(db, contest.trip_id, contest.branch_id, payload.starts_at, payload.ends_at)
+    validate_block(db, contest.trip_id, payload.start_min, payload.end_min, _stops_of(plan))
+    resolve_branch(db, contest.trip_id, contest.branch_id, payload.start_min, payload.end_min)
     occupying = find_overlapping_plan(
         db,
         contest.trip_id,
-        payload.starts_at,
-        payload.ends_at,
+        payload.start_min,
+        payload.end_min,
         branch_id=contest.branch_id,
         exclude_plan_id=plan.id,
     )
     if occupying is not None:
         raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
-    contest.starts_at = plan.starts_at = payload.starts_at
-    contest.ends_at = plan.ends_at = payload.ends_at
+    contest.start_min = plan.start_min = payload.start_min
+    contest.end_min = plan.end_min = payload.end_min
     votes_cleared = _clear_votes_for(db, contest, plan)
 
     db.commit()
@@ -712,8 +711,8 @@ def _place_set(db: Session, contest: Contest, chosen: Plan) -> list[Plan]:
         duration = item_duration_minutes(item)
         plan = Plan(
             trip_id=trip_id,
-            starts_at=chosen.starts_at + timedelta(minutes=start),
-            ends_at=chosen.starts_at + timedelta(minutes=start + duration),
+            start_min=chosen.start_min + start,
+            end_min=chosen.start_min + start + duration,
             color=chosen.color,
             branch_id=contest.branch_id,
             status=PlanStatus.placed,
@@ -808,7 +807,7 @@ def reopen_plan(
     # since been filled would create a silent overlap the calendar has no
     # way to draw, so refuse and name what's in the way instead (feature
     # spec §11).
-    occupying = find_overlapping_plan(db, plan.trip_id, plan.starts_at, plan.ends_at, branch_id=plan.branch_id, exclude_plan_id=plan.id)
+    occupying = find_overlapping_plan(db, plan.trip_id, plan.start_min, plan.end_min, branch_id=plan.branch_id, exclude_plan_id=plan.id)
     if occupying is not None:
         raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 

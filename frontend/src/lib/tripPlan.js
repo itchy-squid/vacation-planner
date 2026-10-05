@@ -28,7 +28,7 @@
 // it; the next ride leaves from that last place. Those stops carry
 // `located: false`; anything else counts as a place.
 import { plansOnDay, overlaps } from "./dayGrid.js";
-import { isoForDayMinute } from "./planTime.js";
+import { tripMinute } from "./planTime.js";
 
 export const VISIT_STEP_MIN = 15;
 export const MIN_VISIT_MIN = 15;
@@ -52,11 +52,10 @@ export function legKey(fromId, toId) {
  * are left out; a proposal is busy but isn't a stop anyone can count on
  * yet.
  */
-export function dayCalendar(plans, startDate, dayIndex, branchId = null) {
+export function dayCalendar(plans, dayIndex, branchId = null) {
   const mine = (p) => (branchId == null ? p.forEveryone !== false && p.branchId == null : p.branchId === branchId);
   const entries = plansOnDay(
     plans.filter((p) => OCCUPYING.has(p.status) && mine(p)),
-    startDate,
     dayIndex
   );
   const busy = entries.map(({ plan, startMin, endMin }) => ({
@@ -283,12 +282,12 @@ export function rideItem(leg, estimate, mode) {
  * instead — a set joining a running vote has to span the vote's hours
  * exactly — and the trip sits inside them at its own times.
  */
-export function proposalBody(trip, rideIds, { startDate, dayIndex, label = "", rationale = "", window = null }) {
+export function proposalBody(trip, rideIds, { dayIndex, label = "", rationale = "", window = null }) {
   const start = window ? window.start : trip.windowStart;
   const end = window ? window.end : trip.windowEnd;
   return {
-    starts_at: isoForDayMinute(startDate, dayIndex, start),
-    ends_at: isoForDayMinute(startDate, dayIndex, end),
+    start_min: tripMinute(dayIndex, start),
+    end_min: tripMinute(dayIndex, end),
     label,
     rationale,
     items: blockItems(trip, rideIds, start),
@@ -384,10 +383,10 @@ export function splitStretch({ daySplits, branchId, start, end }) {
 }
 
 /** One placed plan per ride (POST /api/trips/{id}/plans), for a trip with nothing to decide. */
-export function ridePlacements(trip, rideIds, { startDate, dayIndex }) {
+export function ridePlacements(trip, rideIds, { dayIndex }) {
   return trip.legs.map((leg) => ({
-    starts_at: isoForDayMinute(startDate, dayIndex, leg.start),
-    ends_at: isoForDayMinute(startDate, dayIndex, leg.end),
+    start_min: tripMinute(dayIndex, leg.start),
+    end_min: tripMinute(dayIndex, leg.end),
     status: "placed",
     items: [{ travel_item_id: rideIds[leg.index] }],
   }));

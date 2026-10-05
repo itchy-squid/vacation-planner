@@ -1,6 +1,6 @@
 import { test, expect } from "../support/fixtures.js";
 import { dayUrl, dragBlock } from "../support/calendar.js";
-import { contestsOf, placePlan, proposeBlock } from "../support/seed.js";
+import { contestsOf, placePlan, proposeBlock, clockOf } from "../support/seed.js";
 
 // Dragging a proposal on the day grid (lib/planDrag.js). A proposal with
 // nothing competing for its hours moves like any calendar item, its vote
@@ -16,9 +16,9 @@ test.describe("moving a proposal", () => {
     await dragBlock(page, "Night market", "13:00", "16:00");
 
     await expect(page.getByText("16:00–18:00 · proposed")).toBeVisible();
-    await expect.poll(async () => (await contestsOf(api, trip))[0]?.starts_at).toContain("T16:00");
+    await expect.poll(async () => clockOf((await contestsOf(api, trip))[0]?.start_min)).toBe("16:00");
     const [contest] = await contestsOf(api, trip);
-    expect(contest.ends_at).toContain("T18:00");
+    expect(clockOf(contest.end_min)).toBe("18:00");
     expect(contest.plans).toHaveLength(1);
   });
 
@@ -31,7 +31,7 @@ test.describe("moving a proposal", () => {
     await dragBlock(page, "Night market", "13:00", "16:00");
 
     const [contest] = await contestsOf(api, trip);
-    expect(contest.starts_at).toContain("T13:00");
+    expect(clockOf(contest.start_min)).toBe("13:00");
     expect(contest.plans).toHaveLength(2);
   });
 });

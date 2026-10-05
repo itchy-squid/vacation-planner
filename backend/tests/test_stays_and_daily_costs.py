@@ -8,8 +8,8 @@ MEI = as_user("mei@example.com")
 
 def _place(client, trip, pin_key):
     body = {
-        "starts_at": at(2, 600).isoformat(),
-        "ends_at": at(2, 660).isoformat(),
+        "start_min": at(2, 600),
+        "end_min": at(2, 660),
         "items": [{"pin_id": trip.pins[pin_key].id}],
     }
     return client.post(f"/api/trips/{trip.id}/plans", json=body, headers=MEI)
@@ -19,7 +19,7 @@ def test_ideas_are_activities_paid_once_unless_told_otherwise(client, trip):
     pin = client.get(f"/api/pins/{trip.pins['vase'].id}", headers=MEI).json()
     assert pin["kind"] == "activity"
     assert pin["cost_per"] == "once"
-    assert pin["cost_start_date"] is None and pin["cost_end_date"] is None
+    assert pin["cost_start_day"] is None and pin["cost_end_day"] is None
 
 
 def test_a_stay_can_be_added_and_changed_back(client, trip):
@@ -51,13 +51,13 @@ def test_an_idea_on_the_plan_comes_off_before_it_becomes_a_stay(client, trip):
 
 def test_the_days_of_a_daily_price_come_together_and_run_forwards(client, trip):
     url = f"/api/pins/{trip.pins['vase'].id}"
-    assert client.patch(url, json={"cost_start_date": "2026-03-12"}, headers=MEI).status_code == 422
-    assert client.patch(url, json={"cost_start_date": "2026-03-15", "cost_end_date": "2026-03-12"}, headers=MEI).status_code == 422
-    ok = client.patch(url, json={"cost_per": "day", "cost_start_date": "2026-03-12", "cost_end_date": "2026-03-15"}, headers=MEI)
+    assert client.patch(url, json={"cost_start_day": 1}, headers=MEI).status_code == 422
+    assert client.patch(url, json={"cost_start_day": 4, "cost_end_day": 1}, headers=MEI).status_code == 422
+    ok = client.patch(url, json={"cost_per": "day", "cost_start_day": 1, "cost_end_day": 4}, headers=MEI)
     assert ok.status_code == 200, ok.text
-    assert (ok.json()["cost_start_date"], ok.json()["cost_end_date"]) == ("2026-03-12", "2026-03-15")
-    cleared = client.patch(url, json={"cost_start_date": None, "cost_end_date": None}, headers=MEI)
-    assert cleared.json()["cost_start_date"] is None
+    assert (ok.json()["cost_start_day"], ok.json()["cost_end_day"]) == (1, 4)
+    cleared = client.patch(url, json={"cost_start_day": None, "cost_end_day": None}, headers=MEI)
+    assert cleared.json()["cost_start_day"] is None
 
 
 def test_a_stop_for_something_paid_by_the_day_costs_nothing_on_its_plan(client, trip):

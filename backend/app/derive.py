@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from .models import Plan, PlanItem
 from .splits import audience
-from .tripclock import minutes_between
 
 
 def item_duration_minutes(item: PlanItem) -> int:
@@ -47,7 +46,7 @@ def item_cost_cents(item: PlanItem) -> int:
 
 
 def item_start_minutes(plan: Plan, item: PlanItem) -> int:
-    """Minutes from plan.starts_at. An explicit offset wins; otherwise the
+    """Minutes from plan.start_min. An explicit offset wins; otherwise the
     stops pack end to end in position order, which is what every plan the
     proposal flow builds looks like."""
     if item.offset_minutes is not None:
@@ -56,7 +55,7 @@ def item_start_minutes(plan: Plan, item: PlanItem) -> int:
 
 
 def plan_range_minutes(plan: Plan) -> int:
-    return minutes_between(plan.ends_at, plan.starts_at)
+    return plan.end_min - plan.start_min
 
 
 def trip_roster(plan: Plan) -> set[int]:

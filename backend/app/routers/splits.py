@@ -49,7 +49,7 @@ def _split_or_404(db: Session, split_id: int) -> Split:
 
 @router.get("/trips/{trip_id}/splits", response_model=list[SplitOut])
 def list_splits(trip_id: int, _: Access = Depends(require(PLANS_READ)), db: Session = Depends(get_db)):
-    rows = db.scalars(select(Split).where(Split.trip_id == trip_id).order_by(Split.starts_at)).all()
+    rows = db.scalars(select(Split).where(Split.trip_id == trip_id).order_by(Split.start_min)).all()
     return [split_to_schema(s) for s in rows]
 
 
@@ -63,8 +63,8 @@ def post_split(
     split = create_split(
         db,
         trip_id,
-        starts_at=payload.starts_at,
-        ends_at=payload.ends_at,
+        start_min=payload.start_min,
+        end_min=payload.end_min,
         branches=_specs(payload.branches),
         keep_plans_with=payload.keep_plans_with,
         created_by_id=access.member.id,
@@ -96,7 +96,7 @@ def put_split_hours(
     _: Access = Depends(require(PLANS_WRITE)),
     db: Session = Depends(get_db),
 ):
-    split = retime_split(db, _split_or_404(db, split_id), payload.starts_at, payload.ends_at)
+    split = retime_split(db, _split_or_404(db, split_id), payload.start_min, payload.end_min)
     db.commit()
     db.refresh(split)
     bus.publish(split.trip_id, "split.updated", {"split_id": split.id})
