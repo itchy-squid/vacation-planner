@@ -34,6 +34,7 @@ import {
 } from "../lib/dayGrid";
 import { dragKind } from "../lib/planDrag";
 import TripHeader from "../components/core/TripHeader";
+import TripDaysNotice from "../components/trip/TripDaysNotice";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
@@ -681,7 +682,7 @@ export default function DaySchedule() {
                       scrollSnapAlign: "center",
                     }}
                   >
-                    <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow}</div>
+                    <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow || "DAY"}</div>
                     <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
                     {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
                   </button>
@@ -705,6 +706,8 @@ export default function DaySchedule() {
             </button>
           )}
         </div>
+
+        <TripDaysNotice />
 
         {/* Whose day to show. Pinned to the header with the day strip so it
             stays in reach wherever the grid is scrolled — inside the scroll

@@ -1313,11 +1313,21 @@ export function PlannerProvider({ children }) {
 
         case "UPDATE_TRIP": {
           // Trip settings (see pages/TripSettings.jsx) — name, regions,
-          // and start/end dates on the currently-active trip only (there's
+          // and when the trip is on the currently-active trip only (there's
           // no flow yet for editing a trip you haven't opened — see
           // OPEN_TRIP just below for how "active" gets set). Reuses
           // APPLY_TRIP, which shallow-merges into state.trip.
+          //
+          // `fields.move` is "keep_dates" when the start date moved and
+          // everything stays on the date it was on: the server renumbers
+          // every day of the calendar (backend app/tripdays.py), so the
+          // whole trip is loaded again, the same way OPEN_TRIP does.
           const updated = await api.updateTrip(state.trip.id, action.fields);
+          if (action.fields.move === "keep_dates") {
+            const trips = await api.listTrips();
+            dispatch({ type: "LOADED", payload: await loadTripView(state.trip.id, trips) });
+            return updated;
+          }
           dispatch({
             type: "APPLY_TRIP",
             trip: {

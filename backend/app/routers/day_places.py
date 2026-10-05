@@ -7,6 +7,7 @@ app/models.py TripDayPlace).
   clearing them, and undoing either one all need.
 - Only the trip's own days can be set, numbered from 1. A trip without
   dates has as many as its planned length; one with neither has none.
+  Places left outside the trip when its dates moved can be cleared.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -66,7 +67,9 @@ def set_day_places(
     db: Session = Depends(get_db),
 ):
     last = _trip_days(db.get(Trip, trip_id))
-    outside = [day.day for day in payload.days if not 1 <= day.day <= last]
+    # A day outside the trip (set aside when its dates moved) can only be
+    # cleared.
+    outside = [day.day for day in payload.days if not 1 <= day.day <= last and (day.stay or day.visits)]
     if outside:
         raise HTTPException(status_code=422, detail=f"Day {outside[0]} isn't one of the trip's days (1 to {last})")
 

@@ -108,6 +108,14 @@ export default function TripsHome() {
               <div style={{ font: "400 13px var(--font-sans)", color: "var(--text-secondary)", marginTop: 4 }}>
                 {TRIP.dateLine}
                 {TRIP.locationsLine ? ` · ${TRIP.locationsLine}` : ""}
+                {!TRIP.startDate && TRIP.lengthDays ? (
+                  <span
+                    className="mono-caption"
+                    style={{ marginLeft: 6, padding: "2px 5px", borderRadius: 4, background: "var(--geo-quiet)", color: "var(--geo)", verticalAlign: "1px" }}
+                  >
+                    Dates not set
+                  </span>
+                ) : null}
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>

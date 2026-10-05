@@ -128,6 +128,15 @@ def test_only_the_trips_own_days_can_be_set(client, trip, outside):
     assert places(client, trip) == []
 
 
+def test_places_outside_the_trip_can_be_cleared(client, trip, db):
+    put(client, trip, [{"day": day(5), "stay": "Taipei"}])
+    trip.trip.end_date = DAY_ONE + timedelta(days=1)
+    db.commit()
+    assert put(client, trip, [{"day": day(5), "stay": "Hualien"}]).status_code == 422
+    assert put(client, trip, [{"day": day(5)}]).status_code == 200
+    assert places(client, trip) == []
+
+
 def test_a_trip_without_dates_or_a_length_has_no_days_to_set(client, trip, db):
     trip.trip.start_date = None
     trip.trip.end_date = None

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TextField from "../components/forms/TextField";
 import Button from "../components/core/Button";
@@ -11,6 +11,11 @@ import InviteSheet from "../components/sharing/InviteSheet";
 import { LinkIcon } from "../components/sharing/icons";
 import TripInfo from "./TripInfo";
 import TravelerRoster from "../components/travelers/TravelerRoster";
+import TripWhenFields from "../components/trip/TripWhenFields";
+import MoveDatesSheet from "../components/trip/MoveDatesSheet";
+import Toast from "../components/core/Toast";
+import { dayContents, lengthOf, movePreview, shortDate, startMovedBy, whenFields, whenOf } from "../lib/tripWhen";
+import { dayRangeLabel } from "../lib/dayPlaces";
 
 // Not one of the handoff README's numbered screens. Reachable from any of
 // the trip's main screens via the gear in components/core/TripHeader.jsx.
@@ -26,6 +31,12 @@ import TravelerRoster from "../components/travelers/TravelerRoster";
 //
 // People and invite links apply immediately — they're not part of the
 // form's Save, which only covers the trip's own fields above them.
+//
+// When the trip is (components/trip/TripWhenFields.jsx, lib/tripWhen.js):
+// its dates, or a length for planning before they're known. Moving the
+// start date from one date to another with anything on the calendar asks
+// first (components/trip/MoveDatesSheet.jsx) whether the plan moves with
+// it, and stays on this screen afterwards with an Undo.
 export default function TripSettings() {
   const can = useCan();
   if (!can("trip:manage")) return <TripInfo />;
@@ -35,8 +46,9 @@ export default function TripSettings() {
 function OwnerSettings() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
-  const { trip, contributors, currentUserId } = usePlannerState();
+  const { trip, contributors, currentUserId, plans, splits, dayPlaces, pins } = usePlannerState();
   const [inviting, setInviting] = useState(false);
+  const hideToast = useCallback(() => setToast(null), []);
   const [invites, setInvites] = useState([]);
 
   const loadInvites = useCallback(() => {
@@ -51,30 +63,76 @@ function OwnerSettings() {
   }, [loadInvites]);
 
   const [name, setName] = useState(trip.name);
-  const [startDate, setStartDate] = useState(trip.startDate || "");
-  const [endDate, setEndDate] = useState(trip.endDate || "");
+  const [when, setWhen] = useState(() => whenOf(trip));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  // Open while asking whether the plan moves with new dates.
+  const [askingMove, setAskingMove] = useState(false);
+  // "Dates saved" with an Undo, after the plan moved (or didn't).
+  const [toast, setToast] = useState(null);
 
-  const canSubmit = name.trim().length > 0 && !submitting;
+  const canSubmit = name.trim().length > 0 && !submitting && (when.mode === "rough" || !when.endDate || !when.startDate || when.endDate >= when.startDate);
+  const newStart = when.mode === "dates" ? when.startDate || null : null;
+  const moved = startMovedBy(trip.startDate, newStart);
+  const contents = useMemo(() => dayContents(plans, dayPlaces), [plans, dayPlaces]);
+  const onCalendar = plans.length > 0 || splits.length > 0 || contents.size > 0 || Object.values(pins).some((p) => p.costStartDay != null);
 
-  async function handleSave() {
+  // Days with something on them that the new dates or length leave out,
+  // when day 1 isn't moving (a moving start is the sheet's to explain).
+  const newCount = when.mode === "rough" ? when.lengthDays : lengthOf(when.startDate, when.endDate);
+  const cutDays = !moved && newCount ? [...contents.keys()].filter((d) => d > newCount && d <= (trip.dayCount ?? 0)).sort((a, b) => a - b) : [];
+
+  async function save(move = null) {
     if (!canSubmit) return;
+    const before = whenOf(trip);
     setSubmitting(true);
     setError(null);
     try {
-      await dispatch({
-        type: "UPDATE_TRIP",
-        fields: {
-          name: name.trim(),
-          start_date: startDate || null,
-          end_date: endDate || null,
-        },
-      });
-      navigate(-1);
+      await dispatch({ type: "UPDATE_TRIP", fields: { name: name.trim(), ...whenFields(when), ...(move ? { move } : {}) } });
     } catch (err) {
-      setError(err.message || "Couldn't save those changes. Try again.");
       setSubmitting(false);
+      // Someone else's draft counts as being on the calendar too, and
+      // only the server can see it.
+      if (err.status === 409 && err.body?.detail?.code === "move_required") {
+        setAskingMove(true);
+        return;
+      }
+      setError(err.body?.detail?.message || err.message || "Couldn't save those changes. Try again.");
+      return;
+    }
+    setSubmitting(false);
+    if (!move) {
+      navigate(-1);
+      return;
+    }
+    setAskingMove(false);
+    const setAside =
+      move === "keep_dates"
+        ? movePreview({ contents, oldStart: trip.startDate, newStart: when.startDate, newLength: newCount, how: move }).setAside.reduce((n, d) => n + d.contents.plans, 0)
+        : 0;
+    setToast({
+      message: move === "shift" ? "Dates saved · the plan moved with them" : setAside ? `Dates saved · ${setAside} ${setAside === 1 ? "plan" : "plans"} set aside` : "Dates saved",
+      undo: { before, move },
+    });
+  }
+
+  function handleSave() {
+    if (moved && onCalendar) {
+      setAskingMove(true);
+      return;
+    }
+    save();
+  }
+
+  // Back to the dates from before the move, the same way: moving the
+  // start back with "keep_dates" puts every day back where it was.
+  async function undo() {
+    const { before, move } = toast.undo;
+    try {
+      await dispatch({ type: "UPDATE_TRIP", fields: { ...whenFields(before), move } });
+      setWhen(before);
+    } catch (err) {
+      setError(err.message || "Couldn't put the dates back.");
     }
   }
 
@@ -104,25 +162,17 @@ function OwnerSettings() {
             weight={600}
             size={15}
           />
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ flex: 1 }}>
-              <TextField
-                type="date"
-                label="Start date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
+          <TripWhenFields value={when} onChange={setWhen} />
+          {!trip.startDate && trip.dayCount && newStart ? (
+            <div style={{ font: "400 12px/1.45 var(--font-sans)", color: "var(--text-secondary)", marginTop: -4 }}>
+              Day 1 becomes {shortDate(newStart)}, and the other days follow in order.
             </div>
-            <div style={{ flex: 1 }}>
-              <TextField
-                type="date"
-                label="End date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate || undefined}
-              />
+          ) : null}
+          {cutDays.length ? (
+            <div style={{ font: "400 12px/1.45 var(--font-sans)", color: "var(--warn)", marginTop: -4 }}>
+              {dayRangeLabel(cutDays)} {cutDays.length === 1 ? "has" : "have"} things on {cutDays.length === 1 ? "it" : "them"}. They’ll be set aside, not deleted.
             </div>
-          </div>
+          ) : null}
 
           {error ? (
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{error}</div>
@@ -168,6 +218,19 @@ function OwnerSettings() {
         </div>
       </div>
       {inviting ? <InviteSheet trip={trip} onClose={() => setInviting(false)} onLinksChanged={loadInvites} /> : null}
+      {askingMove ? (
+        <MoveDatesSheet
+          before={{ startDate: trip.startDate, endDate: trip.endDate }}
+          after={{ startDate: when.startDate, endDate: when.endDate }}
+          plans={plans}
+          dayPlaces={dayPlaces}
+          saving={submitting}
+          error={error}
+          onSave={(move) => save(move)}
+          onClose={() => setAskingMove(false)}
+        />
+      ) : null}
+      <Toast message={toast?.message} actionLabel="Undo" onAction={toast ? undo : null} onDone={hideToast} />
     </div>
   );
 }

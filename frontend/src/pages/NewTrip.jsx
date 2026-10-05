@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TextField from "../components/forms/TextField";
+import TripWhenFields from "../components/trip/TripWhenFields";
 import Button from "../components/core/Button";
 import HomeButton from "../components/core/HomeButton";
 import WhoIsPlanning from "../components/newtrip/WhoIsPlanning";
 import { usePlannerDispatch } from "../state/PlannerContext";
 import { api } from "../lib/api";
 import { resolvePayer } from "../lib/people";
+import { whenFields, whenOf } from "../lib/tripWhen";
 
 // Not one of the handoff README's numbered screens — added so the "+"
 // affordance on Trips Home (screen 1) does something. Mirrors EditVisit's
@@ -15,7 +17,9 @@ import { resolvePayer } from "../lib/people";
 // app does every other editing flow.
 //
 // Two steps when there's anyone to invite:
-//   1. Name and dates. Deliberately only those: a trip's regions are
+//   1. Name and when: its dates, or "Not sure yet" and roughly how long
+//      (components/trip/TripWhenFields.jsx), so a trip can be planned by
+//      day before the dates are known. Deliberately only those: a trip's regions are
 //      derived from its pins (see PlannerContext's locationsLine), so
 //      asking for them up front — before there are any pins — only
 //      invites a hand-typed line that the derived one immediately
@@ -33,8 +37,7 @@ export default function NewTrip() {
 
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [when, setWhen] = useState(() => whenOf(null));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -101,8 +104,7 @@ export default function NewTrip() {
         type: "CREATE_TRIP",
         payload: {
           name: name.trim(),
-          start_date: startDate || null,
-          end_date: endDate || null,
+          ...whenFields(when),
           invitees,
           listed: listedTravelers,
         },
@@ -179,25 +181,7 @@ export default function NewTrip() {
             size={15}
             autoFocus
           />
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ flex: 1 }}>
-              <TextField
-                type="date"
-                label="Start date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <TextField
-                type="date"
-                label="End date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate || undefined}
-              />
-            </div>
-          </div>
+          <TripWhenFields value={when} onChange={setWhen} />
 
           {error ? (
             <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{error}</div>
