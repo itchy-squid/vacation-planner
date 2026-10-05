@@ -147,12 +147,21 @@ function normalizePin(p, contributorsById) {
     googleReviewDismissed: Boolean(p.google_review_dismissed),
     cx,
     cy,
+    // "activity" (takes time on the Plan tab) or "stay" (somewhere to
+    // sleep, picked in Where we'll be and never on the calendar).
+    kind: p.kind ?? "activity",
     dur: p.duration_minutes,
     cost: dollarsOrNull(p.cost_cents),
     costCents: p.cost_cents ?? null,
     // "per_head" (what one person pays) or "group" (one price for everyone
     // sharing it) — see backend/app/derive.py item_money.
     costBasis: p.cost_basis ?? "per_head",
+    // "once", or "day": a price per 24 hours, counted over its days by
+    // lib/dailyCosts.js. The dates are the first and last day of one
+    // that isn't a stay (ISO, or null).
+    costPer: p.cost_per ?? "once",
+    costStartDate: p.cost_start_date ?? null,
+    costEndDate: p.cost_end_date ?? null,
     who: addedBy?.id ?? null,
     whoName: addedBy?.name ?? "Someone",
     addedAgo: relativeTime(p.added_at),
@@ -218,6 +227,7 @@ function normalizePlanItem(it) {
     startMinuteOfDay: it.start_minute_of_day ?? null,
     costCents: source ? source.cost_cents ?? null : 0,
     costBasis: source?.cost_basis ?? "per_head",
+    costPer: source?.cost_per ?? "once",
     // Worked out on the server, because they depend on who's on the plan:
     // the travelers sharing this stop, what each pays, and the whole bill.
     // null when the viewer can't see this cost.
@@ -1374,6 +1384,14 @@ export function PlannerProvider({ children }) {
           if ("dur" in f) backendFields.duration_minutes = f.dur;
           if ("cost" in f) backendFields.cost_cents = Math.round(f.cost * 100);
           if ("costBasis" in f) backendFields.cost_basis = f.costBasis;
+          if ("kind" in f) backendFields.kind = f.kind;
+          if ("costPer" in f) backendFields.cost_per = f.costPer;
+          // { first, last } ISO dates, or null to clear them. Always sent
+          // whole; the API refuses one without the other.
+          if ("costDays" in f) {
+            backendFields.cost_start_date = f.costDays?.first ?? null;
+            backendFields.cost_end_date = f.costDays?.last ?? null;
+          }
           if ("notes" in f) backendFields.notes = f.notes;
           if ("link" in f) backendFields.link = f.link;
           if ("tags" in f) backendFields.tags = f.tags;

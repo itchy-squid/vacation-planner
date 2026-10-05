@@ -134,6 +134,18 @@ Engineering additions, not design-reviewed screens:
   day is set, the Plan tab's header, day strip and "+ Add" filter use it
   instead of guessing from the calendar. Planners and owners change it;
   everyone can see it. Design: the project's `day-places-mockups` doc.
+- **Stays and prices per day** (`Pin.kind`, `Pin.cost_per`;
+  `frontend/src/lib/dailyCosts.js`) — an idea is either something to do
+  or somewhere to stay. A stay has no duration and can't go on the
+  calendar (`routers/plans.py validate_placement`); it's picked as the
+  day's "Staying at" instead, and stays are offered there first. A price
+  is paid once or per day, meaning per 24 hours: n days from first to last
+  is n − 1 days of it. A stay's days are its nights in Where we'll be;
+  anything else (a rental car) picks a first and last day. Both are
+  counted once for the whole trip on Expenses ("Stays and daily costs"),
+  so a plan stop for a per-day idea costs nothing of its own
+  (`derive.py item_money`). Design: 1a in
+  `Claude outputs/stays-costs-types-mockups.html`.
 
 ## Repo layout
 

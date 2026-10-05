@@ -45,7 +45,8 @@ export default function TripTimeline({ trip, dayIndex, rides, onStop, onRide, ch
 
 function costLine(pin) {
   if (!pin.costCents) return "";
-  return pin.costBasis === "group" ? ` · ${formatMoney(pin.costCents)} for the group` : ` · ${formatMoney(pin.costCents)} each`;
+  const per = pin.costPer === "day" ? " a day" : "";
+  return pin.costBasis === "group" ? ` · ${formatMoney(pin.costCents)}${per} for the group` : ` · ${formatMoney(pin.costCents)} each${per}`;
 }
 
 function roleLine(stop, dayIndex, last) {

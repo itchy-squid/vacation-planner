@@ -23,7 +23,7 @@ router = APIRouter(tags=["pins"])
 logger = logging.getLogger(__name__)
 
 
-_COST_FIELDS = ("cost_cents", "cost_basis")
+_COST_FIELDS = ("cost_cents", "cost_basis", "cost_per", "cost_start_date", "cost_end_date")
 
 
 def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:
@@ -115,6 +115,12 @@ def update_pin(
     access.ensure_may_edit_idea(pin.added_by_id)
     fields = payload.model_dump(exclude_unset=True)
     ensure_may_set_costs(access, fields, pin.added_by_id)
+    # A stay is never on the calendar (routers/plans.py validate_placement),
+    # so an idea that's on it has to come off before it can become one.
+    if fields.get("kind") == "stay" and pin.kind != "stay":
+        placed = db.scalar(select(PlanItem).where(PlanItem.pin_id == pin_id))
+        if placed is not None:
+            raise HTTPException(status_code=409, detail=scheduled_conflict_detail(db, placed, "pin"))
     # A spot placed by hand is no longer that Google place.
     if "lat" in fields and "google_place_id" not in fields:
         fields["google_place_id"] = None

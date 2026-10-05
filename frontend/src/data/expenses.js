@@ -22,7 +22,8 @@ export const SCHEDULED_STATUSES = ["placed", "pencilled", "locked"];
 export function stopMoney(stop, memberIds) {
   const sharers = memberIds ?? [];
   const count = Math.max(1, sharers.length);
-  const price = stop.costCents ?? 0;
+  // Paid by the day: counted over its days, never per stop (lib/dailyCosts.js).
+  const price = stop.costPer === "day" ? 0 : stop.costCents ?? 0;
   if ((stop.costBasis ?? "per_head") === "group") {
     return { headcount: sharers.length, perHeadCents: Math.round(price / count), totalCents: price };
   }
@@ -58,7 +59,10 @@ export function travelersFor(scope, travelers, myTravelerId) {
 
 // One row per scheduled stop with a visible price, grouped by trip day,
 // plus the summary for `shownIds` — the travelers the viewer chose to see.
-export function buildExpenses(plans, { trip, travelers, shownIds }) {
+// `daily` is the rows for stays and prices paid by the day
+// (lib/dailyCosts.js buildDailyCosts), which aren't counted through the
+// plans; they're added into every total here.
+export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) {
   const shown = new Set(shownIds);
   const initials = new Map(travelers.map((t) => [t.id, t.initial]));
   const everyoneCount = travelers.length;
@@ -110,20 +114,23 @@ export function buildExpenses(plans, { trip, travelers, shownIds }) {
       rows: [...dayRows].sort((a, b) => (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0)),
     }));
 
+  const counted = [...priced, ...daily];
+
   // What each shown traveler's costs come to, for settling up.
   const perTraveler = travelers
     .filter((t) => shown.has(t.id))
     .map((t) => ({
       traveler: t,
-      cents: priced.filter((r) => r.sharers.includes(t.id)).reduce((sum, r) => sum + r.eachCents, 0),
+      cents: counted.filter((r) => r.sharers.includes(t.id)).reduce((sum, r) => sum + r.eachCents, 0),
     }));
 
   return {
     days,
+    daily,
     freeRows: free.sort((a, b) => (a.dayIndex ?? 0) - (b.dayIndex ?? 0) || (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0)),
-    shownCents: priced.reduce((sum, r) => sum + r.shownCents, 0),
-    tripTotalCents: priced.reduce((sum, r) => sum + r.totalCents, 0),
+    shownCents: counted.reduce((sum, r) => sum + r.shownCents, 0),
+    tripTotalCents: counted.reduce((sum, r) => sum + r.totalCents, 0),
     perTraveler,
-    pricedCount: priced.length,
+    pricedCount: counted.length,
   };
 }

@@ -67,7 +67,7 @@ export default function FinalItinerary() {
             sortKey: item.startMinuteOfDay ?? p.startDt.minuteOfDay,
             title: item.title,
             detail: item.costCents
-              ? `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}`
+              ? `${fmtMin(item.durationMinutes)} · $${Math.round(item.costCents / 100)}${item.costPer === "day" ? "/day" : ""}`
               : fmtMin(item.durationMinutes),
             notable: p.status === "pencilled",
           });

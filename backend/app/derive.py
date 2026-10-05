@@ -73,12 +73,16 @@ def item_money(plan: Plan, item: PlanItem, roster: set[int] | None = None) -> tu
     is what each of them pays and the total is that many times it; a
     "group" price is the total, and each person's share is a display
     division rounded to the cent. Floors at one sharer so a plan for nobody
-    can't divide by zero."""
+    can't divide by zero. A per-day price counts nothing here (see
+    below)."""
     roster = trip_roster(plan) if roster is None else roster
     source = item_source(item)
     sharers = sorted(audience(plan.branch, roster))
     count = max(1, len(sharers))
-    price = source.cost_cents or 0
+    # A price paid by the day is counted over the days it covers, not per
+    # placement (frontend/src/lib/dailyCosts.js), so a stop for it — a
+    # rental car's pick-up, say — costs nothing of its own.
+    price = 0 if getattr(source, "cost_per", "once") == "day" else source.cost_cents or 0
     if (source.cost_basis or "per_head") == "group":
         return sharers, round(price / count), price
     return sharers, price, price * count

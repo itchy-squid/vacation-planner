@@ -194,10 +194,14 @@ function Planner({ seed }) {
   const branches = useMemo(() => branchesById(splits), [splits]);
   const groupName = useCallback((id) => (branches.get(id) ? branchName(branches.get(id), travelers) : "that group"), [branches, travelers]);
 
+  // Any stay is where the group sleeps, not a visit: passing through one
+  // (a hotel in another town on a moving day) takes no time and is never
+  // proposed, the same as that night's own lodging.
+  const stayIds = useMemo(() => Object.values(pins).filter((p) => p.kind === "stay").map((p) => p.id), [pins]);
   const build = (calendar, leave) =>
     buildTrip({
       stops,
-      lodgingIds: [startLodging, endLodging].filter((id) => id != null),
+      lodgingIds: [startLodging, endLodging, ...stayIds].filter((id) => id != null),
       calendar,
       legMinutes: choices.map((c) => c?.minutes ?? null),
       leaveMinute: leave,
@@ -369,6 +373,9 @@ function Planner({ seed }) {
     const used = new Set(stopRefs);
     const out = [];
     Object.values(pins).forEach((p) => {
+      // A stay with no spot can't be a place the route passes through,
+      // and can't be visited either (it's never on the calendar).
+      if (p.kind === "stay" && p.lat == null) return;
       if (!scheduled.has(p.id) && !used.has(p.id)) out.push({ ref: p.id, title: p.title, located: p.lat != null, dur: p.dur });
     });
     Object.values(travelItems).forEach((t) => {
