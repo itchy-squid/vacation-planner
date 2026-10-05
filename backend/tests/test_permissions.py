@@ -194,8 +194,8 @@ def test_reader_sees_contests_but_cannot_vote(client, trip, reader):
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": [{"pin_id": trip.pins["vase"].id}],
         },
         headers=JAE,
@@ -228,12 +228,12 @@ def test_reader_sees_contests_but_cannot_vote(client, trip, reader):
         (
             "post",
             lambda t: f"/api/trips/{t.id}/plans",
-            lambda t: {"starts_at": at(2, 600).isoformat(), "ends_at": at(2, 660).isoformat(), "items": [{"pin_id": t.pins["vase"].id}]},
+            lambda t: {"start_min": at(2, 600), "end_min": at(2, 660), "items": [{"pin_id": t.pins["vase"].id}]},
         ),
         (
             "post",
             lambda t: f"/api/trips/{t.id}/contests",
-            lambda t: {"starts_at": at(2, 600).isoformat(), "ends_at": at(2, 700).isoformat(), "items": [{"pin_id": t.pins["vase"].id}]},
+            lambda t: {"start_min": at(2, 600), "end_min": at(2, 700), "items": [{"pin_id": t.pins["vase"].id}]},
         ),
         ("post", lambda t: f"/api/trips/{t.id}/comments", lambda t: {"body": "hi"}),
         ("patch", lambda t: f"/api/trips/{t.id}", lambda t: {"name": "Renamed"}),
@@ -251,7 +251,7 @@ def test_reader_cannot_write(client, trip, reader, method, path_fn, body_fn):
 
 def test_reader_cannot_move_or_remove_a_plan(client, trip, reader):
     plan = trip.place(start=840, end=900, pin="tide")
-    assert client.patch(f"/api/plans/{plan.id}", json={"starts_at": at(1, 900).isoformat()}, headers=RAE).status_code == 403
+    assert client.patch(f"/api/plans/{plan.id}", json={"start_min": at(1, 900)}, headers=RAE).status_code == 403
     assert client.delete(f"/api/plans/{plan.id}", headers=RAE).status_code == 403
     assert client.post(f"/api/plans/{plan.id}/lock", headers=RAE).status_code == 403
 
@@ -265,8 +265,8 @@ def _propose(client, trip, headers, items=None):
     return client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": items or [{"pin_id": trip.pins["vase"].id}],
         },
         headers=headers,
@@ -348,22 +348,22 @@ def test_planner_can_change_a_companions_idea(client, trip, companion):
 def test_companion_cannot_place_move_or_remove_on_the_calendar(client, trip, companion):
     res = client.post(
         f"/api/trips/{trip.id}/plans",
-        json={"starts_at": at(2, 600).isoformat(), "ends_at": at(2, 660).isoformat(), "items": [{"pin_id": trip.pins["vase"].id}]},
+        json={"start_min": at(2, 600), "end_min": at(2, 660), "items": [{"pin_id": trip.pins["vase"].id}]},
         headers=KAI,
     )
     assert res.status_code == 403
     assert res.json()["detail"]["missing_scope"] == "plans:write"
 
     plan = trip.place(start=840, end=900, pin="tide")
-    assert client.patch(f"/api/plans/{plan.id}", json={"starts_at": at(1, 900).isoformat()}, headers=KAI).status_code == 403
+    assert client.patch(f"/api/plans/{plan.id}", json={"start_min": at(1, 900)}, headers=KAI).status_code == 403
     assert client.delete(f"/api/plans/{plan.id}", headers=KAI).status_code == 403
     assert client.post(f"/api/plans/{plan.id}/lock", headers=KAI).status_code == 403
 
 
 def test_companion_keeps_publishes_and_discards_drafts(client, trip, companion):
     body = {
-        "starts_at": at(2, 600).isoformat(),
-        "ends_at": at(2, 660).isoformat(),
+        "start_min": at(2, 600),
+        "end_min": at(2, 660),
         "status": "draft",
         "items": [{"pin_id": trip.pins["vase"].id}],
     }
@@ -460,7 +460,7 @@ def test_owner_changes_a_role_and_votes_are_cleared_on_demotion(client, trip, db
     trip.place(start=840, end=900, pin="tide")
     res = client.post(
         f"/api/trips/{trip.id}/contests",
-        json={"starts_at": at(1, 780).isoformat(), "ends_at": at(1, 1080).isoformat(), "items": [{"pin_id": trip.pins["vase"].id}]},
+        json={"start_min": at(1, 780), "end_min": at(1, 1080), "items": [{"pin_id": trip.pins["vase"].id}]},
         headers=JAE,
     )
     contest_id = res.json()["id"]

@@ -19,7 +19,7 @@ from ..schemas import (
     TravelItemOut,
 )
 from ..splits import audience, join_names, resolve_branch, traveler_rows
-from ..tripclock import as_trip_time, minutes_between
+from ..tripdays import MINUTES_PER_DAY
 
 router = APIRouter(prefix="/api", tags=["plans"])
 
@@ -35,9 +35,7 @@ def visible_plans_condition(viewer: Contributor | None) -> ColumnElement[bool]:
 
 
 def _plan_item_to_schema(plan: Plan, item: PlanItem, roster: set[int]) -> PlanItemOut:
-    start_minute_of_day = (
-        plan.starts_at.hour * 60 + plan.starts_at.minute + item_start_minutes(plan, item)
-    ) % 1440
+    start_minute_of_day = (plan.start_min + item_start_minutes(plan, item)) % MINUTES_PER_DAY
     sharers, each, total = item_money(plan, item, roster)
     # Same visibility rule as the pin or travel item itself (a companion
     # sees the price only on what they added).
@@ -68,8 +66,8 @@ def plan_schema_kwargs(plan: Plan) -> dict:
     return dict(
         id=plan.id,
         trip_id=plan.trip_id,
-        starts_at=plan.starts_at,
-        ends_at=plan.ends_at,
+        start_min=plan.start_min,
+        end_min=plan.end_min,
         label=plan.label,
         color=plan.color,
         status=plan.status.value,
@@ -88,7 +86,7 @@ def plan_to_schema(plan: Plan) -> PlanOut:
     return PlanOut(**plan_schema_kwargs(plan))
 
 
-def _overlapping(trip_id: int, starts_at, ends_at, branch_id: int | None, statuses):
+def _overlapping(trip_id: int, start_min, end_min, branch_id: int | None, statuses):
     """Plans sharing a minute with these hours, for the same group. Any
     shared minute counts; a plan ending exactly when another starts does
     not conflict (see spec "Direct placement"). Same group is the whole of
@@ -96,8 +94,8 @@ def _overlapping(trip_id: int, starts_at, ends_at, branch_id: int | None, status
     return select(Plan).where(
         Plan.trip_id == trip_id,
         Plan.status.in_(statuses),
-        Plan.starts_at < ends_at,
-        Plan.ends_at > starts_at,
+        Plan.start_min < end_min,
+        Plan.end_min > start_min,
         Plan.branch_id.is_(None) if branch_id is None else Plan.branch_id == branch_id,
     )
 
@@ -105,23 +103,23 @@ def _overlapping(trip_id: int, starts_at, ends_at, branch_id: int | None, status
 def find_overlapping_plan(
     db: Session,
     trip_id: int,
-    starts_at,
-    ends_at,
+    start_min,
+    end_min,
     *,
     branch_id: int | None,
     exclude_plan_id: int | None = None,
 ) -> Plan | None:
     """The first plan already holding any of these hours for this group
     (None: everyone)."""
-    stmt = _overlapping(trip_id, starts_at, ends_at, branch_id, OCCUPYING_STATUSES)
+    stmt = _overlapping(trip_id, start_min, end_min, branch_id, OCCUPYING_STATUSES)
     if exclude_plan_id is not None:
         stmt = stmt.where(Plan.id != exclude_plan_id)
-    return db.scalars(stmt.order_by(Plan.starts_at, Plan.id)).first()
+    return db.scalars(stmt.order_by(Plan.start_min, Plan.id)).first()
 
 
-def find_overlapping_plans(db: Session, trip_id: int, starts_at, ends_at, statuses, *, branch_id: int | None) -> list[Plan]:
+def find_overlapping_plans(db: Session, trip_id: int, start_min, end_min, statuses, *, branch_id: int | None) -> list[Plan]:
     """Every plan in those hours for this group with one of `statuses`."""
-    return list(db.scalars(_overlapping(trip_id, starts_at, ends_at, branch_id, statuses).order_by(Plan.starts_at, Plan.id)).all())
+    return list(db.scalars(_overlapping(trip_id, start_min, end_min, branch_id, statuses).order_by(Plan.start_min, Plan.id)).all())
 
 
 def occupied_detail(occupying: Plan, db: Session) -> dict:
@@ -248,19 +246,19 @@ def validate_stop_layout(db: Session, trip_id: int, items: list[PlanItemCreate],
         previous_title = title
 
 
-def ensure_forward_window(starts_at, ends_at) -> None:
-    if as_trip_time(ends_at) <= as_trip_time(starts_at):
+def ensure_forward_window(start_min, end_min) -> None:
+    if end_min <= start_min:
         raise HTTPException(status_code=400, detail="A block has to end after it starts")
 
 
-def validate_placement(db: Session, trip_id: int, starts_at, ends_at, items: list[PlanItemCreate]) -> None:
+def validate_placement(db: Session, trip_id: int, start_min, end_min, items: list[PlanItemCreate]) -> None:
     """What any stored block has to satisfy: hours that run forwards, each
     stop at most once, and every stop on this trip.
 
     Direct placement stops here. A plan placed straight onto the calendar
     is sized by its hours, not by its pin (a 70-minute pin dropped into an
     hour is an hour), so it has no stop layout to check."""
-    ensure_forward_window(starts_at, ends_at)
+    ensure_forward_window(start_min, end_min)
     ensure_unique_stops(items)
     for item in items:
         source = stop_source(db, trip_id, item)
@@ -273,12 +271,12 @@ def validate_placement(db: Session, trip_id: int, starts_at, ends_at, items: lis
             )
 
 
-def validate_block(db: Session, trip_id: int, starts_at, ends_at, items: list[PlanItemCreate]) -> None:
+def validate_block(db: Session, trip_id: int, start_min, end_min, items: list[PlanItemCreate]) -> None:
     """validate_placement, plus a stop layout that fits the hours — for
     every path that builds a set of stops with times of their own (a fresh
     proposal, a published draft, an edited set)."""
-    validate_placement(db, trip_id, starts_at, ends_at, items)
-    validate_stop_layout(db, trip_id, items, minutes_between(ends_at, starts_at))
+    validate_placement(db, trip_id, start_min, end_min, items)
+    validate_stop_layout(db, trip_id, items, end_min - start_min)
 
 
 @router.get("/trips/{trip_id}/plans", response_model=list[PlanOut])
@@ -320,22 +318,22 @@ def create_plan(
         # A draft is the start of a proposal (plans:propose); putting
         # something straight onto the calendar is plans:write.
         access.ensure(PLANS_WRITE, "Propose a block instead — you can't place things on the calendar directly")
-    validate_placement(db, trip_id, payload.starts_at, payload.ends_at, payload.items)
+    validate_placement(db, trip_id, payload.start_min, payload.end_min, payload.items)
     # Checked for drafts too: a draft for the wrong hours of a group would
     # only fail later, when it's published.
-    branch = resolve_branch(db, trip_id, payload.branch_id, payload.starts_at, payload.ends_at)
+    branch = resolve_branch(db, trip_id, payload.branch_id, payload.start_min, payload.end_min)
     branch_id = branch.id if branch else None
     if not is_draft:
         # A draft skips this entirely: it claims no time, so there is
         # nothing for it to conflict with (feature spec §6.4).
-        occupying = find_overlapping_plan(db, trip_id, payload.starts_at, payload.ends_at, branch_id=branch_id)
+        occupying = find_overlapping_plan(db, trip_id, payload.start_min, payload.end_min, branch_id=branch_id)
         if occupying is not None:
             raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
     plan = Plan(
         trip_id=trip_id,
-        starts_at=payload.starts_at,
-        ends_at=payload.ends_at,
+        start_min=payload.start_min,
+        end_min=payload.end_min,
         label=payload.label,
         rationale=payload.rationale,
         branch_id=branch_id,
@@ -367,8 +365,8 @@ def move_plan(
     if plan.status not in (PlanStatus.placed, PlanStatus.pencilled):
         raise HTTPException(status_code=409, detail="Only a placed or pencilled plan can be moved")
 
-    new_starts = payload.starts_at if payload.starts_at is not None else plan.starts_at
-    new_ends = payload.ends_at if payload.ends_at is not None else plan.ends_at
+    new_starts = payload.start_min if payload.start_min is not None else plan.start_min
+    new_ends = payload.end_min if payload.end_min is not None else plan.end_min
     ensure_forward_window(new_starts, new_ends)
     # A group's plan stays inside its split; a plan for everyone stays out
     # of every split (app/splits.py).
@@ -377,8 +375,8 @@ def move_plan(
     if occupying is not None:
         raise HTTPException(status_code=409, detail=occupied_detail(occupying, db))
 
-    plan.starts_at = new_starts
-    plan.ends_at = new_ends
+    plan.start_min = new_starts
+    plan.end_min = new_ends
     db.commit()
     db.refresh(plan)
     bus.publish(plan.trip_id, "plan.moved", {"plan_id": plan.id})

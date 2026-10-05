@@ -14,6 +14,7 @@ deliberate free time. See docs/features/candidate-sets-and-times-spec.md.
 from app.models import Contest, PlanStatus, Vote
 
 from conftest import as_user, at
+from app.tripdays import clock
 
 
 def reload(db):
@@ -33,8 +34,8 @@ def propose(client, trip, *, day=1, start, end, items, user="jae", label="", rat
     return client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(day, start).isoformat(),
-            "ends_at": at(day, end).isoformat(),
+            "start_min": at(day, start),
+            "end_min": at(day, end),
             "label": label,
             "rationale": rationale,
             "items": items,
@@ -95,7 +96,7 @@ def test_every_option_spans_the_same_window(client, trip):
     body = propose(client, trip, start=780, end=1080, items=[stop(trip, "trail")], user="ana").json()
 
     assert body["id"] == contest_id
-    assert {(p["starts_at"], p["ends_at"]) for p in body["plans"]} == {(body["starts_at"], body["ends_at"])}
+    assert {(p["start_min"], p["end_min"]) for p in body["plans"]} == {(body["start_min"], body["end_min"])}
 
 
 # --- times on a brand new proposal -----------------------------------------
@@ -141,8 +142,8 @@ def test_a_draft_keeps_its_free_time_through_publishing(client, trip):
     draft = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "status": "draft",
             "items": [stop(trip, "vase", offset=0), stop(trip, "trail", offset=180)],
         },
@@ -166,7 +167,7 @@ def test_editing_moves_the_stops_without_moving_the_window(client, trip):
 
     after = option(res.json(), "A")
     assert starts(after) == [780, 960]
-    assert (after["starts_at"], after["ends_at"]) == (mine["starts_at"], mine["ends_at"])
+    assert (after["start_min"], after["end_min"]) == (mine["start_min"], mine["end_min"])
 
 
 def test_editing_can_add_a_stop(client, trip):
@@ -349,7 +350,7 @@ def test_an_edited_set_keeps_its_shape_when_picked(client, trip, db):
     assert res.status_code == 200, res.text
 
     reload(db)
-    plans = sorted(client.get(f"/api/trips/{trip.id}/plans").json(), key=lambda p: p["starts_at"])
+    plans = sorted(client.get(f"/api/trips/{trip.id}/plans").json(), key=lambda p: p["start_min"])
     assert [p["status"] for p in plans] == ["placed", "placed"]
-    assert [p["starts_at"][11:16] for p in plans] == ["13:00", "16:00"]
+    assert [clock(p["start_min"]) for p in plans] == ["13:00", "16:00"]
     assert [len(p["items"]) for p in plans] == [1, 1]

@@ -69,8 +69,8 @@ def test_a_custom_event_used_by_another_plan_survives(client, trip, db):
     res = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(2, 600).isoformat(),
-            "ends_at": at(2, 720).isoformat(),
+            "start_min": at(2, 600),
+            "end_min": at(2, 720),
             "status": "draft",
             "items": [{"travel_item_id": ferry_id}],
         },
@@ -89,8 +89,8 @@ def test_discarding_a_draft_deletes_the_custom_events_made_in_it(client, trip):
     draft = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "status": "draft",
             "items": [{"pin_id": trip.pins["vase"].id}, {"travel_item_id": event_id}],
         },
@@ -109,8 +109,8 @@ def test_picking_forgets_the_custom_events_only_the_losing_sets_used(client, tri
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": [{"pin_id": trip.pins["vase"].id}, {"travel_item_id": event_id}],
         },
         headers=as_user("jae@example.com"),
@@ -134,8 +134,8 @@ def test_picking_the_set_with_the_custom_event_keeps_it(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": [{"travel_item_id": event_id}],
         },
         headers=as_user("jae@example.com"),
@@ -158,8 +158,8 @@ def test_dropping_a_custom_event_from_a_set_deletes_it(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": [{"pin_id": trip.pins["vase"].id}, {"travel_item_id": event_id}],
         },
         headers=as_user("jae@example.com"),

@@ -62,8 +62,8 @@ def test_a_ride_goes_straight_onto_the_calendar_between_two_plans(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(1, 600).isoformat(),
-            "ends_at": at(1, 625).isoformat(),
+            "start_min": at(1, 600),
+            "end_min": at(1, 625),
             "status": "placed",
             "items": [{"travel_item_id": ride_id}],
         },
@@ -92,7 +92,7 @@ def test_a_trip_proposal_keeps_a_stop_already_on_the_calendar_at_its_time(client
     ]
     res = client.post(
         f"/api/trips/{trip.id}/contests",
-        json={"starts_at": at(1, 570).isoformat(), "ends_at": at(1, 750).isoformat(), "label": "Vase Rock", "items": items},
+        json={"start_min": at(1, 570), "end_min": at(1, 750), "label": "Vase Rock", "items": items},
         headers=JAE,
     )
     assert res.status_code == 201, res.text
@@ -113,8 +113,8 @@ def test_rides_in_a_losing_proposal_are_forgotten(client, trip, db):
     draft = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(2, 600).isoformat(),
-            "ends_at": at(2, 675).isoformat(),
+            "start_min": at(2, 600),
+            "end_min": at(2, 675),
             "status": "draft",
             "items": [{"travel_item_id": ride_id}, {"pin_id": trip.pins["vase"].id}],
         },

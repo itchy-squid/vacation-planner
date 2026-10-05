@@ -18,7 +18,7 @@ ANA = as_user("ana@example.com")
 def move(client, contest_id, *, day=1, start, end, headers=JAE):
     return client.patch(
         f"/api/contests/{contest_id}",
-        json={"starts_at": at(day, start).isoformat(), "ends_at": at(day, end).isoformat()},
+        json={"start_min": at(day, start), "end_min": at(day, end)},
         headers=headers,
     )
 
@@ -38,17 +38,17 @@ def test_a_lone_proposal_moves_with_its_stops(client, trip, db):
     assert res.status_code == 200, res.text
 
     body = res.json()
-    assert body["starts_at"].startswith("2026-10-03T16:00")
-    assert body["ends_at"].startswith("2026-10-03T18:00")
+    assert body["start_min"] == at(1, 960)
+    assert body["end_min"] == at(1, 1080)
     (plan,) = body["plans"]
-    assert plan["starts_at"].startswith("2026-10-03T16:00")
-    assert plan["ends_at"].startswith("2026-10-03T18:00")
+    assert plan["start_min"] == at(1, 960)
+    assert plan["end_min"] == at(1, 1080)
     # Stops are measured from the window's start, so they ride along.
     assert [i["start_minute_of_day"] for i in plan["items"]] == [960, 1010]
 
     reload(db)
     stored = db.get(Contest, contest["id"])
-    assert stored.starts_at.replace(tzinfo=None) == at(1, 960).replace(tzinfo=None)
+    assert stored.start_min == at(1, 960)
     assert db.get(Plan, plan["id"]).contest_id == contest["id"]
 
 
@@ -57,7 +57,7 @@ def test_a_lone_proposal_can_move_to_another_day(client, trip):
 
     res = move(client, contest["id"], day=2, start=600, end=720)
     assert res.status_code == 200, res.text
-    assert res.json()["starts_at"].startswith("2026-10-04T10:00")
+    assert res.json()["start_min"] == at(2, 600)
 
 
 def test_the_trip_owner_can_move_someone_elses_proposal(client, trip):

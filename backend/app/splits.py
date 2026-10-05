@@ -27,7 +27,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from typing import NoReturn
 
 from fastapi import HTTPException
@@ -45,7 +44,7 @@ from .models import (
     SplitBranch,
     Traveler,
 )
-from .tripclock import as_trip_time
+from .tripdays import clock
 
 
 # ---- who ----------------------------------------------------------------
@@ -86,27 +85,23 @@ def branch_name(db: Session, branch: SplitBranch) -> str:
     return branch.label or names(db, branch.traveler_ids or ())
 
 
-def _clock(value: datetime) -> str:
-    return as_trip_time(value).strftime("%H:%M")
-
-
 def _hours(split: Split) -> str:
-    return f"{_clock(split.starts_at)}–{_clock(split.ends_at)}"
+    return f"{clock(split.start_min)}–{clock(split.end_min)}"
 
 
 # ---- where a plan may go ------------------------------------------------
 
 
-def split_overlapping(db: Session, trip_id: int, starts_at: datetime, ends_at: datetime, exclude_split_id: int | None = None) -> Split | None:
+def split_overlapping(db: Session, trip_id: int, start_min: int, end_min: int, exclude_split_id: int | None = None) -> Split | None:
     """A split sharing any minute with these hours. Touching edges don't
     count, the same as for plans."""
-    stmt = select(Split).where(Split.trip_id == trip_id, Split.starts_at < ends_at, Split.ends_at > starts_at)
+    stmt = select(Split).where(Split.trip_id == trip_id, Split.start_min < end_min, Split.end_min > start_min)
     if exclude_split_id is not None:
         stmt = stmt.where(Split.id != exclude_split_id)
-    return db.scalars(stmt.order_by(Split.starts_at)).first()
+    return db.scalars(stmt.order_by(Split.start_min)).first()
 
 
-def resolve_branch(db: Session, trip_id: int, branch_id: int | None, starts_at: datetime, ends_at: datetime) -> SplitBranch | None:
+def resolve_branch(db: Session, trip_id: int, branch_id: int | None, start_min: int, end_min: int) -> SplitBranch | None:
     """The branch a plan or proposal over these hours would be in, checked.
 
     Rule 2 above, for anything about to claim time: a plan for a group has
@@ -114,7 +109,7 @@ def resolve_branch(db: Session, trip_id: int, branch_id: int | None, starts_at: 
     clear of every split. Both refusals are 409s carrying `split_id`, so a
     client can point at the split rather than just say no."""
     if branch_id is None:
-        split = split_overlapping(db, trip_id, starts_at, ends_at)
+        split = split_overlapping(db, trip_id, start_min, end_min)
         if split is not None:
             raise HTTPException(
                 status_code=409,
@@ -129,7 +124,7 @@ def resolve_branch(db: Session, trip_id: int, branch_id: int | None, starts_at: 
     if branch is None or branch.split.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="That group isn't part of this trip")
     split = branch.split
-    if as_trip_time(starts_at) < as_trip_time(split.starts_at) or as_trip_time(ends_at) > as_trip_time(split.ends_at):
+    if start_min < split.start_min or end_min > split.end_min:
         raise HTTPException(
             status_code=409,
             detail={
@@ -177,8 +172,8 @@ def create_split(
     db: Session,
     trip_id: int,
     *,
-    starts_at: datetime,
-    ends_at: datetime,
+    start_min: int,
+    end_min: int,
     branches: Sequence[BranchSpec],
     keep_plans_with: int = 0,
     created_by_id: int | None = None,
@@ -191,13 +186,13 @@ def create_split(
     partly inside the hours, a vote in progress, or a pinned plan (the
     owner pinned it for everyone; handing it to one group is theirs to
     decide by reopening it first)."""
-    if as_trip_time(ends_at) <= as_trip_time(starts_at):
+    if end_min <= start_min:
         raise HTTPException(status_code=400, detail="A split has to end after it starts.")
     _validate_specs(db, trip_id, branches)
     if not 0 <= keep_plans_with < len(branches):
         raise HTTPException(status_code=400, detail="keep_plans_with has to name one of the groups.")
 
-    clash = split_overlapping(db, trip_id, starts_at, ends_at)
+    clash = split_overlapping(db, trip_id, start_min, end_min)
     if clash is not None:
         raise HTTPException(
             status_code=409,
@@ -209,16 +204,16 @@ def create_split(
             Plan.trip_id == trip_id,
             Plan.branch_id.is_(None),
             Plan.status.in_(OCCUPYING_STATUSES),
-            Plan.starts_at < ends_at,
-            Plan.ends_at > starts_at,
+            Plan.start_min < end_min,
+            Plan.end_min > start_min,
         )
     ).all()
     for plan in inside:
-        if as_trip_time(plan.starts_at) < as_trip_time(starts_at) or as_trip_time(plan.ends_at) > as_trip_time(ends_at):
+        if plan.start_min < start_min or plan.end_min > end_min:
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "message": f"{plan.title} runs {_clock(plan.starts_at)}–{_clock(plan.ends_at)}, past the hours being split. Split around it, or move it first.",
+                    "message": f"{plan.title} runs {clock(plan.start_min)}–{clock(plan.end_min)}, past the hours being split. Split around it, or move it first.",
                     "plan_id": plan.id,
                 },
             )
@@ -230,7 +225,7 @@ def create_split(
                 detail=f"{plan.title} is pinned. The trip owner has to reopen it before the group splits over it.",
             )
 
-    split = Split(trip_id=trip_id, starts_at=starts_at, ends_at=ends_at, created_by_id=created_by_id)
+    split = Split(trip_id=trip_id, start_min=start_min, end_min=end_min, created_by_id=created_by_id)
     db.add(split)
     rows = [_new_branch(split, spec, position) for position, spec in enumerate(branches)]
     db.flush()
@@ -290,7 +285,7 @@ def reshape_split(db: Session, split: Split, branches: Sequence[BranchSpec]) -> 
     return split
 
 
-def retime_split(db: Session, split: Split, starts_at: datetime, ends_at: datetime) -> Split:
+def retime_split(db: Session, split: Split, start_min: int, end_min: int) -> Split:
     """Change a split's hours — its edge dragged on the calendar.
 
     Nothing changes hands, unlike splitting: rules 1 and 2 have to hold
@@ -301,11 +296,11 @@ def retime_split(db: Session, split: Split, starts_at: datetime, ends_at: dateti
     votes too.) Each refusal is a 409 naming what's in the way, with its
     `plan_id` or `split_id`: the fix is to move that thing first, and a
     person needs to know which thing it is."""
-    start, end = as_trip_time(starts_at), as_trip_time(ends_at)
+    start, end = start_min, end_min
     if end <= start:
         raise HTTPException(status_code=400, detail="A split has to end after it starts.")
 
-    clash = split_overlapping(db, split.trip_id, starts_at, ends_at, exclude_split_id=split.id)
+    clash = split_overlapping(db, split.trip_id, start_min, end_min, exclude_split_id=split.id)
     if clash is not None:
         raise HTTPException(
             status_code=409,
@@ -314,7 +309,7 @@ def retime_split(db: Session, split: Split, starts_at: datetime, ends_at: dateti
 
     for branch in split.branches:
         for plan in _plans_in(db, branch):
-            if as_trip_time(plan.starts_at) < start or as_trip_time(plan.ends_at) > end:
+            if plan.start_min < start or plan.end_min > end:
                 _refuse_retime(plan, f"for {branch_name(db, branch)}", "outside those hours")
 
     for_everyone = db.scalars(
@@ -323,16 +318,16 @@ def retime_split(db: Session, split: Split, starts_at: datetime, ends_at: dateti
             Plan.trip_id == split.trip_id,
             Plan.branch_id.is_(None),
             Plan.status.in_(OCCUPYING_STATUSES),
-            Plan.starts_at < ends_at,
-            Plan.ends_at > starts_at,
+            Plan.start_min < end_min,
+            Plan.end_min > start_min,
         )
-        .order_by(Plan.starts_at)
+        .order_by(Plan.start_min)
     ).first()
     if for_everyone is not None:
         _refuse_retime(for_everyone, "for everyone", "inside those hours")
 
-    split.starts_at = starts_at
-    split.ends_at = ends_at
+    split.start_min = start_min
+    split.end_min = end_min
     db.flush()
     return split
 
@@ -340,7 +335,7 @@ def retime_split(db: Session, split: Split, starts_at: datetime, ends_at: dateti
 def _refuse_retime(plan: Plan, whose: str, where: str) -> NoReturn:
     """The 409 for a split's new hours that would leave `plan` on the
     wrong side of its edge."""
-    hours = f"{_clock(plan.starts_at)}–{_clock(plan.ends_at)}"
+    hours = f"{clock(plan.start_min)}–{clock(plan.end_min)}"
     if plan.status == PlanStatus.contested:
         message = f"There's a vote in progress {whose} from {hours}, {where}. Settle it first."
     else:

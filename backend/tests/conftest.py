@@ -5,7 +5,7 @@ the app really uses. That's a deliberate trade: the behaviour under test
 here is the *scheduling* logic — what a window claims, what gets captured,
 who can see a draft — none of which touches a Postgres-specific feature.
 The one place the two dialects genuinely differ (the planstatus ENUM, and
-whether contests.starts_at can be tightened to NOT NULL in place) is
+whether a column can be tightened to NOT NULL in place) is
 handled in the migration and exercised by backend-ci.yml's own
 `alembic upgrade head` run.
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date
 
 _DB_FD, _DB_PATH = tempfile.mkstemp(suffix=".sqlite3")
 os.close(_DB_FD)
@@ -47,17 +47,14 @@ from app.models import (  # noqa: E402
     Vote,
 )
 
-# Day 1 of the fixture trip. Plan timestamps are tagged UTC purely as a
-# bookkeeping convention for trip-local wall-clock time, exactly as
-# app/seed.py does — never read them as real UTC instants.
-TRIP_DAY_ONE = datetime(2026, 10, 3, tzinfo=timezone.utc)
+# Day 1 of the fixture trip.
+TRIP_DAY_ONE = date(2026, 10, 3)
 
 
-def at(day_index: int, minute_of_day: int) -> datetime:
+def at(day_index: int, minute_of_day: int) -> int:
     """A wall-clock moment on day `day_index` (1-based) of the fixture
-    trip."""
-    hour, minute = divmod(minute_of_day, 60)
-    return TRIP_DAY_ONE + timedelta(days=day_index - 1, hours=hour, minutes=minute)
+    trip, as a trip minute (app/tripdays.py)."""
+    return (day_index - 1) * 1440 + minute_of_day
 
 
 @pytest.fixture(autouse=True)
@@ -129,8 +126,8 @@ class TripFixture:
         group of a split (see `split` below)."""
         plan = Plan(
             trip_id=self.id,
-            starts_at=at(day, start),
-            ends_at=at(day, end),
+            start_min=at(day, start),
+            end_min=at(day, end),
             status=status,
             branch_id=branch.id if branch else None,
             created_by_id=self.contributors[created_by].id if created_by else None,
@@ -170,7 +167,7 @@ class TripFixture:
         """The group split up over these hours, straight into the database:
         one branch per tuple of traveler keys, in order. Returns the
         branches, so a test can say `gorge, lake = trip.split(...)`."""
-        split = Split(trip_id=self.id, starts_at=at(day, start), ends_at=at(day, end))
+        split = Split(trip_id=self.id, start_min=at(day, start), end_min=at(day, end))
         for position, keys in enumerate(groups):
             split.branches.append(
                 SplitBranch(
@@ -194,7 +191,7 @@ class TripFixture:
 
 @pytest.fixture
 def trip(db) -> TripFixture:
-    row = Trip(name="Taiwan", region_line="Xiaoliuqiu", start_date=TRIP_DAY_ONE.date())
+    row = Trip(name="Taiwan", region_line="Xiaoliuqiu", start_date=TRIP_DAY_ONE)
     db.add(row)
     db.flush()
 

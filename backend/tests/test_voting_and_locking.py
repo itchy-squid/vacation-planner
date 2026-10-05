@@ -6,6 +6,7 @@ See docs/features/proposals-and-expenses-feature-spec.md §6.3 and §11.
 from app.models import Contest, Plan, PlanStatus, Vote
 
 from conftest import as_user, at
+from app.tripdays import clock
 
 
 def open_contest(client, trip):
@@ -15,8 +16,8 @@ def open_contest(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": [{"pin_id": trip.pins["vase"].id}],
         },
         headers=as_user("jae@example.com"),
@@ -85,7 +86,7 @@ def test_picking_puts_each_stop_on_the_calendar_and_clears_the_contest(client, t
     assert res.status_code == 200, res.text
     placed = res.json()["placed_plans"]
     assert [p["status"] for p in placed] == ["placed", "placed"]
-    assert [(p["starts_at"][11:16], p["ends_at"][11:16]) for p in placed] == [("13:00", "13:50"), ("15:00", "15:45")]
+    assert [(clock(p["start_min"]), clock(p["end_min"])) for p in placed] == [("13:00", "13:50"), ("15:00", "15:45")]
     # Not locked, and not part of any contest any more.
     assert all(p["contest_id"] is None for p in placed)
 
@@ -107,7 +108,7 @@ def test_picking_the_board_puts_its_stops_back(client, trip, db):
     )
     assert res.status_code == 200, res.text
     placed = res.json()["placed_plans"]
-    assert [(p["starts_at"][11:16], p["ends_at"][11:16]) for p in placed] == [("14:00", "15:10")]
+    assert [(clock(p["start_min"]), clock(p["end_min"])) for p in placed] == [("14:00", "15:10")]
     assert placed[0]["items"][0]["pin"]["id"] == trip.pins["tide"].id
 
 
@@ -131,7 +132,7 @@ def test_a_placed_stop_can_be_moved_after_picking(client, trip):
 
     res = client.patch(
         f"/api/plans/{placed[0]['id']}",
-        json={"starts_at": at(1, 600).isoformat(), "ends_at": at(1, 650).isoformat()},
+        json={"start_min": at(1, 600), "end_min": at(1, 650)},
         headers=as_user("jae@example.com"),
     )
     assert res.status_code == 200, res.text
@@ -167,8 +168,8 @@ def test_a_409_on_placement_names_the_open_contest(client, trip):
     res = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(1, 900).isoformat(),
-            "ends_at": at(1, 960).isoformat(),
+            "start_min": at(1, 900),
+            "end_min": at(1, 960),
             "status": "placed",
             "items": [{"pin_id": trip.pins["ice"].id}],
         },

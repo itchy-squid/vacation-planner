@@ -10,6 +10,7 @@ from ..db import get_db
 from ..models import Contributor, Traveler, Trip, TripInvite
 from ..permissions import TRIP_MANAGE, TRIP_READ, Access, Role, require, scopes_for
 from ..schemas import PersonOut, TripCreate, TripInviteeIn, TripOut, TripOwnerOut, TripUpdate
+from ..tripdays import day_count, has_calendar, move_calendar, start_moved_by
 from .people import people_for
 from .travelers import add_traveler
 
@@ -47,6 +48,9 @@ def trip_out(db: Session, trip: Trip, member: Contributor) -> TripOut:
         region_line=trip.region_line,
         start_date=trip.start_date,
         end_date=trip.end_date,
+        length_days=trip.length_days,
+        rough_month=trip.rough_month,
+        day_count=day_count(trip),
         phase=trip.phase.value,
         traveler_count=db.scalar(select(func.count()).select_from(Traveler).where(Traveler.trip_id == trip.id)) or 0,
         created_at=trip.created_at,
@@ -94,6 +98,9 @@ def create_trip(
         start_date=payload.start_date,
         end_date=payload.end_date,
     )
+    if payload.start_date is None:
+        trip.length_days = payload.length_days
+        trip.rough_month = payload.rough_month
     db.add(trip)
     db.flush()
 
@@ -212,15 +219,43 @@ def update_trip(
     access: Access = Depends(require(TRIP_MANAGE)),
     db: Session = Depends(get_db),
 ):
-    """Trip settings (name, regions, dates) — owner only. Who's going is
+    """Trip settings (name, regions, when) — owner only. Who's going is
     the traveler roster (routers/travelers.py). See
     the frontend's pages/TripSettings.jsx. Same immediate-edit,
-    exclude_unset pattern as update_pin in app/routers/pins.py."""
+    exclude_unset pattern as update_pin in app/routers/pins.py.
+
+    A trip has dates, or a length (and maybe a month) for planning before
+    the dates are known: setting a start date drops the length, and a
+    length is only kept on a trip without one. When the start moves from
+    one date to another with anything on the calendar, `move` says
+    whether the plan moves with it (app/tripdays.py)."""
     trip = db.get(Trip, trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    move = fields.pop("move", None)
+    old_start = trip.start_date
+    for field, value in fields.items():
         setattr(trip, field, value)
+    if trip.end_date is not None and trip.start_date is not None and trip.end_date < trip.start_date:
+        raise HTTPException(status_code=422, detail="The trip can't end before it starts")
+    if trip.start_date is not None:
+        trip.length_days = None
+        trip.rough_month = None
+
+    moved = start_moved_by(old_start, trip.start_date)
+    if moved and move is None and has_calendar(db, trip_id):
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "move_required",
+                "message": "Say whether the plan moves with the new dates or stays on the dates it's on.",
+                "days": moved,
+            },
+        )
+    if move == "keep_dates":
+        move_calendar(db, trip_id, moved)
     db.commit()
     db.refresh(trip)
     return trip_out(db, trip, access.member)

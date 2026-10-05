@@ -4,7 +4,6 @@ See docs/features/proposals-and-expenses-feature-spec.md §6.2.
 """
 
 from app.models import Contest, ContestStatus, Plan, PlanStatus
-from app.tripclock import same_moment
 
 from conftest import as_user, at
 
@@ -20,8 +19,8 @@ def propose(client, trip, *, day=1, start, end, stops, user="jae", label="", rat
     return client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(day, start).isoformat(),
-            "ends_at": at(day, end).isoformat(),
+            "start_min": at(day, start),
+            "end_min": at(day, end),
             "label": label,
             "rationale": rationale,
             "items": [
@@ -42,8 +41,8 @@ def test_window_over_nothing_opens_a_single_option_contest(client, trip, db):
     body = res.json()
     assert len(body["plans"]) == 1
     assert body["plans"][0]["set_letter"] == "A"
-    assert body["starts_at"].startswith("2026-10-03T13:00")
-    assert body["ends_at"].startswith("2026-10-03T18:00")
+    assert body["start_min"] == at(1, 780)
+    assert body["end_min"] == at(1, 1080)
 
 
 def test_window_over_one_plan_captures_it(client, trip, db):
@@ -64,8 +63,8 @@ def test_window_over_one_plan_captures_it(client, trip, db):
     # The captured plan is gone, replaced by an option spanning the window.
     reload(db)
     assert db.get(Plan, existing_id) is None
-    assert incumbent["starts_at"].startswith("2026-10-03T13:00")
-    assert incumbent["ends_at"].startswith("2026-10-03T18:00")
+    assert incumbent["start_min"] == at(1, 780)
+    assert incumbent["end_min"] == at(1, 1080)
 
 
 def test_capture_preserves_each_stops_clock_time(client, trip, db):
@@ -141,8 +140,8 @@ def test_partial_overlap_of_an_open_contest_is_refused(client, trip):
     assert detail["contest_id"] == contest_id
     # The hours already out for a vote are named, so step 2 can say which
     # part of the drag is the problem.
-    assert detail["starts_at"].startswith("2026-10-03T13:00")
-    assert detail["ends_at"].startswith("2026-10-03T18:00")
+    assert detail["start_min"] == at(1, 780)
+    assert detail["end_min"] == at(1, 1080)
 
 
 def test_a_locked_plan_is_never_captured(client, trip, db):
@@ -207,8 +206,5 @@ def test_contest_opens_with_its_window_set(client, trip, db):
     reload(db)
     contest = db.query(Contest).one()
     assert contest.status == ContestStatus.open
-    # same_moment, not ==: SQLite hands tz-aware columns back naive (see
-    # app/tripclock.py), which is exactly the mismatch that helper exists
-    # to absorb.
-    assert same_moment(contest.starts_at, at(1, 780))
-    assert same_moment(contest.ends_at, at(1, 1080))
+    assert contest.start_min == at(1, 780)
+    assert contest.end_min == at(1, 1080)

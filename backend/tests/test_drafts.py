@@ -14,8 +14,8 @@ def make_draft(client, trip, *, day=1, start=780, end=1080, stops=("vase",), use
     return client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(day, start).isoformat(),
-            "ends_at": at(day, end).isoformat(),
+            "start_min": at(day, start),
+            "end_min": at(day, end),
             "status": "draft",
             "label": label,
             "items": [{"pin_id": trip.pins[key].id} for key in stops],
@@ -53,8 +53,8 @@ def test_a_draft_occupies_no_time(client, trip):
     placed = client.post(
         f"/api/trips/{trip.id}/plans",
         json={
-            "starts_at": at(1, 840).isoformat(),
-            "ends_at": at(1, 900).isoformat(),
+            "start_min": at(1, 840),
+            "end_min": at(1, 900),
             "status": "placed",
             "items": [{"pin_id": trip.pins["tide"].id}],
         },
@@ -71,8 +71,8 @@ def test_a_draft_is_not_captured_by_someone_elses_proposal(client, trip, db):
     res = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 780).isoformat(),
-            "ends_at": at(1, 1080).isoformat(),
+            "start_min": at(1, 780),
+            "end_min": at(1, 1080),
             "items": [{"pin_id": trip.pins["trail"].id}],
         },
         headers=as_user("ana@example.com"),
@@ -118,8 +118,8 @@ def test_publishing_into_hours_that_went_to_a_vote_409s(client, trip):
     taken = client.post(
         f"/api/trips/{trip.id}/contests",
         json={
-            "starts_at": at(1, 900).isoformat(),
-            "ends_at": at(1, 1200).isoformat(),
+            "start_min": at(1, 900),
+            "end_min": at(1, 1200),
             "items": [{"pin_id": trip.pins["trail"].id}],
         },
         headers=as_user("ana@example.com"),

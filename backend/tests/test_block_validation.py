@@ -17,7 +17,7 @@ from conftest import TRIP_DAY_ONE, as_user, at
 @pytest.fixture
 def other_trip(db):
     """Somebody else's trip that no one in `trip` is on."""
-    row = Trip(name="Kyoto", region_line="Higashiyama", start_date=TRIP_DAY_ONE.date())
+    row = Trip(name="Kyoto", region_line="Higashiyama", start_date=TRIP_DAY_ONE)
     db.add(row)
     db.flush()
     db.add(Contributor(trip_id=row.id, email="zoe@example.com", display_name="Zoe", initial="Z", is_owner=True))
@@ -32,7 +32,7 @@ def other_trip(db):
 
 
 def block(*, start=780, end=900, items, status=None, day=1):
-    body = {"starts_at": at(day, start).isoformat(), "ends_at": at(day, end).isoformat(), "items": items}
+    body = {"start_min": at(day, start), "end_min": at(day, end), "items": items}
     if status:
         body["status"] = status
     return body
@@ -131,7 +131,7 @@ def test_moving_a_plan_so_it_ends_before_it_starts_is_refused(client, trip):
     plan = trip.place(start=780, end=840, pin="vase")
     res = client.patch(
         f"/api/plans/{plan.id}",
-        json={"starts_at": at(1, 900).isoformat()},
+        json={"start_min": at(1, 900)},
         headers=as_user("mei@example.com"),
     )
     assert res.status_code == 400, res.text
