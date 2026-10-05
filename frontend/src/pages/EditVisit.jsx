@@ -4,7 +4,6 @@ import PhotoPlaceholder from "../components/core/PhotoPlaceholder";
 import PhotoPicker from "../components/photos/PhotoPicker";
 import { TextArea, textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
-import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import CostField from "../components/forms/CostField";
 import CostDays from "../components/forms/CostDays";
 import KindField from "../components/forms/KindField";
@@ -15,7 +14,6 @@ import PinHearts from "../components/planner/PinHearts";
 import { useGuardedNavigate, useNavGuard } from "../state/NavGuard";
 import { api } from "../lib/api";
 import { fmtMin } from "../data/derive";
-import { getTripDays } from "../data/trip";
 import { dayIndexAndBandForPlan, tripMinute } from "../lib/planTime";
 import { externalHref } from "../lib/externalHref";
 import { isMapsConfigured } from "../lib/googleMaps";
@@ -28,7 +26,7 @@ import { googleMapsPlaceUrl, otherTripRegion } from "../lib/places";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 
-// Screen 6 — "change one stop's details, and see when it can happen."
+// Screen 6 — "change one stop's details."
 // Handoff README screen 6. "Where this pin is currently placed" is a plain
 // scan over state.plans (any day, any status) via lib/planTime.js
 // dayIndexAndBandForPlan — see docs/features/scheduling-feature-spec.md.
@@ -40,13 +38,11 @@ import Button from "../components/core/Button";
 // navigate back — with Cancel in particular a lie, since there was nothing
 // left to cancel by the time it was tapped. Now:
 //
-//   • every field and every availability-grid tap edits `draft` /
-//     `overrideEdits` only, so nothing leaves the browser until Save;
-//   • Save writes the changed pin fields (one PATCH), then one toggle call
-//     per availability cell that actually differs from what's stored (the
-//     endpoint is a toggle, not a set — see PlannerContext's
-//     TOGGLE_OVERRIDE), then resizes this pin's calendar slot if its
-//     duration changed, and only navigates away once all of that lands;
+//   • every field edits `draft` only, so nothing leaves the browser until
+//     Save;
+//   • Save writes the changed pin fields (one PATCH), then resizes this
+//     pin's calendar slot if its duration changed, and only navigates away
+//     once all of that lands;
 //   • Cancel discards, and — like the ⌂ button and the bottom tab bar,
 //     which route through the same guard (state/NavGuard.jsx) — asks first
 //     when there's something to lose.
@@ -132,10 +128,6 @@ export default function EditVisit() {
   // a field nobody has typed in tracks the stored value rather than a copy
   // taken at mount.
   const [draft, setDraft] = useState(null);
-  // key ("<pinId>|<day>-<band>") -> { day, band, overridden }: what this
-  // session's taps want each cell to be, whether or not that differs from
-  // what's stored. commitOverrides below sends only the ones that differ.
-  const [overrideEdits, setOverrideEdits] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [durationSyncNote, setDurationSyncNote] = useState("");
@@ -184,7 +176,6 @@ export default function EditVisit() {
   // rather than carry the last pin's half-typed draft onto this one.
   useEffect(() => {
     setDraft(null);
-    setOverrideEdits({});
     setSaving(false);
     setSaveError("");
     setDurationSyncNote("");
@@ -217,25 +208,7 @@ export default function EditVisit() {
     return changed;
   }, [form, baseline]);
 
-  // Cells whose drafted state differs from what the server holds — one
-  // toggle call each on Save, and nothing at all for a cell that was
-  // tapped twice back to where it started.
-  const pendingOverrides = useMemo(
-    () => Object.entries(overrideEdits).filter(([key, edit]) => edit.overridden !== Boolean(state.overrides[key])),
-    [overrideEdits, state.overrides]
-  );
-
-  // What the grid should draw: stored overrides with this session's taps
-  // laid over the top.
-  const overrideView = useMemo(() => {
-    const merged = { ...state.overrides };
-    Object.entries(overrideEdits).forEach(([key, edit]) => {
-      merged[key] = edit.overridden;
-    });
-    return merged;
-  }, [state.overrides, overrideEdits]);
-
-  const dirty = Object.keys(changedFields).length > 0 || pendingOverrides.length > 0;
+  const dirty = Object.keys(changedFields).length > 0;
 
   // Arms the confirmation in state/NavGuard.jsx for every in-app way off
   // this screen: Cancel and the ‹ back affordance below, the ⌂ home button,
@@ -303,12 +276,6 @@ export default function EditVisit() {
     );
   }
 
-  const rule = pin.availabilityRule;
-  // Real trip dates (pages/TripSettings.jsx), same source
-  // pages/DaySchedule.jsx already derives its day strip from, so the
-  // "when this one can happen" grid tracks the trip's actual length and
-  // start date instead of always showing a fixed calendar.
-  const tripDays = getTripDays(state.trip);
   // The same days by number, which is how Where we'll be and a per-day
   // price's first and last day are kept.
   const dayNumbers = tripDayNumbers(state.trip);
@@ -316,30 +283,14 @@ export default function EditVisit() {
   const who = state.contributors.find((c) => c.id === pin.who);
 
   // Whichever Plan currently carries this pin, if any — a pin can only be
-  // in one active plan at a time. Drives both the "placed" dot on the
-  // availability grid and the contested-plan footnote below.
+  // in one active plan at a time. Drives the contested-plan footnote below.
   const placingPlan = state.plans.find((p) => p.items.some((it) => it.pinId === pinId));
-  // Availability is keyed by day of the trip, the same as a plan's
-  // dayIndex, so a placement lights up its own cell.
+  // Which day it sits on, for the duration sync and where Cancel returns to.
   const placedDayIndexAndBand = placingPlan ? dayIndexAndBandForPlan(placingPlan) : null;
-  const placedDayBand = placedDayIndexAndBand ? `${placedDayIndexAndBand.dayIndex}-${placedDayIndexAndBand.band}` : null;
-  // A locked plan's cell should read as "placed" on the grid below even
-  // when it doesn't currently "work" per the rule/overrides — see
-  // components/planner/AvailabilityGrid.jsx's placedLocked prop for why.
-  const placedIsLocked = placingPlan?.status === "locked";
 
   function setField(key, value) {
     setSaveError("");
     setDraft((current) => ({ ...(current ?? baseline), [key]: value }));
-  }
-
-  function toggleOverride(day, band) {
-    const key = `${pinId}|${day}-${band}`;
-    setSaveError("");
-    setOverrideEdits((current) => {
-      const currentValue = key in current ? current[key].overridden : Boolean(state.overrides[key]);
-      return { ...current, [key]: { day, band, overridden: !currentValue } };
-    });
   }
 
   // Somewhere to stay is usually paid by the night, so becoming one starts
@@ -382,14 +333,6 @@ export default function EditVisit() {
   // throwing away a draft and leaves silently when there's nothing to lose.
   function handleCancel() {
     guardedNavigate(destination());
-  }
-
-  async function commitOverrides() {
-    for (const [, edit] of pendingOverrides) {
-      const result = await dispatch({ type: "TOGGLE_OVERRIDE", pinId, day: edit.day, band: edit.band });
-      if (!result?.ok) return false;
-    }
-    return true;
   }
 
   // Duration is the same field on both screens (see
@@ -500,15 +443,6 @@ export default function EditVisit() {
       }
     }
 
-    if (!(await commitOverrides())) {
-      setSaving(false);
-      // The pin fields (if any) did land, and committed toggles stay
-      // committed; what's left in overrideEdits is still drafted, so
-      // tapping Save again retries exactly the cells that didn't make it.
-      setSaveError("Saved the details, but couldn't update every availability square — try again.");
-      return;
-    }
-
     // Last, because it's the only step that can fail without anything being
     // wrong with the edit itself: the pin's new duration is saved either
     // way, and only its calendar slot is left at the old length.
@@ -517,7 +451,6 @@ export default function EditVisit() {
     // Committed — drop back to reading straight from the pin, so the form
     // shows what the server actually stored.
     setDraft(null);
-    setOverrideEdits({});
     setSaving(false);
 
     if (!calendarMatches) {
@@ -703,32 +636,18 @@ export default function EditVisit() {
           {/* Map card (place name/coords + "Move pin") removed for now —
               see EditVisit.jsx history to restore. */}
 
-          {/* When it can happen and how long it takes are about time on the
-              plan, which a stay never takes. */}
+          {/* How long it takes is about time on the plan, which a stay
+              never takes. */}
           {isStay ? null : (
-            <>
-              <div style={{ background: "var(--surface-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", padding: "12px 13px 13px" }}>
-                <AvailabilityGrid
-                  pinId={pinId}
-                  rule={rule.days ? rule : null}
-                  overrides={overrideView}
-                  placedDayBand={placedDayBand}
-                  placedLocked={placedIsLocked}
-                  days={tripDays}
-                  onToggle={canEdit ? toggleOverride : undefined}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: 10 }}>
-                <Stepper
-                  label="Duration"
-                  valueLabel={fmtMin(form.dur)}
-                  onDown={() => changeDuration(form.dur - 15)}
-                  onUp={() => changeDuration(form.dur + 15)}
-                  disabled={!canEdit}
-                />
-              </div>
-            </>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Stepper
+                label="Duration"
+                valueLabel={fmtMin(form.dur)}
+                onDown={() => changeDuration(form.dur - 15)}
+                onUp={() => changeDuration(form.dur + 15)}
+                disabled={!canEdit}
+              />
+            </div>
           )}
 
           {/* Per person by default — what one traveler pays — or one price

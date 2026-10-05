@@ -22,8 +22,7 @@ const DOW_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 // trip>, n: <day-of-month>, dow: <"MON" etc>, month: <"Oct" etc>, weekday:
 // <0=Sun..6=Sat> }. `day` is how everything on the calendar is keyed
 // (backend app/tripdays.py); the rest says which real date it falls on.
-// `weekday` is what components/planner/AvailabilityGrid.jsx uses to lay
-// real trip days into Sunday-starting calendar-week rows.
+// `weekday` is 0=Sun..6=Sat.
 //
 // From Trip.start_date/end_date ("YYYY-MM-DD" strings — see lib/format.js
 // parseISODate for why these are parsed without going through

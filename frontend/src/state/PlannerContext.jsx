@@ -344,12 +344,6 @@ function apiMessage(err) {
   return err.message;
 }
 
-function phaseProgress(phase) {
-  if (phase === "locked") return 1;
-  if (phase === "scheduling") return 0.55;
-  return 0.15;
-}
-
 // Fetches everything one trip's screens need (contributors, pins, plans,
 // travel items) and shapes the "also planning" summaries for every other
 // trip, exactly as the mount-time load used to inline. Shared by the
@@ -427,8 +421,7 @@ async function loadTripView(tripId, trips) {
         name: t.name,
         meta: `${p.length} pin${p.length === 1 ? "" : "s"} · ${access.memberCount} planning`,
         ownership: ownershipLine(access),
-        progress: phaseProgress(t.phase),
-        phase: t.phase,
+        coverPhotoUrl: t.cover_photo_url ?? null,
       };
     })
   );
@@ -439,8 +432,7 @@ async function loadTripView(tripId, trips) {
   // the regions of pins that have made it onto the calendar (referenced
   // by any Plan, regardless of status — see the Plan data model, "one
   // scheduled placement"), and only fall back to every pinned region when
-  // nothing has been scheduled yet (e.g. a brand-new trip still in
-  // ideation). Order follows each pin's position in pinsList so the line
+  // nothing has been scheduled yet (e.g. a brand-new trip). Order follows each pin's position in pinsList so the line
   // reads in a stable, sensible order rather than Set-insertion order.
   const distinctRegionsInOrder = (pinsSubset) => {
     const seen = new Set();
@@ -482,7 +474,9 @@ async function loadTripView(tripId, trips) {
     regionLine: trip.region_line,
     locationsLine,
     ...tripWhen(trip),
-    phase: trip.phase,
+    // Picked by the server from the trip's stays and longer activities
+    // (backend app/routers/trips.py cover_photo_url).
+    coverPhotoUrl: trip.cover_photo_url ?? null,
     contributorCount: contributors.length,
     // How many travelers are listed — the people going, which is not how
     // many are planning (state.travelers has who they are).
@@ -1304,8 +1298,7 @@ export function PlannerProvider({ children }) {
               name: trip.name,
               meta: "0 pins · 1 planning",
               ownership: "Your trip",
-              progress: phaseProgress(trip.phase),
-              phase: trip.phase,
+              coverPhotoUrl: null,
             },
           });
           return trip;
@@ -1334,7 +1327,7 @@ export function PlannerProvider({ children }) {
               name: updated.name,
               regionLine: updated.region_line,
               ...tripWhen(updated),
-              phase: updated.phase,
+              coverPhotoUrl: updated.cover_photo_url ?? null,
             },
           });
           return updated;
