@@ -1,4 +1,5 @@
 import secrets
+from typing import TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -13,6 +14,8 @@ from .people import people_for
 from .travelers import add_traveler
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
+
+InviteeT = TypeVar("InviteeT", bound=TripInviteeIn)
 
 
 def owner_of(db: Session, trip_id: int) -> Contributor | None:
@@ -83,7 +86,7 @@ def create_trip(
 ):
     # Checked before anything is written, so a refused invitee leaves no
     # half-made trip behind.
-    invitees = _invitees(db, principal, payload.invitees)
+    invitees = known_invitees(db, principal.email, payload.invitees)
 
     trip = Trip(
         name=payload.name,
@@ -107,35 +110,37 @@ def create_trip(
     db.add(owner)
     db.flush()
     # ...and, until they say otherwise, the first traveler on it.
-    db.add(
-        Traveler(
-            trip_id=trip.id,
-            name=owner.display_name,
-            initial=owner.initial,
-            tint=owner.tint or "var(--who-1)",
-            contributor_id=owner.id,
-            position=0,
-        )
+    owner_traveler = Traveler(
+        trip_id=trip.id,
+        name=owner.display_name,
+        initial=owner.initial,
+        tint=owner.tint or "var(--who-1)",
+        contributor_id=owner.id,
+        position=0,
     )
+    db.add(owner_traveler)
     db.flush()
 
     # "Who's planning with you?": an invite each, waiting on their Trips
     # screen. Someone coming is listed as a traveler now, so the roster
     # and cost splits include them from the start; accepting claims that
     # row (sharing._claim_traveler) and declining removes it.
+    going: dict[str, Traveler] = {principal.email: owner_traveler}
     for person, invitee in invitees:
         traveler = add_traveler(db, trip.id, person.display_name) if invitee.traveling else None
-        db.add(
-            TripInvite(
-                trip_id=trip.id,
-                token=secrets.token_urlsafe(18),
-                role=invitee.role,
-                created_by_id=owner.id,
-                traveler_id=traveler.id if traveler else None,
-                invitee_email=person.email,
-                invitee_name=person.display_name,
-            )
-        )
+        send_direct_invite(db, trip.id, owner.id, person, invitee.role, traveler)
+        if traveler is not None:
+            going[person.email] = traveler
+
+    # Travelers without an account, often from past trips (GET
+    # /api/people/travelers). Nobody is invited; they're listed, paid for
+    # by whoever was picked if that person is going too.
+    for listed in payload.listed:
+        if not listed.name.strip():
+            continue
+        traveler = add_traveler(db, trip.id, listed.name)
+        payer = owner_traveler if listed.paid_by_me else going.get((listed.paid_by_email or "").strip())
+        traveler.paid_by_id = payer.id if payer is not None else None
 
     db.commit()
     db.refresh(trip)
@@ -143,21 +148,46 @@ def create_trip(
     return trip_out(db, trip, owner)
 
 
-def _invitees(
-    db: Session, principal: Principal, requested: list[TripInviteeIn]
-) -> list[tuple[PersonOut, TripInviteeIn]]:
-    """The people a new trip invites, each matched to someone the creator
+def send_direct_invite(
+    db: Session,
+    trip_id: int,
+    sender_id: int,
+    person: PersonOut,
+    role: str,
+    traveler: Traveler | None,
+    keeps_traveler: bool = False,
+) -> TripInvite:
+    """An invite for one person the sender has planned with, waiting on
+    their Trips screen. With `traveler`, joining makes them that traveler;
+    `keeps_traveler` says the traveler was listed before the invite, so
+    declining leaves them on the roster (sharing.withdraw_direct_invite)."""
+    invite = TripInvite(
+        trip_id=trip_id,
+        token=secrets.token_urlsafe(18),
+        role=role,
+        created_by_id=sender_id,
+        traveler_id=traveler.id if traveler else None,
+        invitee_email=person.email,
+        invitee_name=person.display_name,
+        keeps_traveler=keeps_traveler,
+    )
+    db.add(invite)
+    return invite
+
+
+def known_invitees(db: Session, sender_email: str, requested: list[InviteeT]) -> list[tuple[PersonOut, InviteeT]]:
+    """The people an invite goes to, each matched to someone the sender
     has planned with (routers/people.py). Anyone else is refused: a direct
     invite lands on that person's own Trips screen, so it's only for
     people who already know you here. Everyone else gets a link from Trip
-    settings. Repeats, and the creator themselves, are dropped."""
+    settings. Repeats, and the sender themselves, are dropped."""
     if not requested:
         return []
-    known = {person.email: person for person in people_for(db, principal.email)}
-    chosen: dict[str, tuple[PersonOut, TripInviteeIn]] = {}
+    known = {person.email: person for person in people_for(db, sender_email)}
+    chosen: dict[str, tuple[PersonOut, InviteeT]] = {}
     for invitee in requested:
         email = invitee.email.strip()
-        if email == principal.email or email in chosen:
+        if email == sender_email or email in chosen:
             continue
         person = known.get(email)
         if person is None:

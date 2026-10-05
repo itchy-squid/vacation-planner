@@ -7,16 +7,22 @@ import { GRANTABLE_ROLES } from "./roles.js";
 // The trips behind the people list, each with everyone you shared it
 // with: the "Everyone from a trip" chips on the new-trip form and the
 // filter chips on People. Most recent first, in the order the people
-// list already gives each person's trips.
-export function tripGroups(people) {
+// list already gives each person's trips. Past travelers without an
+// account (GET /api/people/travelers), when given, are counted in their
+// trips too, by `key`.
+export function tripGroups(people, pastTravelers = []) {
   const groups = new Map();
-  for (const person of people) {
-    for (const trip of person.trips) {
-      if (!groups.has(trip.id)) {
-        groups.set(trip.id, { id: trip.id, name: trip.name, startDate: trip.start_date, emails: [] });
-      }
-      groups.get(trip.id).emails.push(person.email);
+  const groupFor = (trip) => {
+    if (!groups.has(trip.id)) {
+      groups.set(trip.id, { id: trip.id, name: trip.name, startDate: trip.start_date, emails: [], travelerKeys: [] });
     }
+    return groups.get(trip.id);
+  };
+  for (const person of people) {
+    for (const trip of person.trips) groupFor(trip).emails.push(person.email);
+  }
+  for (const traveler of pastTravelers) {
+    for (const trip of traveler.trips) groupFor(trip).travelerKeys.push(traveler.key);
   }
   return [...groups.values()].sort((a, b) => {
     // Undated trips sort as oldest; ids break ties so the order is stable.
@@ -49,4 +55,35 @@ export function suggestedRole(person) {
 
 export function firstName(person) {
   return person.display_name.trim().split(/\s+/)[0] || person.display_name;
+}
+
+// Who a listed traveler on a new trip is paid for by, given who's going:
+// "me", someone invited and coming (their email), or null for their own
+// way. A payer who isn't coming hands the bill to you, the trip's
+// creator, rather than leaving someone who was paid for paying alone.
+export function resolvePayer(paidBy, chosen) {
+  if (paidBy == null || paidBy === "me") return paidBy ?? null;
+  return chosen[paidBy]?.traveling ? paidBy : "me";
+}
+
+// The payer a past traveler starts with: whoever paid last time.
+export function lastPayer(traveler) {
+  if (traveler.paid_by_you) return "me";
+  return traveler.paid_by_email ?? null;
+}
+
+// Listed travelers a person invited to an existing trip could swap in
+// for: on the roster, not on the app, and not already kept for another
+// invite. `taken` is the traveler ids already spoken for.
+export function openSpots(travelers, taken = new Set()) {
+  return travelers.filter((t) => t.contributorId == null && !taken.has(t.id));
+}
+
+// The listed traveler someone is most likely already down as: the one
+// open spot with their first name, when there's exactly one. "Jonah"
+// matches Jonah Reyes; two Jonahs, or none, match nobody.
+export function sameNameSpot(person, spots) {
+  const first = firstName(person).toLowerCase();
+  const matches = spots.filter((t) => (t.name.trim().split(/\s+/)[0] || "").toLowerCase() === first);
+  return matches.length === 1 ? matches[0] : null;
 }

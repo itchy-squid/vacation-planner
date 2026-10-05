@@ -111,12 +111,49 @@ class TripInviteeIn(BaseModel):
     traveling: bool = True
 
 
+class ListedTravelerIn(BaseModel):
+    """Someone going on a new trip without an account, usually picked
+    from past trips (GET /api/people/travelers). Who pays for them: the
+    creator (`paid_by_me`), or someone invited and coming
+    (`paid_by_email`); anyone else, or neither, means they pay their own
+    way."""
+
+    name: str = Field(min_length=1, max_length=120)
+    paid_by_me: bool = False
+    paid_by_email: str | None = Field(default=None, max_length=320)
+
+
 class TripCreate(BaseModel):
     name: str
     region_line: str = ""
     start_date: date | None = None
     end_date: date | None = None
     invitees: list[TripInviteeIn] = Field(default_factory=list, max_length=50)
+    listed: list[ListedTravelerIn] = Field(default_factory=list, max_length=50)
+
+
+class DirectInviteIn(TripInviteeIn):
+    """One person invited to a trip that already exists. `traveler_id`
+    swaps them in for a traveler who's already listed and not on the app;
+    without it, `traveling` lists them as a new traveler or not."""
+
+    traveler_id: int | None = None
+
+
+class DirectInvitesCreate(BaseModel):
+    invitees: list[DirectInviteIn] = Field(min_length=1, max_length=50)
+
+
+class SentInviteOut(BaseModel):
+    """A direct invite waiting on a trip — GET/POST
+    /api/trips/{id}/direct-invites."""
+
+    id: int
+    email: str
+    name: str | None
+    role: Literal["planner", "companion", "reader"]
+    traveler_id: int | None
+    created_at: datetime
 
 
 class TripOut(BaseModel):
@@ -242,6 +279,31 @@ class PersonOut(BaseModel):
     last_role: Literal["owner", "planner", "companion", "reader"]
     # Most recent first.
     trips: list[PersonTripOut]
+
+
+class PastTravelerTripOut(BaseModel):
+    id: int
+    name: str
+    start_date: date | None
+
+
+class PastTravelerOut(BaseModel):
+    """Someone who went on a trip with you without an account — GET
+    /api/people/travelers. There's no record of them beyond each trip's
+    roster, so one is matched across trips by name and by whoever paid
+    for them; `key` is that pair."""
+
+    key: str
+    name: str
+    initial: str
+    tint: str
+    # Who paid for them on the latest of those trips, when that was
+    # someone with an account (you, or one of your people).
+    paid_by_email: str | None
+    paid_by_name: str | None
+    paid_by_you: bool = False
+    # Most recent first.
+    trips: list[PastTravelerTripOut]
 
 
 class DirectInviteOut(BaseModel):
