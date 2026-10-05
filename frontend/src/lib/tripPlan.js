@@ -324,7 +324,8 @@ export function tripMoney(trip, fares, memberIds) {
   let totalCents = 0;
   trip.stops.forEach((s) => {
     if (s.role !== "new" || s.repeat || !s.inBlock) return;
-    const price = s.pin.costCents ?? 0;
+    // Paid by the day: counted over its days, not per stop (lib/dailyCosts.js).
+    const price = s.pin.costPer === "day" ? 0 : s.pin.costCents ?? 0;
     totalCents += (s.pin.costBasis ?? "per_head") === "group" ? price : price * headcount;
   });
   let unknownFares = 0;

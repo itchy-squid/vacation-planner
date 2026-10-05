@@ -311,6 +311,26 @@ class InvitePreviewOut(BaseModel):
 # everyone sharing it. See app/derive.py item_money.
 CostBasis = Literal["per_head", "group"]
 
+# How often it's paid: once, or per 24 hours — n days from first to last
+# is (n - 1) days' worth (models.py Pin.cost_per).
+CostPer = Literal["once", "day"]
+
+# Something to do (takes time on the Plan tab), or somewhere to sleep
+# (models.py Pin.kind).
+PinKind = Literal["activity", "stay"]
+
+
+def _check_cost_days(pin: BaseModel, fields_set: set[str] | None = None) -> None:
+    """The days a per-day price covers are both given or neither (on an
+    update, both sent or neither; both null clears them), and run
+    forwards."""
+    if fields_set is not None and ("cost_start_date" in fields_set) != ("cost_end_date" in fields_set):
+        raise ValueError("cost_start_date and cost_end_date must be given together")
+    if (pin.cost_start_date is None) != (pin.cost_end_date is None):
+        raise ValueError("cost_start_date and cost_end_date must be given together")
+    if pin.cost_start_date is not None and pin.cost_end_date < pin.cost_start_date:
+        raise ValueError("The last day can't be before the first")
+
 
 class AvailabilityRuleIn(BaseModel):
     days: list[int] = Field(default_factory=list)
@@ -355,9 +375,13 @@ class PinCreate(BaseModel):
     lat: Latitude | None = None
     lng: Longitude | None = None
     google_place_id: GooglePlaceId | None = None
+    kind: PinKind = "activity"
     duration_minutes: int = 60
     cost_cents: int = 0
     cost_basis: CostBasis = "per_head"
+    cost_per: CostPer = "once"
+    cost_start_date: date | None = None
+    cost_end_date: date | None = None
     notes: str = ""
     link: WebLink = ""
     tags: list[str] = Field(default_factory=list)
@@ -373,15 +397,21 @@ class PinCreate(BaseModel):
     @model_validator(mode="after")
     def _location_is_all_or_nothing(self) -> "PinCreate":
         _check_location(self)
+        _check_cost_days(self)
         return self
 
 
 class PinUpdate(BaseModel):
     title: str | None = None
     region: str | None = None
+    kind: PinKind | None = None
     duration_minutes: int | None = None
     cost_cents: int | None = None
     cost_basis: CostBasis | None = None
+    cost_per: CostPer | None = None
+    # Send together; both null clears them.
+    cost_start_date: date | None = None
+    cost_end_date: date | None = None
     notes: str | None = None
     link: WebLink | None = None
     tags: list[str] | None = None
@@ -399,6 +429,7 @@ class PinUpdate(BaseModel):
     @model_validator(mode="after")
     def _location_is_all_or_nothing(self) -> "PinUpdate":
         _check_location(self, self.model_fields_set)
+        _check_cost_days(self, self.model_fields_set)
         return self
 
 
@@ -496,10 +527,14 @@ class PinOut(BaseModel):
     lng: float | None
     google_place_id: str | None = None
     google_review_dismissed: bool = False
+    kind: str = "activity"
     duration_minutes: int
     # None when the caller can't see costs (costs:read).
     cost_cents: int | None
     cost_basis: str = "per_head"
+    cost_per: str = "once"
+    cost_start_date: date | None = None
+    cost_end_date: date | None = None
     notes: str
     link: str
     tags: list[str]

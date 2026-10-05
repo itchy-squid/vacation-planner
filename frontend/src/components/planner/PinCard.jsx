@@ -63,7 +63,10 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
           <span className="mono-data-sm" style={{ letterSpacing: 0 }}>
-            {pin.cost ? `$${pin.cost}${pin.costBasis === "group" ? "" : " each"} · ` : ""}{fmtDur(pin.dur)}
+            {/* A stay takes no time on the plan, so it says what it is
+                instead of how long it lasts. */}
+            {pin.cost ? `$${pin.cost}${pin.costPer === "day" ? "/day" : ""}${pin.costBasis === "group" ? "" : " each"} · ` : ""}
+            {pin.kind === "stay" ? "Stay" : fmtDur(pin.dur)}
           </span>
           <span
             style={{

@@ -1,0 +1,792 @@
+<title>Stays, Daily Prices and Idea Types</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/solid.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/fontawesome.min.js"></script>
+<style>
+  /* Layout: a review sheet. Each feature is a band of phone screens drawn in the
+     app's own tokens, followed by the decisions it needs. Page chrome follows the
+     viewer's theme; the phones stay in the app's light palette, as the app does. */
+  :root {
+    /* page chrome */
+    --pg-bg: #e9e7ec; --pg-fg: #1b1a1f; --pg-muted: #5d5b66; --pg-line: rgba(27,26,31,.14);
+    --pg-panel: #f6f5f7; --pg-accent: #8f4478; --pg-tag: rgba(143,68,120,.10);
+    /* app tokens (frontend/src/styles/tokens) — light only, like the app */
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-inset: #f9f8fa; --surface-sunken: #eceaee;
+    --surface-inverse: #1b1a1f; --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95;
+    --text-faint: #a3a1ab; --accent: #8f4478; --accent-quiet: rgba(143,68,120,.06); --accent-quiet-strong: rgba(143,68,120,.13);
+    --geo: #3d8a9c; --geo-quiet: #eef2f3; --warn: #b4553f; --stone-250: #dcdae0; --stone-700: #4a4852;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --on-ink: #ffffff; --on-ink-muted: rgba(255,255,255,.6); --scrim: rgba(27,26,31,.42);
+    --map-land: #eceef0; --map-water: #aecfd8; --map-road: #ffffff;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(27,26,31,.06), 0 2px 8px rgba(27,26,31,.05);
+    --shadow-raised: 0 1px 3px rgba(27,26,31,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+      --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+    --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); font: 400 14px/1.55 var(--font-sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; }
+  h1 { font: 400 34px/1.15 var(--font-serif); margin: 0 0 10px; text-wrap: balance; }
+  .lede { max-width: 68ch; color: var(--pg-muted); margin: 0; }
+  .eyebrow { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pg-accent); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { font: 600 12.5px var(--font-sans); color: var(--pg-fg); text-decoration: none; padding: 6px 12px; border: 1px solid var(--pg-line); border-radius: 999px; }
+  .toc a:hover, .toc a:focus-visible { border-color: var(--pg-accent); outline: none; }
+
+  section.feature { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--pg-line); }
+  section.feature > h2 { font: 400 27px/1.2 var(--font-serif); margin: 6px 0 8px; text-wrap: balance; }
+  .ask { max-width: 70ch; color: var(--pg-muted); margin: 0 0 14px; }
+  .today { max-width: 76ch; background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 24px; }
+  .today b { font-weight: 600; }
+  .today code, .decide code { font: 400 12px var(--font-mono); background: var(--pg-tag); padding: 1px 5px; border-radius: 4px; }
+
+  .screens { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+  .screen-col { width: 340px; max-width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .screen-col h3 { font: 600 13.5px/1.3 var(--font-sans); margin: 0; }
+  .screen-col .note { font-size: 12.5px; color: var(--pg-muted); margin: 0; line-height: 1.5; }
+
+  .decide { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .decide > div { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .decide h4 { font: 600 13px var(--font-sans); margin: 0 0 8px; }
+  .decide ol, .decide ul { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+  .rec { display: inline-block; font: 600 10px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-accent); background: var(--pg-tag); padding: 1px 6px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
+
+  /* ---------- phone (app palette only below here) ---------- */
+  .phone { background: var(--surface-page); color: var(--text-primary); border-radius: 30px; border: 1px solid var(--pg-line); box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; position: relative; font-size: 13px; }
+  .phone .bar { height: 26px; }
+  .app-head { padding: 0 16px 10px; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+  .app-head .t { font: 400 22px/1.15 var(--font-serif); }
+  .app-head .s { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .hint { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .body { padding: 0 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
+  .navstrip { display: flex; justify-content: space-around; border-top: 1px solid var(--hairline); background: var(--surface-card); padding: 9px 4px 12px; font: 600 10.5px var(--font-sans); color: var(--text-muted); }
+  .navstrip .on { color: var(--accent); }
+
+  .seg { display: flex; background: var(--surface-sunken); border-radius: var(--radius-md); padding: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: 600 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+  .seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-primary); box-shadow: var(--shadow-raised); }
+  .seg button:focus-visible, .chip:focus-visible, .tchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .input { height: 44px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); display: flex; align-items: center; padding: 0 12px; font: 600 14px var(--font-sans); gap: 8px; }
+  .input input { border: 0; background: transparent; font: inherit; color: inherit; width: 100%; min-width: 0; outline: none; }
+  .input .unit { font: 500 10.5px var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 12px; border-radius: var(--radius-pill); font: 500 12px var(--font-sans); background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip[aria-pressed="true"], .chip.on { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .chip .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .chip[aria-pressed="true"] .n, .chip.on .n { color: var(--on-ink-muted); }
+  .chip.dashed { border-style: dashed; color: var(--text-secondary); }
+  .chip svg { width: 11px !important; height: 11px; }
+
+  /* type picker tiles */
+  .types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tchip { border: 1px solid var(--border); background: var(--surface-card); border-radius: var(--radius-lg); padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 10.5px/1.15 var(--font-sans); color: var(--text-primary); cursor: pointer; text-align: center; }
+  .tchip svg { width: 15px !important; height: 15px; color: var(--text-secondary); }
+  .tchip[aria-pressed="true"] { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .tchip[aria-pressed="true"] svg { color: var(--on-ink); }
+  .tchip .flag { font: 500 8.5px var(--font-mono); letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; }
+  .tchip[aria-pressed="true"] .flag { color: var(--on-ink-muted); }
+
+  .receipt { background: var(--surface-inset); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 10px 12px; font: 400 11.5px/1.6 var(--font-mono); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .receipt b { color: var(--text-primary); font-weight: 500; }
+  .receipt .row { display: flex; justify-content: space-between; gap: 8px; }
+
+  .muted-box { border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 9px 12px; color: var(--text-muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .muted-box svg { width: 12px !important; }
+
+  /* board */
+  .filterbar { display: flex; flex-direction: column; gap: 8px; }
+  .scrollrow { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .scrollrow::-webkit-scrollbar { display: none; }
+  .scrollrow .chip { flex: none; }
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pcard { background: var(--surface-card); border-radius: var(--radius-xl); border: 1px solid var(--hairline); box-shadow: var(--shadow-card); overflow: hidden; }
+  .pcard[hidden] { display: none !important; }
+  .photo { height: 70px; background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); position: relative; }
+  .photo .badge { position: absolute; left: 7px; top: 7px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 3px 7px; font: 600 9.5px var(--font-sans); display: inline-flex; gap: 4px; align-items: center; box-shadow: var(--shadow-raised); }
+  .photo .badge.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .photo .badge svg { width: 9px !important; }
+  .pcard .in { padding: 8px 10px 10px; }
+  .pcard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .pcard .pl { font: 400 10.5px var(--font-sans); color: var(--text-secondary); margin-top: 3px; display: flex; gap: 5px; align-items: center; }
+  .pcard .pl i { width: 5px; height: 5px; border-radius: 50%; background: var(--geo); display: inline-block; }
+  .pcard .meta { margin-top: 6px; font: 500 10.5px var(--font-mono); color: var(--text-primary); display: flex; justify-content: space-between; gap: 4px; }
+  .pcard .meta span:last-child { color: var(--text-muted); }
+  .stays-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .stays-strip::-webkit-scrollbar { display: none; }
+  .staycard { flex: none; width: 190px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .staycard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .staycard .px { font: 500 11px var(--font-mono); }
+  .staycard .px small { color: var(--text-muted); font-size: 10px; }
+  .staycard .nights { font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line { display: flex; justify-content: space-between; align-items: center; font: 400 11.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line button { border: 0; background: none; color: var(--accent); font: 600 11.5px var(--font-sans); cursor: pointer; padding: 0; }
+
+  /* nights grid */
+  .nights-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .nightcell { border-radius: 8px; background: var(--surface-card); border: 1px solid var(--border); padding: 6px 0 5px; text-align: center; }
+  .nightcell .d { font: 400 9.5px var(--font-mono); color: var(--text-faint); }
+  .nightcell .n { font: 600 12px var(--font-sans); }
+  .nightcell.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .nightcell.on .d { color: var(--on-ink-muted); } .nightcell.on .n { color: var(--on-ink); }
+  .nightcell.other { background: var(--surface-sunken); border-color: transparent; }
+  .nightcell.other .n { color: var(--text-muted); }
+  .nightcell.off { border-style: dashed; }
+
+  /* plan day */
+  .band { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-lg); }
+  .band.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .band.line { background: var(--surface-card); border: 1px solid var(--border); }
+  .band .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(255,255,255,.12); }
+  .band.line .ic { background: var(--geo-quiet); color: var(--geo); }
+  .band .ic svg { width: 11px !important; }
+  .band .k { font: 500 9.5px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; opacity: .7; }
+  .band .v { font: 600 13px var(--font-sans); }
+  .band .r { margin-left: auto; font: 500 10.5px var(--font-mono); opacity: .75; text-align: right; }
+  .timeline { position: relative; padding-left: 40px; display: flex; flex-direction: column; gap: 6px; }
+  .timeline::before { content: ""; position: absolute; left: 30px; top: 2px; bottom: 2px; width: 1px; background: var(--border-strong); }
+  .tl-time { position: absolute; left: 0; font: 400 9.5px var(--font-mono); color: var(--text-muted); }
+  .block { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 8px 10px; box-shadow: var(--shadow-card); position: relative; }
+  .block .nm { font: 600 12.5px var(--font-sans); }
+  .block .sub { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .block.ride { background: transparent; box-shadow: none; border: 1px dashed var(--border-strong); padding: 5px 10px; }
+  .block.ride .nm { font: 500 11px var(--font-sans); color: var(--text-secondary); }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .metric { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 7px 9px; }
+  .metric .v { font: 400 18px/1.1 var(--font-serif); font-variant-numeric: tabular-nums; }
+  .metric .k { font: 500 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 3px; }
+  .metric.strike .v { color: var(--text-muted); }
+
+  /* expenses */
+  .exp-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--hairline); align-items: baseline; }
+  .exp-row:first-of-type { border-top: 0; }
+  .exp-row .l { min-width: 0; }
+  .exp-row .nm { font: 600 12.5px var(--font-sans); }
+  .exp-row .how { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .exp-row .amt { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .exp-row .amt small { display: block; font-size: 10px; color: var(--text-muted); }
+  .daybars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; height: 92px; }
+  .daybar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 0; }
+  .daybar i { display: block; width: 100%; }
+  .daybar .stay { background: var(--surface-inverse); border-radius: 0 0 3px 3px; }
+  .daybar .daily { background: var(--geo); }
+  .daybar .once { background: var(--accent); border-radius: 3px 3px 0 0; }
+  .daylabels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font: 400 9.5px var(--font-mono); color: var(--text-muted); text-align: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .legend span { display: inline-flex; gap: 5px; align-items: center; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  /* sheet */
+  .scrim { background: var(--scrim); padding-top: 120px; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 2px; }
+  .sheet .t { font: 400 19px var(--font-serif); }
+  .sheet-actions { display: flex; gap: 8px; }
+  .btn { flex: 1; height: 42px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 13px var(--font-sans); color: var(--text-primary); }
+  .btn.primary { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+
+  /* map */
+  .map { height: 330px; position: relative; background: var(--map-land); overflow: hidden; }
+  .map .water { position: absolute; right: -40px; top: -20px; width: 160px; height: 420px; background: var(--map-water); border-radius: 50% 0 0 50%; transform: rotate(8deg); }
+  .map .road { position: absolute; background: var(--map-road); height: 5px; border-radius: 3px; transform-origin: left center; }
+  .mk { position: absolute; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-card); border: 1.5px solid var(--surface-inverse); color: var(--text-primary); box-shadow: var(--shadow-raised); transform: translate(-50%, -50%); }
+  .mk svg { width: 11px !important; }
+  .mk.stay { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-card); width: 30px; height: 30px; }
+  .mk.start { background: var(--geo); color: var(--on-ink); border-color: var(--surface-card); }
+  .mk.faded { opacity: .25; }
+  .map-filter { position: absolute; left: 10px; right: 10px; top: 10px; }
+  .map-filter .chip { box-shadow: var(--shadow-raised); }
+  .map-count { position: absolute; left: 10px; bottom: 10px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 5px 10px; font: 500 10.5px var(--font-sans); box-shadow: var(--shadow-raised); }
+
+  .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--surface-inverse); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-card); }
+  .toggle.off { background: var(--stone-250); }
+  .toggle.off::after { right: auto; left: 2px; }
+  .list-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--hairline); }
+  .list-row:first-child { border-top: 0; }
+  .list-row .nm { font: 500 12.5px var(--font-sans); flex: 1; min-width: 0; }
+  .list-row .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border-strong); flex: none; display: grid; place-items: center; }
+  .check.on { background: var(--surface-inverse); border-color: var(--surface-inverse); color: var(--on-ink); }
+  .check svg { width: 9px !important; }
+
+  @media (max-width: 420px) {
+    .wrap { padding-inline: 16px; }
+    h1 { font-size: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Mockups · nothing built yet</div>
+  <h1>Stays, daily prices and idea types</h1>
+  <p class="lede">Three related asks for the Yucatán-style trip flow: ideas that are somewhere you sleep or set off from rather than something you do, prices that repeat each night or day, and a way to sort ideas by type so the board and map can filter on it. Screens use the app's own tokens and components. Tap the controls on the cost and board screens; they work.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#stays">1 · Stays and starting points</a>
+    <a href="#daily">2 · Price per night or day</a>
+    <a href="#types">3 · Types and tag filters</a>
+    <a href="#model">What it would change</a>
+  </nav>
+
+  <!-- ====================================================== 1 -->
+  <section class="feature" id="stays">
+    <div class="eyebrow">Feature 1</div>
+    <h2>Mark an idea as a stay or a starting point</h2>
+    <p class="ask">A stay or a starting point is still an idea. You can search for it, heart it, put it on the map, and compare it against another hotel. What changes is how it's used. It never takes up time on the Plan tab, and its cost is counted per night instead of once.</p>
+    <div class="today"><b>Today:</b> a day's <em>Staying at</em> (Where we'll be) can point at any idea that's on the map, so the hotel is mixed in with the cenotes. The only way to count a hotel's cost is to place it (or a "Lodging" custom item) in a block on the timeline, and that block takes up activity hours. There's no way to say where day 1 starts if you aren't at the hotel yet, like landing at the airport.</div>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>1a · Edit idea: what is this?</h3>
+        <p class="note">A type picker at the top of Edit Visit. Picking <b>Stay</b> swaps <em>How long</em> for check-in and check-out times and sets the price to per night. The full type list is in feature 3.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Edit idea</div><div class="t">Casa Malix</div><div class="s">PLAYA DEL CARMEN · ADDED BY SANTI</div></div></div>
+          <div class="body">
+            <div class="field">
+              <div class="cap">What is it?</div>
+              <div class="types" role="group" aria-label="Idea type">
+                <button class="tchip" type="button" aria-pressed="true"><i class="fa-solid fa-bed"></i>Stay<span class="flag">no time</span></button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-plane-arrival"></i>Start point<span class="flag">no time</span></button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-utensils"></i>Food</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-ellipsis"></i>More</button>
+              </div>
+            </div>
+            <div class="two">
+              <div class="field"><div class="cap">Check-in</div><div class="input">3:00 PM</div></div>
+              <div class="field"><div class="cap">Check-out</div><div class="input">11:00 AM</div></div>
+            </div>
+            <div class="muted-box"><i class="fa-solid fa-clock"></i>No "how long". A stay doesn't use Plan time.</div>
+            <div class="field">
+              <div class="cap">Cost</div>
+              <div class="seg"><button type="button" aria-pressed="false">Per person</button><button type="button" aria-pressed="true">For the group</button></div>
+              <div class="seg"><button type="button" aria-pressed="false">Once</button><button type="button" aria-pressed="true">Per night</button><button type="button" aria-pressed="false">Per day</button></div>
+              <div class="input">180<span class="unit" style="margin-left:auto">/ NIGHT</span></div>
+              <div class="receipt"><div class="row"><span>4 nights booked</span><b>$720</b></div><div class="row"><span>÷ 4 going</span><span>$180 each</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1b · Where we'll be: book the nights</h3>
+        <p class="note">On a stay idea, a <b>Nights</b> row picks which nights you're there in one go. That fills <em>Staying at</em> on those days, and the night count is what the price multiplies by. Nights already at another stay show grey.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div><div class="cap">Stay · Playa del Carmen</div><div class="t">Nights at Casa Malix</div></div>
+              <div class="nights-grid" aria-label="Nights">
+                <div class="nightcell on"><div class="d">THU</div><div class="n">12</div></div>
+                <div class="nightcell on"><div class="d">FRI</div><div class="n">13</div></div>
+                <div class="nightcell on"><div class="d">SAT</div><div class="n">14</div></div>
+                <div class="nightcell on"><div class="d">SUN</div><div class="n">15</div></div>
+                <div class="nightcell other"><div class="d">MON</div><div class="n">16</div></div>
+                <div class="nightcell off"><div class="d">TUE</div><div class="n">17</div></div>
+              </div>
+              <div class="hint">Mon 16 is at Hotel Bardo in Tulum. Tue 17 is the flight home, so no night.</div>
+              <div class="receipt">
+                <div class="row"><span>Check in</span><b>Thu Mar 12 · 3:00 PM</b></div>
+                <div class="row"><span>Check out</span><b>Mon Mar 16 · 11:00 AM</b></div>
+                <div class="row"><span>4 nights × $180</span><b>$720 group</b></div>
+              </div>
+              <div class="sheet-actions"><button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Save 4 nights</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1c · Plan tab: stays sit outside the day</h3>
+        <p class="note">The day opens with where you woke up (or the start point on day 1) and closes with where you sleep. Both are bands, not blocks, so the day's <em>planned / free</em> hours only count real activities.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Day 1 · Thu Mar 12</div><div class="t">Playa del Carmen</div></div></div>
+          <div class="body">
+            <div class="band line"><div class="ic"><i class="fa-solid fa-plane-arrival"></i></div><div><div class="k">Starts at</div><div class="v">Cancún airport</div></div><div class="r">LANDS<br>1:40 PM</div></div>
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">2:30</span>
+              <div class="block ride"><div class="nm"><i class="fa-solid fa-car" style="width:10px"></i> Drive 55 min · rental car</div></div>
+              <span class="tl-time" style="top:44px">3:30</span>
+              <div class="block"><div class="nm">Check in, drop bags</div><div class="sub">STAY · NOT COUNTED AS PLANNED TIME</div></div>
+              <span class="tl-time" style="top:96px">5:00</span>
+              <div class="block"><div class="nm">Playa Mamitas swim</div><div class="sub">1H 30M · FREE</div></div>
+              <span class="tl-time" style="top:148px">7:30</span>
+              <div class="block"><div class="nm">El Fogón</div><div class="sub">1H 15M · $22 EACH</div></div>
+            </div>
+            <div class="band ink"><div class="ic"><i class="fa-solid fa-bed"></i></div><div><div class="k">Sleeps at</div><div class="v">Casa Malix</div></div><div class="r">NIGHT 1<br>OF 4</div></div>
+            <div class="metrics">
+              <div class="metric"><div class="v">2h 45m</div><div class="k">Planned</div></div>
+              <div class="metric"><div class="v">3h 15m</div><div class="k">Free</div></div>
+              <div class="metric"><div class="v">$202</div><div class="k">Today each</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1d · Trip settings: where the trip starts and ends</h3>
+        <p class="note">A start point can be a whole-trip setting (where you land or set off from home) and also a per-day override for travel days. It also gives the map's trip builder a first stop before there's any hotel.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Trip settings</div><div class="t">Getting there and back</div></div></div>
+          <div class="body">
+            <div class="card" style="padding:12px 14px; display:flex; flex-direction:column; gap:10px">
+              <div class="cap">Trip starts at</div>
+              <div class="chips"><span class="chip on"><i class="fa-solid fa-plane-arrival"></i>Cancún airport</span><span class="chip">Home</span><span class="chip dashed">+ Another idea</span></div>
+              <div class="two"><div class="input" style="font-size:12.5px">Thu Mar 12</div><div class="input" style="font-size:12.5px">1:40 PM</div></div>
+            </div>
+            <div class="card" style="padding:12px 14px; display:flex; flex-direction:column; gap:10px">
+              <div class="cap">Trip ends at</div>
+              <div class="chips"><span class="chip on"><i class="fa-solid fa-plane-departure"></i>Cancún airport</span><span class="chip dashed">Same as start</span></div>
+              <div class="two"><div class="input" style="font-size:12.5px">Tue Mar 17</div><div class="input" style="font-size:12.5px">4:10 PM</div></div>
+              <div class="hint">Day 6 plans backwards from here: leave Casa Malix by 1:20 PM to make a 4:10 flight with 2 hours at the airport.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>How to mark it</h4>
+        <ol>
+          <li><b>A type on the idea</b>, with Stay and Start point as two of the types. <span class="rec">Recommend</span> One field. It doubles as the filter in feature 3, and hotels can still be hearted and compared like any other idea.</li>
+          <li><b>A "This is lodging" switch</b> on the idea, separate from tags. Smaller, but then types (feature 3) are a second, overlapping field.</li>
+          <li><b>A separate Stays list</b>, not ideas at all. Cleanest data, but you lose search, hearts and the map, and comparing two hotels needs its own screen.</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>Should the "Lodging" custom item in Plan's <em>+ Add</em> go away and become "add a stay idea"? Leaving both is confusing.</li>
+          <li>Should check-in show as a short block (1c shows it that way) or only as a time on the band?</li>
+          <li>Start point: is a trip-wide setting (1d) plus a per-day override enough, or do you also want a start point for a single plan or route?</li>
+          <li>On a split day (two groups), can each group sleep somewhere different?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 2 -->
+  <section class="feature" id="daily">
+    <div class="eyebrow">Feature 2</div>
+    <h2>Prices per night or per day</h2>
+    <p class="ask">The cost field gets a second choice next to <em>Per person / For the group</em>: how often you pay it. The count comes from the trip itself. Nights come from the stay's booked nights, and days come from the days you pick, so the total updates when the plan changes.</p>
+    <div class="today"><b>Today:</b> every idea and custom item has one price, either <code>per_head</code> or <code>group</code>, counted once each time it's placed in a plan. A $65/day rental car for 3 days has to be typed in as $195, and it's wrong if the plan changes.</div>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>2a · The cost field, working</h3>
+        <p class="note">Change who pays, how often, or the amount. The receipt underneath always shows the arithmetic, so nobody has to guess what "$65" means.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Edit idea · Getting around</div><div class="t">Rental car</div></div></div>
+          <div class="body">
+            <div class="field">
+              <div class="cap">Cost</div>
+              <div class="seg" role="group" aria-label="Who pays" id="cf-basis">
+                <button type="button" data-v="per_head" aria-pressed="false">Per person</button>
+                <button type="button" data-v="group" aria-pressed="true">For the group</button>
+              </div>
+              <div class="seg" role="group" aria-label="How often" id="cf-per">
+                <button type="button" data-v="once" aria-pressed="false">Once</button>
+                <button type="button" data-v="night" aria-pressed="false">Per night</button>
+                <button type="button" data-v="day" aria-pressed="true">Per day</button>
+              </div>
+              <label class="input" for="cf-amount">$<input id="cf-amount" type="number" min="0" step="1" value="65" inputmode="decimal"><span class="unit" id="cf-unit">GROUP / DAY</span></label>
+            </div>
+            <div class="field" id="cf-days-wrap">
+              <div class="cap" id="cf-days-cap">Which days?</div>
+              <div class="nights-grid" id="cf-days"></div>
+              <div class="hint" id="cf-days-hint">Starts with the days it's on the plan. Tap to change.</div>
+            </div>
+            <div class="receipt" id="cf-receipt" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2b · Ideas board: compare stays at a glance</h3>
+        <p class="note">Repeating prices show their unit on the card. Once nights are picked, the card also shows the total, so two hotels for the same nights compare like-for-like.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Ideas · 2 stays</div><div class="t">Where to sleep in Tulum</div></div></div>
+          <div class="body">
+            <div class="board">
+              <div class="pcard"><div class="photo"><span class="badge ink"><i class="fa-solid fa-bed"></i>Stay</span></div><div class="in"><div class="nm">Hotel Bardo</div><div class="pl"><i></i>Tulum</div><div class="meta"><span>$220/night</span><span>♥ 3</span></div><div class="meta"><span style="color:var(--text-secondary)">1 night · $220</span></div></div></div>
+              <div class="pcard"><div class="photo"><span class="badge ink"><i class="fa-solid fa-bed"></i>Stay</span></div><div class="in"><div class="nm">Casa Ajal</div><div class="pl"><i></i>Tulum</div><div class="meta"><span>$48/night each</span><span>♥ 1</span></div><div class="meta"><span style="color:var(--text-secondary)">1 night · $192</span></div></div></div>
+              <div class="pcard"><div class="photo"><span class="badge"><i class="fa-solid fa-car"></i>Getting around</span></div><div class="in"><div class="nm">Rental car</div><div class="pl"><i></i>Cancún</div><div class="meta"><span>$65/day</span><span>♥ 2</span></div><div class="meta"><span style="color:var(--text-secondary)">3 days · $195</span></div></div></div>
+              <div class="pcard"><div class="photo"><span class="badge"><i class="fa-solid fa-ticket"></i>Activity</span></div><div class="in"><div class="nm">Xcaret park</div><div class="pl"><i></i>Playa del Carmen</div><div class="meta"><span>$120 each</span><span>♥ 4</span></div></div></div>
+            </div>
+            <div class="hint">"each" means a per-person price; no suffix means for the group. The total line is always for the group.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2c · Expenses: repeating costs, by day</h3>
+        <p class="note">Stays and daily costs get their own group with the multiplication spelled out. The day chart spreads each night and day onto the date it's paid for, so a $720 hotel doesn't look like a $720 Thursday.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Expenses · what I'm paying</div><div class="t">$1,184 <span style="font-size:14px;color:var(--text-secondary)">of $4,736 trip</span></div></div></div>
+          <div class="body">
+            <div class="card" style="padding:12px 14px; display:flex; flex-direction:column; gap:10px">
+              <div class="cap">Per day, my share</div>
+              <div class="daybars" aria-hidden="true">
+                <div class="daybar"><i class="once" style="height:22%"></i><i class="daily" style="height:9%"></i><i class="stay" style="height:25%"></i></div>
+                <div class="daybar"><i class="once" style="height:40%"></i><i class="daily" style="height:9%"></i><i class="stay" style="height:25%"></i></div>
+                <div class="daybar"><i class="once" style="height:12%"></i><i class="daily" style="height:9%"></i><i class="stay" style="height:25%"></i></div>
+                <div class="daybar"><i class="once" style="height:30%"></i><i class="stay" style="height:25%"></i></div>
+                <div class="daybar"><i class="once" style="height:18%"></i><i class="stay" style="height:31%"></i></div>
+                <div class="daybar"><i class="once" style="height:8%"></i></div>
+              </div>
+              <div class="daylabels"><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span></div>
+              <div class="legend"><span><i style="background:var(--surface-inverse)"></i>Stays</span><span><i style="background:var(--geo)"></i>Daily</span><span><i style="background:var(--accent)"></i>One-time</span></div>
+            </div>
+            <div class="card" style="padding:4px 14px 6px">
+              <div class="exp-row"><div class="l"><div class="cap" style="padding-top:6px">Stays</div></div></div>
+              <div class="exp-row"><div class="l"><div class="nm">Casa Malix</div><div class="how">4 NIGHTS × $180 ÷ 4</div></div><div class="amt">$180<small>$720 group</small></div></div>
+              <div class="exp-row"><div class="l"><div class="nm">Hotel Bardo</div><div class="how">1 NIGHT × $220 ÷ 4</div></div><div class="amt">$55<small>$220 group</small></div></div>
+              <div class="exp-row"><div class="l"><div class="cap" style="padding-top:6px">Daily</div></div></div>
+              <div class="exp-row"><div class="l"><div class="nm">Rental car</div><div class="how">3 DAYS × $65 ÷ 4</div></div><div class="amt">$48.75<small>$195 group</small></div></div>
+            </div>
+          </div>
+          <div class="navstrip"><span>Ideas</span><span>Map</span><span>Plan</span><span class="on">Expenses</span><span>Itinerary</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Where the count of nights or days comes from</h4>
+        <ol>
+          <li><b>From the trip</b>: nights from the stay's booked nights (1b), days from a day picker that starts with the days it's on the plan. <span class="rec">Recommend</span> The total follows the plan and nobody types a number twice.</li>
+          <li><b>A typed count</b> ("for 3 days"). Simplest, but it drifts out of date when the plan moves.</li>
+          <li><b>Only from the plan</b>: count the days it's placed on the timeline. Doesn't work for a stay, which never goes on the timeline (feature 1), or a car you have all day.</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>Per night is really a per-day price with a different count (nights = days − 1). Is it worth two buttons, or should Stay always mean per night and everything else offer only Once / Per day?</li>
+          <li>Taxes and one-off fees on a stay (a $90 cleaning fee): a second "plus once" amount, or a separate idea?</li>
+          <li>If a per-day item is on a split day, does only that group pay for that day?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 3 -->
+  <section class="feature" id="types">
+    <div class="eyebrow">Feature 3</div>
+    <h2>Types and tags you can filter by</h2>
+    <p class="ask">Each idea gets exactly one <b>type</b>, which has an icon and drives the map marker, and any number of <b>tags</b> for everything else. The board and the map filter on both. Tags stop being a fixed list, so anyone planning can add one for the trip.</p>
+    <div class="today"><b>Today:</b> ideas have tags from a fixed list of seven (<code>outdoors</code>, <code>food</code>, <code>swim</code>, <code>hike</code>, <code>sunset</code>, <code>rainy-day</code>, <code>kid-ok</code>), but nothing filters by them. The board only filters by region, and the map shows every idea the same way.</div>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>3a · Ideas board with a working filter</h3>
+        <p class="note">Region stays as it is. A row of type chips sits under it, and a <b>Tags</b> button opens 3b. Tap a type chip to try it. Stays get their own strip at the top, since you usually compare them against each other, not against dinner.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Yucatán · Mar 12–17</div><div class="t">Ideas</div></div></div>
+          <div class="body">
+            <div class="filterbar">
+              <div class="scrollrow"><span class="chip on">All regions <span class="n">12</span></span><span class="chip">Playa <span class="n">7</span></span><span class="chip">Tulum <span class="n">4</span></span><span class="chip">Cancún <span class="n">1</span></span></div>
+              <div class="scrollrow" id="type-filter" role="group" aria-label="Filter by type"></div>
+              <div class="result-line"><span id="type-result">Showing all 12 ideas</span><button type="button" id="type-clear" hidden>Clear</button></div>
+            </div>
+            <div id="stays-wrap" style="display:flex;flex-direction:column;gap:6px">
+              <div class="cap">Stays</div>
+              <div class="stays-strip">
+                <div class="card staycard"><div class="nm">Casa Malix</div><div class="px">$180 <small>/NIGHT</small></div><div class="nights">Playa · 4 nights booked</div></div>
+                <div class="card staycard"><div class="nm">Hotel Bardo</div><div class="px">$220 <small>/NIGHT</small></div><div class="nights">Tulum · 1 night booked</div></div>
+                <div class="card staycard"><div class="nm">Casa Ajal</div><div class="px">$48 <small>/NIGHT EACH</small></div><div class="nights">Tulum · not booked</div></div>
+              </div>
+            </div>
+            <div class="board" id="board"></div>
+          </div>
+          <div class="navstrip"><span class="on">Ideas</span><span>Map</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>3b · Tag filter sheet</h3>
+        <p class="note">Tags with counts, plus a choice between "any of these" and "all of these". Planners can rename, merge or delete a trip's tags from here.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim" style="padding-top:70px">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px"><div class="t">Filter by tag</div><span class="hint" style="color:var(--accent);font-weight:600">Manage tags</span></div>
+              <div class="seg"><button type="button" aria-pressed="true">Any of these</button><button type="button" aria-pressed="false">All of these</button></div>
+              <div>
+                <div class="list-row"><span class="check on"><i class="fa-solid fa-check"></i></span><span class="nm">swim</span><span class="n">5</span></div>
+                <div class="list-row"><span class="check on"><i class="fa-solid fa-check"></i></span><span class="nm">kid-ok</span><span class="n">6</span></div>
+                <div class="list-row"><span class="check"></span><span class="nm">rainy-day</span><span class="n">2</span></div>
+                <div class="list-row"><span class="check"></span><span class="nm">sunset</span><span class="n">3</span></div>
+                <div class="list-row"><span class="check"></span><span class="nm">book ahead</span><span class="n">4</span></div>
+                <div class="list-row"><span class="check"></span><span class="nm">Dana's pick</span><span class="n">2</span></div>
+              </div>
+              <div class="sheet-actions"><button class="btn" type="button">Clear</button><button class="btn primary" type="button">Show 7 ideas</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>3c · Edit idea: one type, many tags</h3>
+        <p class="note">Type is a single pick from a short list. Tags are multi-pick, and <em>+ New tag</em> adds one to this trip's list for everybody.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Edit idea</div><div class="t">Cenote Dos Ojos</div></div></div>
+          <div class="body">
+            <div class="field">
+              <div class="cap">Type</div>
+              <div class="types" role="group" aria-label="Idea type">
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-bed"></i>Stay</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-plane-arrival"></i>Start point</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-utensils"></i>Food &amp; drink</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-landmark"></i>Sight</button>
+                <button class="tchip" type="button" aria-pressed="true"><i class="fa-solid fa-water"></i>Outdoors</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-ticket"></i>Activity</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-martini-glass"></i>Nightlife</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-car"></i>Getting around</button>
+              </div>
+            </div>
+            <div class="field">
+              <div class="cap">Tags</div>
+              <div class="chips">
+                <span class="chip on">swim</span><span class="chip on">kid-ok</span><span class="chip">sunset</span><span class="chip">rainy-day</span><span class="chip on">book ahead</span><span class="chip">hike</span><span class="chip dashed">+ New tag</span>
+              </div>
+            </div>
+            <div class="field"><div class="cap">How long</div><div class="input">2h 30m</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>3d · Map: markers by type, same filter</h3>
+        <p class="note">Each marker carries its type's icon. Stays are solid ink (the colour the trip builder already uses for lodging) and start points are teal. Filtering fades the rest instead of hiding them, so you keep your bearings.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="map">
+            <div class="water"></div>
+            <div class="road" style="left:20px;top:80px;width:280px;transform:rotate(58deg)"></div>
+            <div class="road" style="left:60px;top:200px;width:180px;transform:rotate(-8deg)"></div>
+            <div class="map-filter"><div class="scrollrow"><span class="chip">All</span><span class="chip on"><i class="fa-solid fa-water"></i>Outdoors <span class="n">4</span></span><span class="chip"><i class="fa-solid fa-utensils"></i>Food <span class="n">3</span></span><span class="chip">Tags · 2</span></div></div>
+            <div class="mk start" style="left:220px;top:76px"><i class="fa-solid fa-plane-arrival"></i></div>
+            <div class="mk stay" style="left:168px;top:168px"><i class="fa-solid fa-bed"></i></div>
+            <div class="mk" style="left:120px;top:210px"><i class="fa-solid fa-water"></i></div>
+            <div class="mk" style="left:96px;top:250px"><i class="fa-solid fa-water"></i></div>
+            <div class="mk faded" style="left:186px;top:198px"><i class="fa-solid fa-utensils"></i></div>
+            <div class="mk faded" style="left:150px;top:140px"><i class="fa-solid fa-ticket"></i></div>
+            <div class="mk faded" style="left:58px;top:150px"><i class="fa-solid fa-landmark"></i></div>
+            <div class="mk stay" style="left:70px;top:290px"><i class="fa-solid fa-bed"></i></div>
+            <div class="map-count">4 of 12 · stays and start always shown</div>
+          </div>
+          <div class="navstrip"><span>Ideas</span><span class="on">Map</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Types, tags, or both</h4>
+        <ol>
+          <li><b>One type plus free tags.</b> <span class="rec">Recommend</span> Types are few and fixed, so they can have icons and drive the map and the Stay/Start behaviour. Tags stay flexible.</li>
+          <li><b>Tags only</b>, with special tags like <code>lodging</code>. Fewer fields, but an idea can be both "lodging" and "food", and the map can't pick one icon.</li>
+          <li><b>Types you can edit per trip.</b> Most flexible, but Stay and Start point have to stay built in because the app behaves differently for them.</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>Is the 8-type list above right? Beach vs. Outdoors and Shopping are the usual arguments.</li>
+          <li>Should existing ideas get a type guessed from their tags and Google place category, or start as "Other" until someone picks?</li>
+          <li>Should the board's filter be remembered per device (like Expenses' scope) or reset each visit?</li>
+          <li>Should Plan's <em>+ Add</em> picker get the same type filter?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== model -->
+  <section class="feature" id="model">
+    <div class="eyebrow">For later</div>
+    <h2>What it would change underneath</h2>
+    <p class="ask">A sketch only, to show the size of the work. Nothing here is decided.</p>
+    <div class="decide" style="margin-top:0">
+      <div>
+        <h4>Ideas (<code>pins</code>)</h4>
+        <ul>
+          <li><code>type</code>: one of the eight types, default <code>other</code>. Stay and Start point skip <code>duration_minutes</code>.</li>
+          <li><code>cost_per</code>: <code>once</code> / <code>night</code> / <code>day</code>, next to the existing <code>cost_basis</code>. Old ideas are <code>once</code>, so no total moves.</li>
+          <li><code>check_in</code> / <code>check_out</code> times for stays. <code>cost_days</code> (dates) for per-day items.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Trip and days</h4>
+        <ul>
+          <li><code>trip_day_places.lodging_pin_id</code> already exists. Booking nights (1b) just sets it on several days at once.</li>
+          <li>New trip-level start and end point plus time (1d), and an optional per-day start override.</li>
+          <li>A per-trip tag list, so <em>+ New tag</em> is shared and tags can be renamed or merged.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Money</h4>
+        <ul>
+          <li><code>derive.py item_money</code> multiplies by nights or days before dividing by who's going. The per-head-is-a-division rule stays.</li>
+          <li>Expenses reads stays from Where we'll be, not from plans, since a stay is never placed in a block.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ---------- 2a cost field ----------
+  const DAYS = [["THU", 12], ["FRI", 13], ["SAT", 14], ["SUN", 15], ["MON", 16], ["TUE", 17]];
+  const state = { basis: "group", per: "day", amount: 65, days: new Set([13, 14, 15]), nights: new Set([12, 13, 14, 15]) };
+  const GOING = 4;
+  const money = (n) => "$" + (Math.round(n * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+
+  function bindSeg(id, key) {
+    const seg = document.getElementById(id);
+    seg.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      state[key] = b.dataset.v;
+      render();
+    });
+  }
+  bindSeg("cf-basis", "basis");
+  bindSeg("cf-per", "per");
+  document.getElementById("cf-amount").addEventListener("input", (e) => {
+    const v = parseFloat(e.target.value);
+    state.amount = isFinite(v) && v >= 0 ? v : 0;
+    render();
+  });
+  document.getElementById("cf-days").addEventListener("click", (e) => {
+    const cell = e.target.closest("[data-d]");
+    if (!cell) return;
+    const d = Number(cell.dataset.d);
+    const set = state.per === "night" ? state.nights : state.days;
+    set.has(d) ? set.delete(d) : set.add(d);
+    render();
+  });
+
+  function render() {
+    for (const [id, key] of [["cf-basis", "basis"], ["cf-per", "per"]]) {
+      document.querySelectorAll("#" + id + " button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === state[key])));
+    }
+    const per = state.per;
+    const who = state.basis === "group" ? "GROUP" : "EACH";
+    document.getElementById("cf-unit").textContent = per === "once" ? who : who + (per === "night" ? " / NIGHT" : " / DAY");
+
+    const wrap = document.getElementById("cf-days-wrap");
+    wrap.hidden = per === "once";
+    const grid = document.getElementById("cf-days");
+    const set = per === "night" ? state.nights : state.days;
+    grid.innerHTML = DAYS.map(([d, n]) => {
+      const disabled = per === "night" && n === 17;
+      return `<button type="button" class="nightcell ${set.has(n) ? "on" : ""} ${disabled ? "off" : ""}" ${disabled ? "disabled" : ""} data-d="${disabled ? "" : n}" aria-pressed="${set.has(n)}" style="cursor:${disabled ? "default" : "pointer"};font:inherit"><div class="d">${d}</div><div class="n">${n}</div></button>`;
+    }).join("");
+    document.getElementById("cf-days-cap").textContent = per === "night" ? "Which nights?" : "Which days?";
+    document.getElementById("cf-days-hint").textContent = per === "night" ? "For a stay these are its booked nights. No night on the 17th, the day you fly home." : "Starts with the days it's on the plan. Tap to change.";
+
+    const count = per === "once" ? 1 : set.size;
+    const unitWord = per === "night" ? (count === 1 ? "night" : "nights") : count === 1 ? "day" : "days";
+    const a = state.amount;
+    let rows;
+    if (state.basis === "group") {
+      const total = a * count;
+      rows = [
+        per === "once" ? ["One price for the group", money(total)] : [`${count} ${unitWord} × ${money(a)}`, money(total) + " group"],
+        [`÷ ${GOING} going`, money(total / GOING) + " each"],
+      ];
+    } else {
+      const each = a * count;
+      rows = [
+        per === "once" ? ["Each person pays", money(each)] : [`${count} ${unitWord} × ${money(a)}`, money(each) + " each"],
+        [`× ${GOING} going`, money(each * GOING) + " group"],
+      ];
+    }
+    if (per !== "once" && count === 0) rows = [["No " + unitWord + " picked yet", "$0"]];
+    document.getElementById("cf-receipt").innerHTML = rows.map(([l, r], i) => `<div class="row"><span>${l}</span>${i === 0 ? `<b>${r}</b>` : `<span>${r}</span>`}</div>`).join("");
+  }
+  render();
+
+  // ---------- 3a board filter ----------
+  const TYPES = [
+    { id: "outdoors", label: "Outdoors", icon: "fa-water" },
+    { id: "food", label: "Food & drink", icon: "fa-utensils" },
+    { id: "sight", label: "Sight", icon: "fa-landmark" },
+    { id: "activity", label: "Activity", icon: "fa-ticket" },
+    { id: "getting", label: "Getting around", icon: "fa-car" },
+    { id: "stay", label: "Stays", icon: "fa-bed" },
+  ];
+  const PINS = [
+    { t: "Cenote Dos Ojos", r: "Tulum", type: "outdoors", price: "$30 each", h: 4 },
+    { t: "El Fogón", r: "Playa", type: "food", price: "$22 each", h: 3 },
+    { t: "Coba ruins", r: "Tulum", type: "sight", price: "$15 each", h: 2 },
+    { t: "Xcaret park", r: "Playa", type: "activity", price: "$120 each", h: 4 },
+    { t: "Playa Mamitas", r: "Playa", type: "outdoors", price: "Free", h: 1 },
+    { t: "Rental car", r: "Cancún", type: "getting", price: "$65/day", h: 2 },
+    { t: "Akumal snorkel", r: "Tulum", type: "outdoors", price: "$45 each", h: 3 },
+    { t: "Chez Céline", r: "Playa", type: "food", price: "$14 each", h: 2 },
+    { t: "Quinta Avenida", r: "Playa", type: "sight", price: "Free", h: 0 },
+  ];
+  const STAY_COUNT = 3;
+  const total = PINS.length + STAY_COUNT;
+  let active = null;
+  const tf = document.getElementById("type-filter");
+  const board = document.getElementById("board");
+  const iconFor = (id) => TYPES.find((x) => x.id === id).icon;
+  const labelFor = (id) => TYPES.find((x) => x.id === id).label;
+
+  function counts(id) { return id === "stay" ? STAY_COUNT : PINS.filter((p) => p.type === id).length; }
+
+  function drawFilter() {
+    tf.innerHTML = TYPES.map((ty) => `<button type="button" class="chip" data-t="${ty.id}" aria-pressed="${active === ty.id}"><i class="fa-solid ${ty.icon}"></i>${ty.label}<span class="n">${counts(ty.id)}</span></button>`).join("") +
+      `<button type="button" class="chip dashed"><i class="fa-solid fa-tags"></i>Tags</button>`;
+  }
+  function drawBoard() {
+    board.innerHTML = PINS.map((p) => `<div class="pcard" data-type="${p.type}" ${active && active !== p.type ? "hidden" : ""}><div class="photo"><span class="badge"><i class="fa-solid ${iconFor(p.type)}"></i>${labelFor(p.type)}</span></div><div class="in"><div class="nm">${p.t}</div><div class="pl"><i></i>${p.r}</div><div class="meta"><span>${p.price}</span><span>${p.h ? "♥ " + p.h : ""}</span></div></div></div>`).join("");
+    document.getElementById("stays-wrap").hidden = !!active && active !== "stay";
+    board.hidden = active === "stay";
+    const shown = active ? counts(active) : total;
+    document.getElementById("type-result").textContent = active ? `Showing ${shown} of ${total} · ${labelFor(active)}` : `Showing all ${total} ideas`;
+    document.getElementById("type-clear").hidden = !active;
+  }
+  tf.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-t]");
+    if (!b) return;
+    active = active === b.dataset.t ? null : b.dataset.t;
+    drawFilter(); drawBoard();
+  });
+  document.getElementById("type-clear").addEventListener("click", () => { active = null; drawFilter(); drawBoard(); });
+  drawFilter(); drawBoard();
+})();
+</script>

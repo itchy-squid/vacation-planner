@@ -263,7 +263,14 @@ def validate_placement(db: Session, trip_id: int, starts_at, ends_at, items: lis
     ensure_forward_window(starts_at, ends_at)
     ensure_unique_stops(items)
     for item in items:
-        stop_source(db, trip_id, item)
+        source = stop_source(db, trip_id, item)
+        # A stay is where the group sleeps, not something it does: it's
+        # picked in "Where we'll be", and never takes up a day's hours.
+        if isinstance(source, Pin) and source.kind == "stay":
+            raise HTTPException(
+                status_code=422,
+                detail=f"{source.title} is a place to stay. Pick it in Where we'll be instead of putting it on the plan.",
+            )
 
 
 def validate_block(db: Session, trip_id: int, starts_at, ends_at, items: list[PlanItemCreate]) -> None:

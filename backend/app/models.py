@@ -297,6 +297,11 @@ class Pin(Base):
     # Google Maps from the idea itself.
     google_review_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
+    # "activity" (something to do: it takes time on the Plan tab) or
+    # "stay" (somewhere to sleep). A stay is never put on the calendar, so
+    # it never uses up a day's hours; it's picked as where the group is
+    # staying in "Where we'll be" instead (TripDayPlace.pin_id).
+    kind: Mapped[str] = mapped_column(String(16), default="activity", server_default="activity")
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     # The whole cost of visiting this pin, for everyone it's shared
     # between — never a per-person price. Per-head is a display division
@@ -309,6 +314,17 @@ class Pin(Base):
     # it, like a van or a villa. Items from before per-person prices are
     # "group", so their totals didn't move. See app/derive.py item_money.
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")
+    # How often cost_cents is paid: "once", or "day" — a price per 24
+    # hours, so having it from the first day to the last of n days costs
+    # (n - 1) days (a hotel's nights, a rental car's days). See
+    # frontend/src/lib/dailyCosts.js, which counts the days.
+    cost_per: Mapped[str] = mapped_column(String(8), default="once", server_default="once")
+    # The first and last day of something paid by the day that isn't a
+    # stay (a rental car: picked up, dropped off). Both or neither. A
+    # stay's days come from "Where we'll be" instead — the nights it's
+    # picked as where the group is staying (TripDayPlace.pin_id).
+    cost_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cost_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)

@@ -594,7 +594,8 @@ export default function DaySchedule() {
     plans
       .filter((p) => p.status !== "draft")
       .forEach((p) => p.items.forEach((it) => it.pinId && placedIds.add(it.pinId)));
-    return Object.values(pins).filter((p) => !placedIds.has(p.id));
+    // A stay is never on the calendar: it's picked in Where we'll be.
+    return Object.values(pins).filter((p) => !placedIds.has(p.id) && p.kind !== "stay");
   }, [plans, pins]);
 
   const unplacedTravelItems = useMemo(() => {

@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import TripHeader from "../components/core/TripHeader";
 import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
 import { buildExpenses, formatMoney, payerOf, travelersFor } from "../data/expenses";
 import { getTripDays } from "../data/trip";
+import { buildDailyCosts } from "../lib/dailyCosts";
+import { tripDates } from "../lib/dayPlaces";
 import { clockLabel } from "../lib/planTime";
 
 // Screen 8 — "what does the planned trip cost, and what's my part of it."
@@ -44,7 +47,7 @@ function writeScope(v) {
 
 export default function Expenses() {
   const state = usePlannerState();
-  const { trip, plans, travelers } = state;
+  const { trip, plans, travelers, pins, dayPlaces } = state;
   const me = useMyTraveler();
   const myId = me?.id ?? null;
 
@@ -63,9 +66,21 @@ export default function Expenses() {
   }
 
   const shown = useMemo(() => travelersFor(scope, travelers, myId), [scope, travelers, myId]);
+  // Stays and prices paid by the day, counted over their days rather than
+  // through the plans (lib/dailyCosts.js).
+  const dailyCosts = useMemo(
+    () =>
+      buildDailyCosts(pins, {
+        dayPlaces,
+        dates: tripDates(trip.startDate, trip.endDate),
+        travelers,
+        shownIds: shown.map((t) => t.id),
+      }),
+    [pins, dayPlaces, trip.startDate, trip.endDate, travelers, shown]
+  );
   const expenses = useMemo(
-    () => buildExpenses(plans, { trip, travelers, shownIds: shown.map((t) => t.id) }),
-    [plans, trip, travelers, shown]
+    () => buildExpenses(plans, { trip, travelers, shownIds: shown.map((t) => t.id), daily: dailyCosts.rows }),
+    [plans, trip, travelers, shown, dailyCosts]
   );
   const dayCount = useMemo(() => getTripDays(trip.startDate, trip.endDate).length, [trip.startDate, trip.endDate]);
   const payingFor = myId != null ? travelers.filter((t) => payerOf(t) === myId) : [];
@@ -131,11 +146,15 @@ export default function Expenses() {
             perTraveler={shown.length > 1 ? expenses.perTraveler : []}
           />
 
+          {expenses.daily.length > 0 && <DayCard label="Stays and daily costs" rows={expenses.daily} />}
+
+          {dailyCosts.waiting.length > 0 && <WaitingForDays items={dailyCosts.waiting} tripId={trip.id} />}
+
           {expenses.days.map((day) => (
             <DayCard key={day.dayIndex} label={day.label} rows={day.rows} />
           ))}
 
-          {expenses.days.length === 0 && (
+          {expenses.days.length === 0 && expenses.daily.length === 0 && (
             <div
               style={{
                 borderRadius: "var(--radius-lg)",
@@ -239,6 +258,8 @@ function ExpenseRow({ row }) {
       : `${formatMoney(row.eachCents)} each`;
   const meta = [
     row.startMinuteOfDay != null ? clockLabel(row.startMinuteOfDay) : null,
+    // A stay or per-day price: its days and the multiplication.
+    row.howLabel ?? null,
     price,
     `${row.headcount} ${row.headcount === 1 ? "person" : "people"}`,
     row.sharersLabel || null,
@@ -276,6 +297,24 @@ function ExpenseRow({ row }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Priced by the day but with no days to count yet: a stay nobody's picked
+// as where they're staying, or a per-day price with no first and last day.
+function WaitingForDays({ items, tripId }) {
+  return (
+    <div style={{ borderRadius: "var(--radius-lg)", border: "1.5px dashed var(--border-strong)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="mono-caption">Not counted yet</div>
+      {items.map((item) => (
+        <div key={item.key} style={{ font: "400 12.5px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
+          <Link to={`/trips/${tripId}/edit/${item.pinId}?from=board`} style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-primary)" }}>
+            {item.title}
+          </Link>{" "}
+          {item.kind === "stay" ? "isn’t picked as where you’re staying on any night." : "is paid by the day but has no days picked."}
+        </div>
+      ))}
     </div>
   );
 }

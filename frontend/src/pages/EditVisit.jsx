@@ -6,6 +6,9 @@ import { TextArea, textFieldStyle } from "../components/forms/TextField";
 import Stepper from "../components/forms/Stepper";
 import AvailabilityGrid from "../components/planner/AvailabilityGrid";
 import CostField from "../components/forms/CostField";
+import CostDays from "../components/forms/CostDays";
+import KindField from "../components/forms/KindField";
+import { tripDates } from "../lib/dayPlaces";
 // import MapPlaceholder from "../components/planner/MapPlaceholder"; // map card removed for now, see below
 import { usePlannerState, usePlannerDispatch, useIdeaAccess, usePinHeart } from "../state/PlannerContext";
 import PinHearts from "../components/planner/PinHearts";
@@ -73,9 +76,14 @@ function baselineFrom(pin) {
   return {
     title: pin.title ?? "",
     region: pin.region ?? "",
+    kind: pin.kind ?? "activity",
     dur: pin.dur,
     cost: pin.costCents == null ? null : pin.costCents / 100,
     costBasis: pin.costBasis ?? "per_head",
+    costPer: pin.costPer ?? "once",
+    // The first and last day of a per-day price ({ first, last }, ISO), or
+    // null. A stay's days come from Where we'll be instead.
+    costDays: pin.costStartDate ? { first: pin.costStartDate, last: pin.costEndDate } : null,
     notes: pin.notes ?? "",
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
@@ -86,9 +94,10 @@ function baselineFrom(pin) {
   };
 }
 
-// Every field compares by value; a location is an object, so it's compared
-// by what's in it.
+// Every field compares by value; a location and a pair of days are
+// objects, so they're compared by what's in them.
 function sameFieldValue(key, a, b) {
+  if (key === "costDays") return (a?.first ?? null) === (b?.first ?? null) && (a?.last ?? null) === (b?.last ?? null);
   if (key !== "location") return a === b;
   if (!a || !b) return !a && !b;
   return a.lat === b.lat && a.lng === b.lng && (a.placeId ?? null) === (b.placeId ?? null);
@@ -300,6 +309,10 @@ export default function EditVisit() {
   // "when this one can happen" grid tracks the trip's actual length and
   // start date instead of always showing a fixed calendar.
   const tripDays = getTripDays(state.trip.startDate, state.trip.endDate);
+  // The same days by ISO date, which is how Where we'll be and a per-day
+  // price's first and last day are kept.
+  const dates = tripDates(state.trip.startDate, state.trip.endDate);
+  const isStay = form.kind === "stay";
   const who = state.contributors.find((c) => c.id === pin.who);
 
   // Whichever Plan currently carries this pin, if any — a pin can only be
@@ -336,6 +349,27 @@ export default function EditVisit() {
     setOverrideEdits((current) => {
       const currentValue = key in current ? current[key].overridden : Boolean(state.overrides[key]);
       return { ...current, [key]: { day, band, overridden: !currentValue } };
+    });
+  }
+
+  // Somewhere to stay is usually paid by the night, so becoming one starts
+  // it on a per-day price; it can be put back to once.
+  function changeKind(kind) {
+    setSaveError("");
+    setDraft((current) => {
+      const base = current ?? baseline;
+      return { ...base, kind, ...(kind === "stay" && base.kind !== "stay" ? { costPer: "day" } : {}) };
+    });
+  }
+
+  // A per-day price on something that isn't a stay starts out covering the
+  // whole trip, which the first and last day then narrow.
+  function changeCostPer(costPer) {
+    setSaveError("");
+    setDraft((current) => {
+      const base = current ?? baseline;
+      const fill = costPer === "day" && base.kind !== "stay" && !base.costDays && dates.length > 0;
+      return { ...base, costPer, ...(fill ? { costDays: { first: dates[0], last: dates[dates.length - 1] } } : {}) };
     });
   }
 
@@ -601,6 +635,15 @@ export default function EditVisit() {
             <input aria-label="Title" value={form.title} readOnly={!canEdit} onChange={(e) => setField("title", e.target.value)} style={{ marginTop: 6, ...textFieldStyle({ weight: 600, size: 15 }) }} />
           </div>
 
+          {/* A stay can't be on the calendar (backend routers/plans.py
+              validate_placement), so an idea that's on it comes off first. */}
+          <KindField
+            value={form.kind}
+            onChange={changeKind}
+            disabled={!canEdit || saving || deleting}
+            lockedReason={placingPlan && baseline.kind !== "stay" ? "It’s on the plan. Take it off the plan to make it a place to stay." : ""}
+          />
+
           {/* The same region picker and map preview as adding by hand.
               Both are part of the draft: nothing changes until Save. */}
           <RegionPicker
@@ -672,31 +715,39 @@ export default function EditVisit() {
           {/* Map card (place name/coords + "Move pin") removed for now —
               see EditVisit.jsx history to restore. */}
 
-          <div style={{ background: "var(--surface-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", padding: "12px 13px 13px" }}>
-            <AvailabilityGrid
-              pinId={pinId}
-              rule={rule.days ? rule : null}
-              overrides={overrideView}
-              placedDayBand={placedDayBand}
-              placedLocked={placedIsLocked}
-              days={tripDays}
-              onToggle={canEdit ? toggleOverride : undefined}
-            />
-          </div>
+          {/* When it can happen and how long it takes are about time on the
+              plan, which a stay never takes. */}
+          {isStay ? null : (
+            <>
+              <div style={{ background: "var(--surface-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", padding: "12px 13px 13px" }}>
+                <AvailabilityGrid
+                  pinId={pinId}
+                  rule={rule.days ? rule : null}
+                  overrides={overrideView}
+                  placedDayBand={placedDayBand}
+                  placedLocked={placedIsLocked}
+                  days={tripDays}
+                  onToggle={canEdit ? toggleOverride : undefined}
+                />
+              </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <Stepper
-              label="Duration"
-              valueLabel={fmtMin(form.dur)}
-              onDown={() => changeDuration(form.dur - 15)}
-              onUp={() => changeDuration(form.dur + 15)}
-              disabled={!canEdit}
-            />
-          </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Stepper
+                  label="Duration"
+                  valueLabel={fmtMin(form.dur)}
+                  onDown={() => changeDuration(form.dur - 15)}
+                  onUp={() => changeDuration(form.dur + 15)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </>
+          )}
 
           {/* Per person by default — what one traveler pays — or one price
               for the group, divided among whoever shares it
-              (backend/app/derive.py item_money). */}
+              (backend/app/derive.py item_money). Paid once, or by the day:
+              n days from first to last is n - 1 days of it
+              (lib/dailyCosts.js). */}
           {canSeeCosts ? (
             <CostField
               id="visit-cost"
@@ -704,8 +755,28 @@ export default function EditVisit() {
               onChange={(v) => setField("cost", Math.max(0, Number(v) || 0))}
               basis={form.costBasis}
               onBasis={(b) => setField("costBasis", b)}
+              per={form.costPer}
+              onPer={changeCostPer}
               disabled={saving || deleting || !canSetCosts}
-            />
+            >
+              <CostDays
+                pin={{
+                  id: pinId,
+                  kind: form.kind,
+                  costPer: form.costPer,
+                  costCents: Math.round((form.cost ?? 0) * 100),
+                  costBasis: form.costBasis,
+                  costStartDate: form.costDays?.first ?? null,
+                  costEndDate: form.costDays?.last ?? null,
+                }}
+                dates={dates}
+                dayPlaces={state.dayPlaces}
+                headcount={state.travelers.length}
+                onDays={(costDays) => setField("costDays", costDays)}
+                onPlaces={() => guardedNavigate(`/trips/${state.trip.id}/places`)}
+                disabled={saving || deleting || !canSetCosts}
+              />
+            </CostField>
           ) : null}
 
           <TextArea
