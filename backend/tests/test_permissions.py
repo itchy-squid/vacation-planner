@@ -74,6 +74,7 @@ _UNSCOPED = {
     ("GET", "/api/me/invites"),
     ("POST", "/api/invites/{token}/decline"),
     ("GET", "/api/people"),
+    ("GET", "/api/people/travelers"),
 }
 
 

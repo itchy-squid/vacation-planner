@@ -268,6 +268,11 @@ class TripInvite(Base):
     # the per-role links either.
     invitee_email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
     invitee_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # A direct invite that swaps its invitee in for a traveler who was
+    # listed before the invite ("Jonah", "Traveler 5"), rather than one
+    # listed for it. Declining leaves that traveler on the roster, since
+    # they were going before anyone was invited.
+    keeps_traveler: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     trip: Mapped[Trip] = relationship(back_populates="invites")
 

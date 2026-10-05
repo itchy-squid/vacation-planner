@@ -1107,6 +1107,26 @@ export function PlannerProvider({ children }) {
           }
         }
 
+        // Invites by name to people you've planned with (Trip settings →
+        // Invite people, or Edit traveler). Someone coming can be listed
+        // as a new traveler, so the roster and count are re-read.
+        case "SEND_DIRECT_INVITES": {
+          if (!state.trip) return { ok: false };
+          try {
+            const sent = await api.sendDirectInvites(state.trip.id, action.invitees);
+            const [travelersRaw, tripRaw] = await Promise.all([api.listTravelers(state.trip.id), api.getTrip(state.trip.id)]);
+            dispatch({
+              type: "SET_TRAVELERS",
+              travelers: travelersRaw.map(normalizeTraveler),
+              trip: { travelerCount: tripRaw.traveler_count ?? travelersRaw.length, myTravelerId: tripRaw.my_traveler_id ?? null },
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, sent };
+          } catch (err) {
+            return { ok: false, error: apiMessage(err) };
+          }
+        }
+
         case "UNPLACE_PLAN": {
           try {
             await api.deletePlan(action.planId);

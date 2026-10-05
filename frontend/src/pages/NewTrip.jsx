@@ -6,6 +6,7 @@ import HomeButton from "../components/core/HomeButton";
 import WhoIsPlanning from "../components/newtrip/WhoIsPlanning";
 import { usePlannerDispatch } from "../state/PlannerContext";
 import { api } from "../lib/api";
+import { resolvePayer } from "../lib/people";
 
 // Not one of the handoff README's numbered screens — added so the "+"
 // affordance on Trips Home (screen 1) does something. Mirrors EditVisit's
@@ -20,11 +21,12 @@ import { api } from "../lib/api";
 //      invites a hand-typed line that the derived one immediately
 //      contradicts. The trip's own region_line stays editable in Trip
 //      settings; the backend defaults it to "" when the payload omits it.
-//   2. "Who's planning with you?" (components/newtrip/WhoIsPlanning.jsx):
+//   2. "Who's coming with you?" (components/newtrip/WhoIsPlanning.jsx):
 //      people from past trips, each with a role, invited as the trip is
-//      created. Skippable. Someone who has never shared a trip has no one
-//      to pick, so for them step 1 creates the trip straight away, as it
-//      always did.
+//      created, and past travelers without an account, listed with who
+//      pays for them. Skippable. Someone who has never shared a trip has
+//      no one to pick, so for them step 1 creates the trip straight away,
+//      as it always did.
 export default function NewTrip() {
   const navigate = useNavigate();
   const dispatch = usePlannerDispatch();
@@ -42,6 +44,11 @@ export default function NewTrip() {
   const [people, setPeople] = useState(null);
   // email -> { role, traveling } for everyone ticked on step 2.
   const [chosen, setChosen] = useState({});
+  // People who came on your trips without an account (GET
+  // /api/people/travelers); null while loading, [] if they can't be.
+  const [pastTravelers, setPastTravelers] = useState(null);
+  // key -> { paidBy } for each of them ticked on step 2.
+  const [listed, setListed] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -53,12 +60,20 @@ export default function NewTrip() {
       .catch(() => {
         if (!cancelled) setPeople([]);
       });
+    api
+      .listPastTravelers()
+      .then((rows) => {
+        if (!cancelled) setPastTravelers(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setPastTravelers([]);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const hasStepTwo = people === null || people.length > 0;
+  const hasStepTwo = people === null || people.length > 0 || (pastTravelers?.length ?? 0) > 0;
   const canContinue = name.trim().length > 0 && !submitting;
 
   async function create(withInvites) {
@@ -68,6 +83,19 @@ export default function NewTrip() {
     const invitees = withInvites
       ? Object.entries(chosen).map(([email, { role, traveling }]) => ({ email, role, traveling }))
       : [];
+    const byKey = new Map((pastTravelers ?? []).map((t) => [t.key, t]));
+    const listedTravelers = withInvites
+      ? Object.entries(listed)
+          .filter(([key]) => byKey.has(key))
+          .map(([key, { paidBy }]) => {
+            const payer = resolvePayer(paidBy, chosen);
+            return {
+              name: byKey.get(key).name,
+              paid_by_me: payer === "me",
+              paid_by_email: payer === "me" ? null : payer,
+            };
+          })
+      : [];
     try {
       const trip = await dispatch({
         type: "CREATE_TRIP",
@@ -76,11 +104,15 @@ export default function NewTrip() {
           start_date: startDate || null,
           end_date: endDate || null,
           invitees,
+          listed: listedTravelers,
         },
       });
       const sent = invitees.length;
+      const parts = [];
+      if (sent) parts.push(`${sent} ${sent === 1 ? "invite" : "invites"} sent`);
+      if (listedTravelers.length) parts.push(`${listedTravelers.length} listed`);
       navigate("/", {
-        state: sent ? { toast: `${trip.name} created · ${sent} ${sent === 1 ? "invite" : "invites"} sent` } : null,
+        state: parts.length ? { toast: `${trip.name} created · ${parts.join(" · ")}` } : null,
       });
     } catch (err) {
       setError(err.message || "Couldn't create the trip. Try again.");
@@ -93,8 +125,11 @@ export default function NewTrip() {
       <WhoIsPlanning
         tripName={name.trim()}
         people={people}
+        pastTravelers={pastTravelers}
         chosen={chosen}
         onChange={setChosen}
+        listed={listed}
+        onListedChange={setListed}
         onBack={() => setStep(1)}
         onSkip={() => create(false)}
         onCreate={() => create(true)}
@@ -169,7 +204,7 @@ export default function NewTrip() {
           ) : null}
 
           <Button type="submit" variant="primary" disabled={!canContinue} style={{ marginTop: 4 }}>
-            {hasStepTwo ? "Next: who’s planning" : submitting ? "Creating…" : "Create trip"}
+            {hasStepTwo ? "Next: who’s coming" : submitting ? "Creating…" : "Create trip"}
           </Button>
           <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)", paddingBottom: 8 }}>
             {hasStepTwo

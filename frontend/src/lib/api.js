@@ -368,6 +368,16 @@ export const api = {
   declineInvite: (token) => request(`/api/invites/${encodeURIComponent(token)}/decline`, { method: "POST" }),
   // Everyone you've planned a trip with (backend/app/routers/people.py).
   listPeople: () => request("/api/people"),
+  // People who went on your trips without an account (Kai, Grandma Hua),
+  // so a new trip can list them again.
+  listPastTravelers: () => request("/api/people/travelers"),
+  // Invites sent by name to people you've planned with, for a trip that
+  // already exists (backend/app/routers/sharing.py). Each invitee is
+  // { email, role, traveling, traveler_id? }; traveler_id swaps them in
+  // for someone already listed.
+  listDirectInvites: (tripId) => request(`/api/trips/${tripId}/direct-invites`),
+  sendDirectInvites: (tripId, invitees) =>
+    request(`/api/trips/${tripId}/direct-invites`, { method: "POST", body: { invitees } }),
 
   // The traveler roster — who is going, separate from who's on the app
   // (backend/app/routers/travelers.py).

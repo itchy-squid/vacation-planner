@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePlannerDispatch, usePlannerState, useCan, useMyTraveler } from "../../state/PlannerContext";
 import { copyText, inviteUrl } from "../sharing/links";
+import { Avatar } from "../sharing/PeopleList";
+import { api } from "../../lib/api";
+import { GRANTABLE_ROLES, roleLabel } from "../../lib/roles";
+import { firstName, sharedTripsLine, suggestedRole } from "../../lib/people";
 
 // Add or edit one traveler (components/travelers/TravelerRoster.jsx).
 // Adding and editing are the same screen with the same fields, so a
@@ -10,12 +14,15 @@ import { copyText, inviteUrl } from "../sharing/links";
 // - Name, and who pays for them: "Themselves", or anyone who pays their
 //   own way. One level only (backend routers/travelers.py): someone paid
 //   for by another can't pay for others.
-// - For someone without an account: just list them, or make an invite
+// - For someone without an account: just list them, make an invite
 //   link that signs whoever opens it in *as this traveler* — so Grandma
-//   Hua joining becomes this row rather than a second Hua.
+//   Hua joining becomes this row rather than a second Hua — or invite
+//   someone you've planned with to take over this row ("Invite Priya as
+//   Traveler 5"). That invite waits on their Trips screen; declining it
+//   leaves this traveler listed.
 // - Remove, which takes them off every group and cost split.
 export default function TravelerSheet({ traveler, onClose }) {
-  const { travelers, contributors, currentUserId } = usePlannerState();
+  const { travelers, contributors, currentUserId, trip } = usePlannerState();
   const dispatch = usePlannerDispatch();
   const can = useCan();
   const me = useMyTraveler();
@@ -26,6 +33,7 @@ export default function TravelerSheet({ traveler, onClose }) {
   const [name, setName] = useState(traveler?.name ?? "");
   const [paidById, setPaidById] = useState(traveler?.paidById ?? null);
   // "list" (no account), "invite" (a link that signs them in as this
+  // traveler), "people" (invite someone you've planned with as this
   // traveler) or "member" (they're already on the app: link them).
   const [onApp, setOnApp] = useState(
     traveler?.contributorId != null ? "member" : traveler?.invited ? "invite" : "list"
@@ -36,6 +44,42 @@ export default function TravelerSheet({ traveler, onClose }) {
   const [link, setLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [removeArmed, setRemoveArmed] = useState(false);
+  // People you've planned with who could take this spot, and the trip's
+  // unanswered invites by name; loaded for whoever can invite.
+  const [people, setPeople] = useState(null);
+  const [waiting, setWaiting] = useState([]);
+  const [inviteeEmail, setInviteeEmail] = useState(null);
+  const [inviteeRole, setInviteeRole] = useState("companion");
+
+  const canInviteHere = canInvite && traveler?.contributorId == null;
+  useEffect(() => {
+    if (!canInviteHere || !trip) return undefined;
+    let cancelled = false;
+    Promise.all([api.listPeople(), api.listDirectInvites(trip.id)])
+      .then(([rows, sent]) => {
+        if (cancelled) return;
+        setPeople(rows);
+        setWaiting(sent);
+      })
+      .catch(() => {
+        if (!cancelled) setPeople([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canInviteHere, trip]);
+
+  // Who could take this spot: people you've planned with who aren't on
+  // the trip and aren't already invited to it.
+  const memberEmails = new Set(contributors.map((c) => c.email));
+  const invitable = (people ?? []).filter((p) => !memberEmails.has(p.email) && !waiting.some((i) => i.email === p.email));
+  const awaiting = traveler ? waiting.find((i) => i.traveler_id === traveler.id) : null;
+  const invitee = invitable.find((p) => p.email === inviteeEmail) ?? null;
+
+  function pickInvitee(person) {
+    setInviteeEmail(person.email);
+    setInviteeRole(suggestedRole(person));
+  }
 
   // Who can pay: anyone paying their own way, other than this traveler.
   // Someone who already pays for others can't be paid for, so for them the
@@ -68,6 +112,7 @@ export default function TravelerSheet({ traveler, onClose }) {
     try {
       const linkTo = canChangeApp && onApp === "member" ? memberId : null;
       if (canChangeApp && onApp === "member" && linkTo == null) throw new Error("Pick who they are on the app.");
+      if (canChangeApp && onApp === "people" && !invitee) throw new Error("Pick who to invite.");
       let id = traveler?.id;
       if (isNew) {
         const payload = { name: name.trim(), paid_by_id: paidById };
@@ -92,6 +137,13 @@ export default function TravelerSheet({ traveler, onClose }) {
         await makeInvite(id);
         setBusy(false);
         return; // stay open to show the link
+      }
+      if (canChangeApp && onApp === "people" && invitee) {
+        const result = await dispatch({
+          type: "SEND_DIRECT_INVITES",
+          invitees: [{ email: invitee.email, role: inviteeRole, traveling: true, traveler_id: id }],
+        });
+        if (!result.ok) throw new Error(result.error || "Couldn't send the invite.");
       }
       onClose();
     } catch (err) {
@@ -189,6 +241,68 @@ export default function TravelerSheet({ traveler, onClose }) {
                 sub="You get a link that signs them in as this traveler, so nothing is duplicated."
               />
             )}
+            {canInvite && (isNew || traveler.contributorId == null) && !awaiting && invitable.length > 0 && (
+              <Radio
+                on={onApp === "people"}
+                onClick={() => setOnApp("people")}
+                title="Someone you've planned with"
+                sub="They get an invite on their Trips screen and take over this spot when they join."
+              />
+            )}
+            {onApp === "people" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 4 }}>
+                <div style={{ border: "1px solid var(--hairline)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
+                  {invitable.map((p, i) => (
+                    <button
+                      key={p.email}
+                      type="button"
+                      aria-pressed={inviteeEmail === p.email}
+                      onClick={() => pickInvitee(p)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        textAlign: "left",
+                        padding: "8px 10px",
+                        borderTop: i === 0 ? "none" : "1px solid var(--hairline)",
+                        background: inviteeEmail === p.email ? "var(--plum-tint)" : "var(--surface-card)",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: "50%",
+                          flex: "none",
+                          border: inviteeEmail === p.email ? "4.5px solid var(--accent)" : "1.5px solid var(--border-strong)",
+                        }}
+                      />
+                      <Avatar person={p} size={28} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: "block", font: "600 12.5px var(--font-sans)", color: "var(--text-primary)" }}>{p.display_name}</span>
+                        <span style={{ display: "block", font: "400 11px var(--font-sans)", color: "var(--text-secondary)" }}>
+                          {sharedTripsLine(p)} · {roleLabel(p.last_role).toLowerCase()}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {invitee && (
+                  <>
+                    <span className="mono-caption">{firstName(invitee)} joins as</span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {GRANTABLE_ROLES.map((role) => (
+                        <Chip key={role} on={inviteeRole === role} onClick={() => setInviteeRole(role)}>
+                          {roleLabel(role)}
+                        </Chip>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {linkable.length > 0 && (
               <Radio
                 on={onApp === "member"}
@@ -206,6 +320,11 @@ export default function TravelerSheet({ traveler, onClose }) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+        {canChangeApp && awaiting && !link && (
+          <div style={{ font: "400 12px var(--font-sans)", color: "var(--text-secondary)" }}>
+            {awaiting.name ?? "Someone"} has an invite waiting to take over this spot.
           </div>
         )}
         {!canChangeApp && !isNew && (
@@ -237,7 +356,13 @@ export default function TravelerSheet({ traveler, onClose }) {
               disabled={busy || !name.trim()}
               style={{ flex: 1, height: 44, borderRadius: "var(--radius-lg)", background: "var(--surface-inverse)", color: "#fff", font: "600 13px var(--font-sans)", opacity: busy || !name.trim() ? 0.5 : 1 }}
             >
-              {busy ? "Saving…" : isNew ? "Add" : "Save"}
+              {busy
+                ? "Saving…"
+                : canChangeApp && onApp === "people" && invitee
+                ? `Invite ${firstName(invitee)} as ${name.trim() || "this traveler"}`
+                : isNew
+                ? "Add"
+                : "Save"}
             </button>
           )}
         </div>
