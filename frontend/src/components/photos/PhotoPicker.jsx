@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import TextField from "../forms/TextField";
 import { api } from "../../lib/api";
 import { externalHref } from "../../lib/externalHref";
+import { googleImageLink } from "../../lib/googleImageLink";
 
 // Wait for the link to stop changing before reading its page: typing or
 // pasting in pieces shouldn't fetch every prefix.
@@ -101,8 +102,11 @@ export default function PhotoPicker({ tripId, link, photoUrl, current = "", onPi
           aria-label="Image link"
           value={pasted}
           onChange={(e) => {
-            const url = e.target.value;
-            onPick(url, url.trim() ? link.trim() || url.trim() : "", "pasted");
+            // A Google Images link is swapped for the image it's about,
+            // and the page that image was on stands in for a missing link.
+            const google = googleImageLink(e.target.value);
+            const url = google?.image ?? e.target.value;
+            onPick(url, url.trim() ? link.trim() || google?.page || url.trim() : "", "pasted");
           }}
           placeholder="https://…/photo.jpg"
           mono
