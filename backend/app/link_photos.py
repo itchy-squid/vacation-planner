@@ -8,6 +8,11 @@ every empty result was a dead end. Now it's one row in a picker that also
 offers pasting a link or going without, so an empty or unreachable result
 is an ordinary answer, not an error.
 
+A link copied from Google Images is Google's own wrapper page, which
+carries nothing useful in its HTML; the image and the page it was found on
+are in its query string, so they're read from there instead (see
+_unwrap_google).
+
 What's read, best first: Open Graph / Twitter card images, structured data
 (JSON-LD "image"), <link rel="image_src">, then <img> tags that don't look
 like icons or tracking pixels. Nothing is fetched beyond the page itself:
@@ -21,7 +26,7 @@ import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Literal
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 
@@ -48,6 +53,8 @@ _META_KEYS = (
     "twitter:image:src",
 )
 _HTML_TYPES = ("text/html", "application/xhtml+xml")
+# google.com, www.google.co.uk, images.google.fr, …
+_GOOGLE_HOST = re.compile(r"^(?:www\.|images\.)?google\.(?:com?\.)?[a-z]{2,3}$", re.I)
 _HAS_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 # Matched against an <img>'s URL and its class/id/alt: things on a page
 # that are images but never the photo of the place.
@@ -75,6 +82,41 @@ def find_link_photos(link: str) -> LinkPhotos:
     url = _with_scheme(link)
     if url is None:
         return LinkPhotos("unreachable")
+    image, page = _unwrap_google(url)
+    if image is None:
+        return _photos_at(page) if page else LinkPhotos("unreachable")
+    # The image someone picked on Google comes first; the page it was on
+    # may offer more, but not being able to read it costs nothing.
+    found = _photos_at(page) if page else LinkPhotos("empty")
+    photos = [image] + [p for p in found.photos if p != image]
+    return LinkPhotos("ok", photos[:MAX_PHOTOS])
+
+
+def _unwrap_google(url: str) -> tuple[str | None, str | None]:
+    """(image, page) for a link. A Google Images result
+    ("google.com/imgres?imgurl=…&imgrefurl=…") names both; a Google
+    redirect ("google.com/url?q=…") names the page; anything else is
+    just a page. Either can be None when Google's link is missing it."""
+    parts = urlparse(url)
+    if not _GOOGLE_HOST.match(parts.hostname or ""):
+        return None, url
+    query = parse_qs(parts.query)
+
+    def param(*names: str) -> str | None:
+        for name in names:
+            value = (query.get(name) or [""])[0].strip()
+            if value:
+                return _absolute(value, url)
+        return None
+
+    if parts.path == "/imgres":
+        return param("imgurl"), param("imgrefurl")
+    if parts.path == "/url":
+        return None, param("q", "url")
+    return None, url
+
+
+def _photos_at(url: str) -> LinkPhotos:
     try:
         final_url, kind, body = _fetch(url)
     except (_Unreachable, UnsafeUrlError, httpx.HTTPError, UnicodeError, ValueError):

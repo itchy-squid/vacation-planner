@@ -141,6 +141,77 @@ def test_bare_hosts_get_https(monkeypatch):
     assert seen == ["https://viator.com/tours/1"]
 
 
+GOOGLE_IMAGE = (
+    "https://www.google.com/imgres?imgurl=https%3A%2F%2Fcdn.example.com%2Fbeach.jpg"
+    "&imgrefurl=https%3A%2F%2Fexample.com%2Ftours%2Fsnorkel&tbnid=abc&docid=def"
+)
+
+
+def test_a_google_images_link_offers_its_image_then_the_pages_photos(monkeypatch):
+    seen = []
+
+    def fake(url):
+        seen.append(url)
+        return (url, "html", '<meta property="og:image" content="/a.jpg">'
+                             '<img src="https://cdn.example.com/beach.jpg">')
+
+    monkeypatch.setattr(link_photos, "_fetch", fake)
+    assert find_link_photos(GOOGLE_IMAGE) == LinkPhotos(
+        "ok", ["https://cdn.example.com/beach.jpg", "https://example.com/a.jpg"]
+    )
+    # Google's own page is never fetched, only the one the image was on.
+    assert seen == [PAGE]
+
+
+def test_a_google_images_link_still_offers_its_image_when_the_page_cant_be_read(monkeypatch):
+    stub_fetch(monkeypatch, link_photos._Unreachable("403"))
+    assert find_link_photos(GOOGLE_IMAGE) == LinkPhotos(
+        "ok", ["https://cdn.example.com/beach.jpg"]
+    )
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "google.co.uk/imgres?imgurl=https://cdn.example.com/beach.jpg",
+        "https://images.google.fr/imgres?imgurl=https%3A%2F%2Fcdn.example.com%2Fbeach.jpg",
+    ],
+)
+def test_google_images_links_from_any_google_site(monkeypatch, link):
+    stub_fetch(monkeypatch, AssertionError("nothing to fetch"))
+    assert find_link_photos(link) == LinkPhotos(
+        "ok", ["https://cdn.example.com/beach.jpg"]
+    )
+
+
+def test_a_google_redirect_reads_the_page_it_points_at(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        link_photos, "_fetch", lambda url: seen.append(url) or (url, "html", "")
+    )
+    find_link_photos("https://www.google.com/url?q=https://example.com/tours/snorkel&sa=U")
+    assert seen == [PAGE]
+
+
+def test_a_google_images_link_to_a_script_is_refused(monkeypatch):
+    stub_fetch(monkeypatch, AssertionError("nothing to fetch"))
+    found = find_link_photos("https://www.google.com/imgres?imgurl=javascript:alert(1)")
+    assert found == LinkPhotos("unreachable", [])
+
+
+def test_other_google_pages_are_read_like_any_page(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        link_photos, "_fetch", lambda url: seen.append(url) or (url, "html", "")
+    )
+    find_link_photos("https://www.google.com/maps/place/Eiffel+Tower")
+    find_link_photos("https://notgoogle.com/imgres?imgurl=https://x.com/a.jpg")
+    assert seen == [
+        "https://www.google.com/maps/place/Eiffel+Tower",
+        "https://notgoogle.com/imgres?imgurl=https://x.com/a.jpg",
+    ]
+
+
 def test_the_endpoint_returns_the_photos(client, trip, monkeypatch):
     stub_fetch(
         monkeypatch, (PAGE, "html", '<meta property="og:image" content="/a.jpg">')

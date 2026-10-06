@@ -69,6 +69,13 @@ A link straight to an image is its own single candidate. Every fetch goes
 through `net_guard.require_public_http_url` on each redirect hop, reads at
 most 2 MB of HTML and gives up after `net_guard.TIMEOUT_SECONDS`.
 
+A link copied from Google Images (`google.com/imgres?imgurl=…&imgrefurl=…`)
+is Google's page about the image, not the image: its image comes first, then
+the photos on the page it was found on (`imgrefurl`). Google's own page is
+never fetched. A Google redirect (`google.com/url?q=…`) reads the page it
+points at. **Paste an image link** swaps a Google Images link for its image
+too (`lib/googleImageLink.js`).
+
 Some sites (Instagram, TikTok, many booking sites) will always come back
 `unreachable` or `empty`. That's expected; the other sources cover them. A
 hosted unfurl service that runs a real browser (Microlink, Iframely) would
