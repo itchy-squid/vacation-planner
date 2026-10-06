@@ -1,4 +1,4 @@
-<title>Travel Time and Getting There</title>
+<title>Travel Time Mockups</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/solid.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/fontawesome.min.js"></script>
@@ -282,15 +282,42 @@
   .exp-row .nm svg { width: 10px !important; color: var(--geo); margin-right: 4px; }
   .seg.small button { padding: 5px 0; font-size: 11px; }
   [data-when][hidden] { display: none !important; }
+  .route { display: flex; flex-direction: column; gap: 6px; }
+  .rleg { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-left: 2px solid var(--geo); margin-left: 12px; }
+  .rleg > svg { width: 11px !important; color: var(--geo); margin-top: 3px; flex: none; }
+  .rleg .rl { font: 600 12px var(--font-sans); }
+  .rleg .rs { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .rleg .rs b { color: var(--text-primary); font-weight: 500; }
+  .rleg .rtag { display: inline-block; margin-top: 4px; font: 500 9px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--geo); background: var(--geo-quiet); border-radius: 4px; padding: 1px 5px; }
+  .rleg.ask { border-left-style: dashed; color: var(--text-secondary); }
+  .rleg.ask .rl { color: var(--accent); }
+  .rstay { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 9px 12px; }
+  .rstay .rd { font: 500 10px var(--font-mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .rstay .rn { font: 400 17px/1.2 var(--font-serif); margin-top: 2px; }
+  .rstay .rx { font: 400 11px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .air { display: flex; gap: 9px; align-items: center; padding: 9px 10px; border-radius: var(--radius-lg); background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); color: var(--text-secondary); }
+  .air > svg { width: 11px !important; color: var(--geo); }
+  .air .nm { font: 600 12px var(--font-sans); color: var(--text-primary); }
+  .air .sub { font: 400 10.5px var(--font-mono); }
+  .air .r { margin-left: auto; font: 500 9.5px var(--font-mono); letter-spacing: .04em; white-space: nowrap; }
+  .strip { display: flex; gap: 5px; align-items: stretch; }
+  .sd { flex: 1; min-width: 0; background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .sd .w { font: 500 9px var(--font-mono); color: var(--text-muted); }
+  .sd .n { font: 600 14px var(--font-sans); }
+  .sd .p { font: 400 9px var(--font-sans); color: var(--text-secondary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sd.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .sd.on .w, .sd.on .p { color: var(--on-ink-muted); } .sd.on .n { color: var(--on-ink); }
+  .sdf { display: grid; place-items: center; color: var(--geo); }
+  .sdf svg { width: 10px !important; }
 </style>
 
 <div class="wrap">
   <div class="eyebrow">Mockups · nothing built yet</div>
-  <h1>Travel time, and getting there and back</h1>
-  <p class="lede">Worked through one real trip: you start in Houston, fly IAH to MCO, pick up a car and drive to the hotel. Travel counts as planned time, because it takes up the day either way. You can add travel with just how long it takes. You don't need a place at either end the way Map routes do. And the flight's cost lands in Expenses without pretending to be a pin.</p>
+  <h1>Travel time, on the days it happens</h1>
+  <p class="lede">Worked through one real trip: you start in Houston, fly IAH to MCO, pick up a car and drive to the hotel. Feature 2 adds a longer trip: Hawaii, then Japan, then Hawaii again. Travel counts as planned time, because it takes up the day either way. You can add travel with just how long it takes. You don't need a place at either end the way Map routes do. And the flight's cost lands in Expenses without pretending to be a pin.</p>
   <nav class="toc" aria-label="Sections">
     <a href="#travel">1 · Add just travel time</a>
-    <a href="#there">2 · Getting there and back</a>
+    <a href="#there">2 · Long legs on the days</a>
     <a href="#day1">3 · Day 1 on the Plan tab</a>
     <a href="#money">4 · Expenses</a>
     <a href="#under">What it would change</a>
@@ -370,7 +397,7 @@
                 </div>
               </div>
 
-              <div class="sheet-actions"><button class="btn" type="button">Back</button><button class="btn primary" type="button" data-save>Place after Arrive MCO</button></div>
+              <div class="sheet-actions"><button class="btn" type="button">Back</button><button class="btn primary" type="button" data-save>Place after Rental car pickup</button></div>
             </div>
           </div>
         </div>
@@ -403,7 +430,7 @@
       <div>
         <h4>Where Travel lives</h4>
         <ol>
-          <li><b>Its own row in + Add</b>, as a travel item with a mode. <span class="rec">Recommend</span> One form whether you start from the sheet, a gap chip, or Trip settings (feature 2).</li>
+          <li><b>Its own row in + Add</b>, as a travel item with a mode. <span class="rec">Recommend</span> One form whether you start from the sheet, a gap chip, or Where we'll be (feature 2).</li>
           <li>Fold it into Custom event with the mode chips on top. One fewer row, but the form gets heavy for "Nap".</li>
         </ol>
       </div>
@@ -421,66 +448,100 @@
   <!-- ============ 2 ============ -->
   <section class="feature" id="there">
     <div class="eyebrow">Feature 2</div>
-    <h2>Getting there and back</h2>
-    <p class="ask">In Trip settings, the arrival and the departure are ordinary travel items from feature 1, marked as the way in and the way out. Marking them does three things. They pin themselves to the first and last day at their booked times. Moving the trip's dates asks before moving them. And the arrival can add the drive from the airport to the first night's stay.</p>
+    <h2>Long legs live on the days</h2>
+    <p class="ask">There's no special "getting there" setting. A flight is a travel item from feature 1, placed on the day it leaves. That covers a trip with one flight each way and a trip with five. The first and last legs are just legs whose far end is home. <em>Where we'll be</em> shows each leg between the stays it connects, so the whole route reads top to bottom.</p>
+    <div class="today"><b>The example:</b> fly Houston to Honolulu and stay 3 nights. Fly to Tokyo for 4 nights, then back to Honolulu for 2, then home. Going west, the flight to Tokyo crosses the date line and lands the next day. Coming back, the flight from Tokyo lands <em>earlier on the same date</em>, so Saturday happens twice.</div>
 
     <div class="screens">
       <div class="screen-col">
-        <h3>2a · Trip settings</h3>
-        <p class="note">Houston is just text on the flight. Only the end that's inside the trip has to be a real place, because it's where the next ride starts.</p>
+        <h3>2a · Where we'll be, with the legs between stays</h3>
+        <p class="note">Legs come from the travel items on the calendar, so this list never disagrees with the Plan tab. A change of place with no leg in between shows a dashed <em>+ travel</em> prompt. It opens the 1b form with the from, to and day filled in.</p>
         <div class="phone">
           <div class="bar"></div>
-          <div class="app-head"><div><div class="t">Trip settings</div><div class="s">ORLANDO · OCT 22 – 26</div></div></div>
-          <div class="body">
-            <div class="cap">Getting there and back</div>
-            <div class="card leg">
-              <div class="leg-head"><i class="fa-solid fa-plane-arrival" style="width:12px;color:var(--geo)"></i><span class="k">Getting there · Thu Oct 22</span><span class="edit">Edit</span></div>
-              <div class="leg-line">Houston IAH <i class="fa-solid fa-arrow-right"></i> Orlando MCO</div>
-              <div class="leg-times"><span>11:05 AM CT</span><span>2h 25m</span><span>2:30 PM ET</span></div>
-              <div class="leg-times"><span>UA 1622 · conf. KX7Q2B</span><span>$289 each</span></div>
-              <div class="leg-then"><i class="fa-solid fa-key"></i>Rental car pickup<span class="r">45m</span></div>
-              <div class="leg-then"><i class="fa-solid fa-car"></i>Then drive to Hotel Alma<span class="r">~32 min</span></div>
+          <div class="app-head"><div><div class="t">Where we'll be</div><div class="s">12 DAYS · NOV 6 – 16</div></div></div>
+          <div class="body" style="gap:0">
+            <div class="route">
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">Houston IAH → Honolulu HNL</div><div class="rs">Fri 6 · 9:00 AM CST → 1:45 PM HST · $412 each</div></div></div>
+              <div class="rstay"><div class="rd">Fri 6 – Sun 8</div><div class="rn">Honolulu</div><div class="rx">3 nights · Kaimana Inn</div></div>
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">HNL → Tokyo HND</div><div class="rs">Mon 9, 11:30 AM HST → <b>Tue 10</b>, 3:20 PM JST</div><div class="rtag">Crosses the date line</div></div></div>
+              <div class="rstay"><div class="rd">Tue 10 – Fri 13</div><div class="rn">Tokyo</div><div class="rx">4 nights · Hotel Sora</div></div>
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">HND → HNL</div><div class="rs">Sat 14, 9:00 PM JST → <b>Sat 14</b>, 9:50 AM HST</div><div class="rtag">Lands before it left: Sat 14 twice</div></div></div>
+              <div class="rstay"><div class="rd">Sat 14 – Sun 15</div><div class="rn">Honolulu</div><div class="rx">2 nights · Kaimana Inn</div></div>
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">HNL → Houston IAH</div><div class="rs">Mon 16, 2:00 PM HST → Tue 17, 1:40 AM CST</div><div class="rtag">Red-eye · lands after the trip ends</div></div></div>
+              <div class="rleg ask"><i class="fa-solid fa-plus"></i><div><div class="rl">Add a side trip</div><div class="rs">e.g. a day on Maui, Sun 15</div></div></div>
             </div>
-            <div class="card leg">
-              <div class="leg-head"><i class="fa-solid fa-plane-departure" style="width:12px;color:var(--geo)"></i><span class="k">Heading home · Mon Oct 26</span><span class="edit">Edit</span></div>
-              <div class="leg-line">Orlando MCO <i class="fa-solid fa-arrow-right"></i> Houston IAH</div>
-              <div class="leg-times"><span>5:15 PM ET</span><span>2h 25m</span><span>6:40 PM CT</span></div>
-              <div class="leg-times"><span>UA 2291</span><span>included in arrival fare</span></div>
-              <div class="leg-then"><i class="fa-solid fa-clock"></i>At the airport by<span class="r">3:15 PM · 2h early</span></div>
-            </div>
-            <div class="leg-add"><i class="fa-solid fa-plus"></i>Add another leg, like a connection or the drive to IAH</div>
           </div>
         </div>
       </div>
 
       <div class="screen-col">
-        <h3>2b · Editing the arrival</h3>
-        <p class="note">This is the same form as 1b, plus a confirmation field and "Then" steps. The "then" steps are travel items too, and they get placed right after the flight in order.</p>
+        <h3>2b · Mon Nov 9: leaving Honolulu</h3>
+        <p class="note">The flight starts on the day it leaves, on that day's clock. It runs off the bottom of the day, the same way overnight plans already do.</p>
         <div class="phone">
-          <div class="scrim" style="padding-top:28px">
-            <div class="sheet" style="gap:12px">
-              <div class="grab"></div>
-              <div class="t">Getting there</div>
-              <div class="modes"><span class="tchip" aria-pressed="true"><i class="fa-solid fa-plane"></i>Flight</span><span class="tchip"><i class="fa-solid fa-car"></i>Drive</span><span class="tchip"><i class="fa-solid fa-train"></i>Train</span><span class="tchip"><i class="fa-solid fa-bus"></i>Bus</span><span class="tchip"><i class="fa-solid fa-person-walking"></i>Walk</span><span class="tchip"><i class="fa-solid fa-ellipsis"></i>Other</span></div>
-              <div class="two">
-                <div class="field"><div class="cap">From</div><div class="input">Houston IAH</div><div class="tz">just text</div></div>
-                <div class="field"><div class="cap">To</div><div class="input"><i class="fa-solid fa-location-dot" style="width:10px;color:var(--geo)"></i>MCO</div><div class="tz">a place on the map</div></div>
-              </div>
-              <div class="two">
-                <div class="field"><div class="cap">Departs Thu 22</div><div class="input">11:05 AM <span class="unit">CT</span></div></div>
-                <div class="field"><div class="cap">Lands</div><div class="input">2:30 PM <span class="unit">ET</span></div></div>
-              </div>
-              <div class="two">
-                <div class="field"><div class="cap">Cost</div><div class="input">289 <span class="unit">EACH</span></div></div>
-                <div class="field"><div class="cap">Confirmation</div><div class="input">KX7Q2B</div></div>
-              </div>
-              <div class="field">
-                <div class="cap">Then</div>
-                <div class="list-row"><i class="fa-solid fa-key" style="width:12px;color:var(--geo)"></i><span class="nm">Rental car pickup</span><span class="n">45m · $210 group</span></div>
-                <div class="list-row"><i class="fa-solid fa-car" style="width:12px;color:var(--geo)"></i><span class="nm">Drive to <b>first night's stay</b></span><span class="n">~32 min</span></div>
-                <div class="list-row" style="color:var(--accent);font:600 12px var(--font-sans)"><i class="fa-solid fa-plus" style="width:10px"></i>Add a step</div>
-              </div>
-              <div class="sheet-actions"><button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Save</button></div>
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Mon Nov 9</div><div class="s">DAY 4 · HONOLULU → TOKYO · HST</div></div></div>
+          <div class="body">
+            <div class="band line"><div class="ic"><i class="fa-solid fa-sun"></i></div><div><div class="k">Wakes at</div><div class="v">Kaimana Inn</div></div><div class="r">CHECK OUT<br>8:30</div></div>
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">7:30</span>
+              <div class="block"><div class="nm">Breakfast, pack up</div><div class="sub">1h</div></div>
+              <span class="tl-time" style="top:58px">8:30</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-car"></i></div><div><div class="nm">Drive → HNL, return car</div><div class="sub">35m</div></div></div>
+              <span class="tl-time" style="top:112px">9:30</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-clock"></i></div><div><div class="nm">At the airport</div><div class="sub">2h · international</div></div></div>
+              <span class="tl-time" style="top:164px">11:30</span>
+              <div class="block travel tall" style="border-bottom-style:dashed;border-radius:12px 12px 0 0"><div class="ic"><i class="fa-solid fa-plane"></i></div><div><div class="nm">Flight HNL → HND</div><div class="sub">8h 50m · $640 each</div><div class="sub" style="color:var(--geo)">continues on Tue 10 →</div></div><span class="lock"><i class="fa-solid fa-lock"></i>Booked</span></div>
+            </div>
+            <div class="hint">No "Sleeps at" band: Monday night disappears over the date line, so there's no night to book here and Where we'll be skips it.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2c · Tue Nov 10: landing in Tokyo</h3>
+        <p class="note">You lose a day crossing the date line. The new day starts on the new clock. Everything before landing is greyed "in the air" and can't take plans.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Tue Nov 10</div><div class="s">DAY 5 · TOKYO · JST</div></div></div>
+          <div class="body">
+            <div class="air"><i class="fa-solid fa-plane"></i><div><div class="nm">In the air</div><div class="sub">since Mon 11:30 AM Honolulu time</div></div><span class="r">UNTIL 3:20 PM</span></div>
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">3:20</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-passport"></i></div><div><div class="nm">Immigration, bags</div><div class="sub">1h</div></div></div>
+              <span class="tl-time" style="top:58px">4:20</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-train"></i></div><div><div class="nm">Keikyu line → Shinagawa</div><div class="sub">40m · ¥330</div></div></div>
+              <span class="tl-time" style="top:110px">5:15</span>
+              <div class="block"><div class="nm">Check in, drop bags</div><div class="sub">30m · Hotel Sora</div></div>
+              <span class="tl-time" style="top:162px">7:00</span>
+              <div class="block" style="margin-top:8px"><div class="nm">Ramen near the hotel</div><div class="sub">1h · ¥1,400 each</div></div>
+            </div>
+            <div class="band ink"><div class="ic"><i class="fa-solid fa-bed"></i></div><div><div class="k">Sleeps at</div><div class="v">Hotel Sora</div></div><div class="r">NIGHT 1<br>OF 4</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2d · Sat Nov 14, twice</h3>
+        <p class="note">Coming back east you land before you left, on the same date. Trip days are numbered by the days you live, not by date, so Day 9 and Day 10 are both Sat 14. The day strip labels each one by place.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="body" style="padding-top:4px">
+            <div class="strip">
+              <div class="sd"><span class="w">FRI</span><span class="n">13</span><span class="p">Tokyo</span></div>
+              <div class="sd on"><span class="w">SAT</span><span class="n">14</span><span class="p">Tokyo</span></div>
+              <div class="sdf"><i class="fa-solid fa-plane"></i></div>
+              <div class="sd on"><span class="w">SAT</span><span class="n">14</span><span class="p">Honolulu</span></div>
+              <div class="sd"><span class="w">SUN</span><span class="n">15</span><span class="p">Honolulu</span></div>
+            </div>
+            <div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+              <div class="cap">Day 9 · Sat 14 · Tokyo · JST</div>
+              <div class="block"><div class="nm">Tsukiji outer market</div><div class="sub">10:00 · 2h</div></div>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-plane"></i></div><div><div class="nm">Flight HND → HNL</div><div class="sub">9:00 PM · 7h 50m · continues on Day 10 →</div></div></div>
+            </div>
+            <div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+              <div class="cap">Day 10 · Sat 14 · Honolulu · HST</div>
+              <div class="air" style="margin:0"><i class="fa-solid fa-plane"></i><div><div class="nm">In the air</div><div class="sub">since 9:00 PM Tokyo time</div></div><span class="r">UNTIL 9:50 AM</span></div>
+              <div class="block"><div class="nm">Beach day, Waikiki</div><div class="sub">1:00 PM · 3h</div></div>
             </div>
           </div>
         </div>
@@ -489,18 +550,19 @@
 
     <div class="decide">
       <div>
-        <h4>Whose flight is it</h4>
+        <h4>Where a day's clock comes from</h4>
         <ol>
-          <li><b>One way in and out for the trip</b>, and anyone not on it can untick themselves under Who's going. <span class="rec">Recommend</span> This is the same split you already have on any block, and it covers a couple traveling together.</li>
-          <li>One arrival per traveler, so a friend can fly in from Denver. Right for groups that meet up there, but it means a lane per person on day 1. I'd add this later if it comes up.</li>
+          <li><b>The place you wake up</b>, or the place you land on a day that starts in the air. <span class="rec">Recommend</span> Each day has one clock, set by its stay in Where we'll be. A flight's two ends are the only place that shows two time zones.</li>
+          <li>One clock for the whole trip. Simple, but on a Japan leg every time would be 19 hours off, which defeats the calendar.</li>
         </ol>
       </div>
       <div>
         <h4>Open questions for you</h4>
         <ul>
-          <li>Should the drive to IAH (from home) count as trip time? It's on the trip's first day, but before the calendar's "day" starts at your destination.</li>
-          <li>A round-trip fare: put the whole price on the way in (shown here), or split it half and half across both legs?</li>
-          <li>Should "Then drive to the first night's stay" keep following the stay if you change hotels, or keep the hotel it was made with?</li>
+          <li>When you add a flight to Tokyo, should Where we'll be fill in Tokyo for the days after it until the next leg? Or suggest it and let you confirm?</li>
+          <li>Is a day that exists twice (Sat 14 in 2d) better as two trip days, as shown? The other option is one Sat 14 with a Tokyo half and a Honolulu half.</li>
+          <li>The flight home lands Tue 17 at 1:40 AM, after the trip's last day. Should it end at midnight on Day 12 with "lands Tue 1:40 AM" as a note (shown), or should the trip grow a Day 13?</li>
+          <li>Group trips: is it enough for each flight to have its own Who's going, so one friend can fly in from Denver on a different flight? Or does that need more than a block per traveler?</li>
         </ul>
       </div>
     </div>
@@ -589,10 +651,10 @@
   <section class="feature" id="money">
     <div class="eyebrow">Feature 4</div>
     <h2>Expenses</h2>
-    <p class="ask">Travel is priced like everything else: per person or for the group, and split among whoever's going. It shows up as soon as it's on the calendar. The way in and out also shows <em>before</em> it has times, so a booked fare counts even while day 1 is still empty.</p>
+    <p class="ask">Travel is priced like everything else: per person or for the group, and split among whoever's going. It shows up as soon as it's on the calendar. Flights and other long legs are grouped in their own card, because they're usually the biggest numbers and don't really belong to one day.</p>
     <div class="screens">
       <div class="screen-col">
-        <h3>4a · A Getting there card</h3>
+        <h3>4a · A Travel between places card</h3>
         <p class="note">It sits at the top, above the days, because it's usually the biggest number and it isn't really "a day's" cost.</p>
         <div class="phone">
           <div class="bar"></div>
@@ -604,7 +666,7 @@
               <div class="hint">of $2,536 for the whole trip</div>
             </div>
             <div class="card" style="padding:4px 14px 6px">
-              <div class="cap" style="padding-top:10px">Getting there and back</div>
+              <div class="cap" style="padding-top:10px">Travel between places</div>
               <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-plane"></i>Flight IAH ⇄ MCO</div><div class="how">$289 each · round trip</div></div><div class="amt">$289<small>you</small></div></div>
               <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-key"></i>Rental car</div><div class="how">$210 group ÷ 2</div></div><div class="amt">$105<small>you</small></div></div>
             </div>
@@ -640,21 +702,22 @@
           <li><code>mode</code> gains <code>flight</code> and <code>other</code> next to car / bus / train / walk.</li>
           <li><code>from_label</code> / <code>to_label</code> (text), plus optional <code>from_pin_id</code> / <code>to_pin_id</code> when an end is a place, so estimates and the next ride can start there.</li>
           <li><code>booked</code>: a fixed time that can't be dragged and asks before Move dates shifts it.</li>
-          <li><code>depart_tz</code> / <code>arrive_tz</code> for flights only. The calendar stays in the trip's time zone.</li>
+          <li><code>depart_tz</code> / <code>arrive_tz</code> for flights only. Each day shows its own clock (see Days and clocks).</li>
         </ul>
       </div>
       <div>
-        <h4>Trip</h4>
+        <h4>Days and clocks</h4>
         <ul>
-          <li><code>travel_items.role</code>: <code>arrive</code> / <code>leave</code> / NULL. "Then" steps share a <code>leg_id</code> and keep an order.</li>
-          <li>Placing an arrival puts its plan on the first day at its booked time, with its steps right after it.</li>
+          <li>Each trip day gets a time zone, taken from its stay's location (Google's Time Zone API, looked up once when the stay is set). A day that starts in the air takes the landing airport's zone.</li>
+          <li>Trip days are already indexed by day number, not by date, so a date that happens twice is two days with the same label.</li>
+          <li>Where we'll be reads legs from placed travel items with a mode and a from and to. Nothing is stored twice.</li>
         </ul>
       </div>
       <div>
         <h4>Money and planner</h4>
         <ul>
-          <li>Expenses reads arrive/leave items whether or not they're placed. Everything else still comes from plans, as it does today.</li>
-          <li>The day metrics add a travel sum (items with a mode). Map trip planning can start from the arrival's <code>to_pin_id</code> on day 1.</li>
+          <li>Expenses groups travel items whose mode is flight, train or bus into the Travel between places card. They still come from plans, as they do today.</li>
+          <li>The day metrics add a travel sum (items with a mode). Map trip planning can start from a landing's <code>to_pin_id</code>.</li>
         </ul>
       </div>
     </div>
@@ -670,7 +733,7 @@
   const cost = document.querySelector("[data-cost]");
   const presets = {
     flight: ["Houston IAH", "Orlando MCO", "289", "Place on Thu 22 · 12:05 PM"],
-    drive: ["MCO airport", "Hotel Alma", "0", "Place after Arrive MCO"],
+    drive: ["MCO airport", "Hotel Alma", "0", "Place after Rental car pickup"],
   };
   chips.forEach((chip) => chip.addEventListener("click", () => {
     const mode = chip.dataset.mode;
