@@ -147,6 +147,8 @@ export default function Expenses() {
             perTraveler={shown.length > 1 ? expenses.perTraveler : []}
           />
 
+          {expenses.legs.length > 0 && <DayCard label="Travel between places" rows={expenses.legs} />}
+
           {expenses.daily.length > 0 && <DayCard label="Stays and daily costs" rows={expenses.daily} />}
 
           {dailyCosts.waiting.length > 0 && <WaitingForDays items={dailyCosts.waiting} tripId={trip.id} />}
@@ -155,7 +157,7 @@ export default function Expenses() {
             <DayCard key={day.dayIndex} label={day.label} rows={day.rows} />
           ))}
 
-          {expenses.days.length === 0 && expenses.daily.length === 0 && (
+          {expenses.days.length === 0 && expenses.legs.length === 0 && expenses.daily.length === 0 && (
             <div
               style={{
                 borderRadius: "var(--radius-lg)",

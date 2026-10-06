@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faChevronRight, faPlus } from "@fortawesome/free-solid-svg-icons";
+import { faChevronRight, faPlus, faRoute } from "@fortawesome/free-solid-svg-icons";
 import PlanBlock from "../components/planner/PlanBlock";
 import PlanDetailsSheet from "../components/planner/PlanDetailsSheet";
 import DayGrid from "../components/planner/DayGrid";
@@ -33,6 +33,7 @@ import {
   topForMinute,
 } from "../lib/dayGrid";
 import { dragKind } from "../lib/planDrag";
+import { dayTravelMinutes, formatMinutes, travelGaps } from "../lib/travel";
 import TripHeader from "../components/core/TripHeader";
 import TripDaysNotice from "../components/trip/TripDaysNotice";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
@@ -119,6 +120,9 @@ export default function DaySchedule() {
     [shownSplits, showJustMe, myTravelerId]
   );
   const laidOut = useMemo(() => layoutDayPlans(dayEntries, lanes), [dayEntries, lanes]);
+  // Travel takes up the day like anything else does; this says how much
+  // of it is getting around (lib/travel.js).
+  const travelMinutes = useMemo(() => dayTravelMinutes(dayEntries), [dayEntries]);
 
   // Region(s) this day already has scheduled — derived from the pins
   // behind this day's plan items (travel items have no region).
@@ -610,6 +614,18 @@ export default function DaySchedule() {
   // the dark tray used to lay out in full: the unplaced items, the region
   // filter over them, the two-tap delete, and the custom-event form.
   const [addOpen, setAddOpen] = useState(false);
+  const [addGap, setAddGap] = useState(null); // the gap a "+ travel" chip opened it from
+  const closeAdd = () => {
+    setAddOpen(false);
+    setAddGap(null);
+  };
+  // Where travel could go between two blocks: a "+ travel" chip in each
+  // gap opens the Travel form with the from and to filled in. Not on a
+  // split day, where the gap may be one group's and not the other's.
+  const gaps = useMemo(
+    () => (canPlan && !placing && !dragPreview && !dayHasSplit ? travelGaps(dayEntries, pins) : []),
+    [canPlan, placing, dragPreview, dayHasSplit, dayEntries, pins]
+  );
   const unplacedCount = unplacedPins.length + unplacedTravelItems.length;
 
   return (
@@ -629,6 +645,12 @@ export default function DaySchedule() {
             <div className="serif-place" style={{ flex: 1, minWidth: 0, fontSize: 24, marginTop: 2, color: "var(--text-primary)" }}>
               {tripDayLabel(dayIndex, trip)}
             </div>
+            {travelMinutes > 0 && (
+              <span className="mono-data-sm" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 5, color: "var(--geo)" }}>
+                <FontAwesomeIcon icon={faRoute} style={{ width: 10, height: 10 }} />
+                {formatMinutes(travelMinutes)} travel
+              </span>
+            )}
             {/* Hidden at zero — an empty "0 blocks open" would be chrome
                 announcing nothing. Goes to the first of them; the Compare
                 tab is how you reach any others. */}
@@ -905,6 +927,40 @@ export default function DaySchedule() {
                   </div>
                 );
             })}
+            {gaps.map((gap) => {
+              const height = (gap.endMin - gap.startMin) * PX_PER_MIN;
+              return (
+                <button
+                  key={`gap-${gap.startMin}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddGap(gap);
+                    setAddOpen(true);
+                  }}
+                  aria-label={`Add travel${gap.from ? ` from ${gap.from.label}` : ""}${gap.to ? ` to ${gap.to.label}` : ""} at ${clockLabel(gap.startMin)}`}
+                  style={{
+                    position: "absolute",
+                    top: topForMinute(gap.startMin) + Math.max(0, (height - 20) / 2),
+                    right: 4,
+                    height: 20,
+                    padding: "0 9px",
+                    borderRadius: 10,
+                    border: "1px dashed var(--geo)",
+                    background: "var(--surface-card)",
+                    color: "var(--geo)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    font: "600 10.5px var(--font-sans)",
+                    zIndex: 1,
+                  }}
+                >
+                  <FontAwesomeIcon icon={faPlus} style={{ width: 8, height: 8 }} />
+                  travel
+                </button>
+              );
+            })}
             {/* A grip on each of a split's edges that falls on this day
                 (a split running on from yesterday has no start edge here).
                 After the blocks, so a block touching the edge doesn't
@@ -1033,9 +1089,13 @@ export default function DaySchedule() {
 
       {addOpen && canPropose && (
         <AddSheet
+          // A new sheet per gap: the form fills itself in once, on open.
+          key={addGap ? `gap-${addGap.startMin}` : "add"}
           dayIndex={dayIndex}
           canPlace={canPlan}
-          onClose={() => setAddOpen(false)}
+          gap={addGap}
+          onClose={closeAdd}
+          onNotice={setMoveError}
           unplacedPins={unplacedPins}
           unplacedTravelItems={unplacedTravelItems}
           dayRegions={addSheetRegions}

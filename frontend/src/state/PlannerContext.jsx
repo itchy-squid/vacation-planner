@@ -204,10 +204,13 @@ function normalizeTravelItem(t, contributorsById) {
     tripId: t.trip_id,
     title: t.title,
     kind: t.kind,
-    // How a ride planned on the Map tab goes ("car" | "bus" | "train" |
-    // "walk"), and how far; null for anything typed in by hand.
+    // How travel goes ("car" | "bus" | "train" | "walk" | "flight"), and
+    // how far; null for "Other" and for anything that isn't travel.
     mode: t.mode ?? null,
     distanceMeters: t.distance_meters ?? null,
+    // Where a leg leaves from and goes to, as typed (lib/travel.js).
+    fromLabel: t.from_label ?? "",
+    toLabel: t.to_label ?? "",
     dur: t.duration_minutes,
     cost: dollarsOrNull(t.cost_cents),
     costCents: t.cost_cents ?? null,
@@ -227,6 +230,10 @@ function normalizePlanItem(it) {
     travelItemId: it.travel_item?.id ?? null,
     title: source?.title ?? "Untitled",
     mode: it.travel_item?.mode ?? null,
+    // "travel" | "lodging" | "other" for a travel item; null for a pin.
+    kind: it.travel_item?.kind ?? null,
+    fromLabel: it.travel_item?.from_label ?? "",
+    toLabel: it.travel_item?.to_label ?? "",
     // What this placement is actually as long as — the trim if there is
     // one, the item's own duration otherwise. Same resolution order as
     // backend/app/derive.py's item_duration.
@@ -1230,6 +1237,41 @@ export function PlannerProvider({ children }) {
           const item = normalizeTravelItem(created, contributorsById);
           dispatch({ type: "APPLY_TRAVEL_ITEM", item });
           return item;
+        }
+
+        // The Travel form (components/planner/TravelForm.jsx) with a time
+        // already known — a flight's departure, or the gap it was opened
+        // from: the travel item goes straight onto the calendar there.
+        // When those hours are taken, the item is armed instead, so a tap
+        // places it somewhere free.
+        case "PLACE_TRAVEL_AT": {
+          let item;
+          try {
+            const created = await api.createTravelItem(state.trip.id, action.payload);
+            const contributorsById = Object.fromEntries(state.contributors.map((c) => [c.id, c]));
+            item = normalizeTravelItem(created, contributorsById);
+            dispatch({ type: "APPLY_TRAVEL_ITEM", item });
+          } catch (err) {
+            console.error("create travel failed", err);
+            return { ok: false, error: apiMessage(err) };
+          }
+          try {
+            await api.createPlan(state.trip.id, {
+              start_min: action.startsAt,
+              end_min: action.startsAt + item.dur,
+              status: "placed",
+              items: [{ travel_item_id: item.id }],
+              branch_id: null,
+            });
+            await dispatchRef.current({ type: "REFRESH_PLANS_AND_ITEMS" });
+            return { ok: true, item };
+          } catch (err) {
+            dispatch({
+              type: "ARM_PLACEMENT",
+              placing: { kind: "travel", refId: item.id, durationMinutes: item.dur, label: item.title },
+            });
+            return { ok: false, armed: true, item, error: apiMessage(err) };
+          }
         }
 
         case "PATCH_TRAVEL_ITEM": {

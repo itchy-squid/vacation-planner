@@ -1,6 +1,8 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faAnglesDown, faAnglesUp, faLock } from "@fortawesome/free-solid-svg-icons";
 import { clockLabel } from "../../lib/planTime";
+import { isTravelItem } from "../../lib/travel";
+import ModeIcon from "../trip/ModeIcon";
 
 // Renders one Plan absolutely positioned on the DaySchedule calendar grid
 // — replaces TimeBlock.jsx, whose heights were a duration heuristic
@@ -88,6 +90,11 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
   const startLabel = plan.startDt ? clockLabel(plan.startDt.minuteOfDay) : "";
   const endLabel = plan.endDt ? clockLabel(plan.endDt.minuteOfDay) : "";
   const compact = rect.height < 34;
+  // A block that's only travel (lib/travel.js) leads with how it goes, so
+  // a flight or a drive reads as getting around at a glance.
+  const travel = plan.items.length > 0 && plan.items.every(isTravelItem);
+  const travelMark = (color) =>
+    travel ? <ModeIcon mode={plan.items[0].mode} style={{ width: 10, height: 10, flexShrink: 0, color }} /> : null;
 
   const base = {
     position: "absolute",
@@ -126,6 +133,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
       >
         <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: "var(--accent)", overflow: "hidden" }}>
           {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--accent)" />}
+          {travelMark("var(--accent)")}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--accent)" />}
           <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
@@ -171,6 +179,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
               plan would render indistinguishably from an unlocked one.
               Same icon as the lock toggle in PlanDetailsSheet.jsx. */}
           <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
+          {travelMark("var(--geo)")}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
           <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
@@ -201,6 +210,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: isPencilled ? "var(--text-secondary)" : "var(--text-primary)", overflow: "hidden" }}>
         {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
+        {travelMark("var(--geo)")}
         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
         <Faces people={faces} tight={tightFaces} newcomers={newcomers} />

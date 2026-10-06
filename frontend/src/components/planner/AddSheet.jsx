@@ -7,6 +7,7 @@ import {
   faChevronRight,
   faClock,
   faLocationDot,
+  faPlane,
   faRoute,
 } from "@fortawesome/free-solid-svg-icons";
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
@@ -14,17 +15,21 @@ import CostField from "../forms/CostField";
 import { usePlannerState, usePlannerDispatch } from "../../state/PlannerContext";
 import { textFieldStyle } from "../forms/TextField";
 import PinOrderToggle from "./PinOrderToggle";
+import TravelForm from "./TravelForm";
 import { heartCount, heartsSuffix, inPinOrder, usePinOrder } from "../../lib/popularity";
 
 // Everything you can add to a day, behind the one "+ Add" button that
 // replaced pages/DaySchedule.jsx's tray (see docs/features/scheduling-
-// feature-spec.md "Tray"). Three modes in one bottom sheet:
+// feature-spec.md "Tray"). Four modes in one bottom sheet:
 //
-//   menu    — block / pin / custom event
+//   menu    — block / pin / travel / custom event
 //   picker  — the unplaced items the tray used to lay out as cards
+//   travel  — a flight, drive or train with just how long it takes
+//             (TravelForm.jsx); also opened straight from a gap between
+//             two blocks, with `gap` filling in where from and to
 //   custom  — the travel-item form the tray used to hide behind a "+"
 //
-// They are modes rather than three sheets because "back" has to land on
+// They are modes rather than separate sheets because "back" has to land on
 // the menu with the sheet still open; routing each one would animate the
 // whole sheet out and back in for what reads as one panel.
 //
@@ -47,13 +52,13 @@ function travelKindIcon(kind) {
   return (TRAVEL_KINDS.find((k) => k.value === kind) ?? TRAVEL_KINDS[2]).icon;
 }
 
-export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedPins, unplacedTravelItems, dayRegions, allTripRegions }) {
+export default function AddSheet({ dayIndex, canPlace = true, onClose, onNotice, unplacedPins, unplacedTravelItems, dayRegions, allTripRegions, gap = null }) {
   const navigate = useNavigate();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
   const { trip } = state;
 
-  const [mode, setMode] = useState("menu");
+  const [mode, setMode] = useState(gap ? "travel" : "menu");
   const [error, setError] = useState("");
 
   const unplacedCount = unplacedPins.length + unplacedTravelItems.length;
@@ -90,6 +95,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
             canPlace={canPlace}
             onPropose={() => navigate(`/trips/${trip.id}/map/trip?day=${dayIndex}&from=schedule`)}
             onPick={() => setMode("picker")}
+            onTravel={() => setMode("travel")}
             onCustom={() => setMode("custom")}
           />
         )}
@@ -103,6 +109,19 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
             onBack={() => setMode("menu")}
             onArm={(kind, id) => {
               dispatch(kind === "pin" ? { type: "ARM_PLACE_PIN", pinId: id } : { type: "ARM_PLACE_TRAVEL", travelItemId: id });
+              onClose();
+            }}
+            onError={setError}
+          />
+        )}
+
+        {mode === "travel" && (
+          <TravelForm
+            dayIndex={dayIndex}
+            gap={gap}
+            header={<SubHeader onBack={gap ? onClose : () => setMode("menu")} title="Travel" />}
+            onDone={({ notice }) => {
+              if (notice) onNotice?.(notice);
               onClose();
             }}
             onError={setError}
@@ -132,7 +151,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, unplacedP
 
 // Without plans:write (a companion) only "Propose a route" is offered:
 // the other two put something straight onto the calendar.
-function Menu({ dayIndex, unplacedCount, canPlace, onPropose, onPick, onCustom }) {
+function Menu({ dayIndex, unplacedCount, canPlace, onPropose, onPick, onTravel, onCustom }) {
   return (
     <div>
       <div className="mono-caption" style={{ marginBottom: 6 }}>Add to day {dayIndex}</div>
@@ -160,11 +179,19 @@ function Menu({ dayIndex, unplacedCount, canPlace, onPropose, onPick, onCustom }
             disabled={unplacedCount === 0}
           />
           <MenuRow
+            icon={faPlane}
+            tint="var(--geo-quiet)"
+            ink="var(--geo)"
+            title="Travel"
+            subtitle="A flight, a drive, a train. Just how long it takes."
+            onClick={onTravel}
+          />
+          <MenuRow
             icon={faClock}
             tint="var(--surface-sunken)"
             ink="var(--text-secondary)"
             title="Custom event"
-            subtitle="Something that isn't a pin"
+            subtitle="Anything else that takes time"
             onClick={onCustom}
             last
           />

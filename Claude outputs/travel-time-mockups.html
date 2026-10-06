@@ -1,0 +1,752 @@
+<title>Travel Time Mockups</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/solid.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/fontawesome.min.js"></script>
+<style>
+  /* Layout: a review sheet. Each feature is a band of phone screens drawn in the
+     app's own tokens, followed by the decisions it needs. Page chrome follows the
+     viewer's theme; the phones stay in the app's light palette, as the app does. */
+  :root {
+    /* page chrome */
+    --pg-bg: #e9e7ec; --pg-fg: #1b1a1f; --pg-muted: #5d5b66; --pg-line: rgba(27,26,31,.14);
+    --pg-panel: #f6f5f7; --pg-accent: #8f4478; --pg-tag: rgba(143,68,120,.10);
+    /* app tokens (frontend/src/styles/tokens) — light only, like the app */
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-inset: #f9f8fa; --surface-sunken: #eceaee;
+    --surface-inverse: #1b1a1f; --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95;
+    --text-faint: #a3a1ab; --accent: #8f4478; --accent-quiet: rgba(143,68,120,.06); --accent-quiet-strong: rgba(143,68,120,.13);
+    --geo: #3d8a9c; --geo-quiet: #eef2f3; --warn: #b4553f; --stone-250: #dcdae0; --stone-700: #4a4852;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --on-ink: #ffffff; --on-ink-muted: rgba(255,255,255,.6); --scrim: rgba(27,26,31,.42);
+    --map-land: #eceef0; --map-water: #aecfd8; --map-road: #ffffff;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(27,26,31,.06), 0 2px 8px rgba(27,26,31,.05);
+    --shadow-raised: 0 1px 3px rgba(27,26,31,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+      --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+    --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); font: 400 14px/1.55 var(--font-sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; }
+  h1 { font: 400 34px/1.15 var(--font-serif); margin: 0 0 10px; text-wrap: balance; }
+  .lede { max-width: 68ch; color: var(--pg-muted); margin: 0; }
+  .eyebrow { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pg-accent); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { font: 600 12.5px var(--font-sans); color: var(--pg-fg); text-decoration: none; padding: 6px 12px; border: 1px solid var(--pg-line); border-radius: 999px; }
+  .toc a:hover, .toc a:focus-visible { border-color: var(--pg-accent); outline: none; }
+
+  section.feature { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--pg-line); }
+  section.feature > h2 { font: 400 27px/1.2 var(--font-serif); margin: 6px 0 8px; text-wrap: balance; }
+  .ask { max-width: 70ch; color: var(--pg-muted); margin: 0 0 14px; }
+  .today { max-width: 76ch; background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 24px; }
+  .today b { font-weight: 600; }
+  .today code, .decide code { font: 400 12px var(--font-mono); background: var(--pg-tag); padding: 1px 5px; border-radius: 4px; }
+
+  .screens { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+  .screen-col { width: 340px; max-width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .screen-col h3 { font: 600 13.5px/1.3 var(--font-sans); margin: 0; }
+  .screen-col .note { font-size: 12.5px; color: var(--pg-muted); margin: 0; line-height: 1.5; }
+
+  .decide { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .decide > div { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .decide h4 { font: 600 13px var(--font-sans); margin: 0 0 8px; }
+  .decide ol, .decide ul { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+  .rec { display: inline-block; font: 600 10px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-accent); background: var(--pg-tag); padding: 1px 6px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
+
+  /* ---------- phone (app palette only below here) ---------- */
+  .phone { background: var(--surface-page); color: var(--text-primary); border-radius: 30px; border: 1px solid var(--pg-line); box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; position: relative; font-size: 13px; }
+  .phone .bar { height: 26px; }
+  .app-head { padding: 0 16px 10px; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+  .app-head .t { font: 400 22px/1.15 var(--font-serif); }
+  .app-head .s { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .hint { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .body { padding: 0 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
+  .navstrip { display: flex; justify-content: space-around; border-top: 1px solid var(--hairline); background: var(--surface-card); padding: 9px 4px 12px; font: 600 10.5px var(--font-sans); color: var(--text-muted); }
+  .navstrip .on { color: var(--accent); }
+
+  .seg { display: flex; background: var(--surface-sunken); border-radius: var(--radius-md); padding: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: 600 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+  .seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-primary); box-shadow: var(--shadow-raised); }
+  .seg button:focus-visible, .chip:focus-visible, .tchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .input { height: 44px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); display: flex; align-items: center; padding: 0 12px; font: 600 14px var(--font-sans); gap: 8px; }
+  .input input { border: 0; background: transparent; font: inherit; color: inherit; width: 100%; min-width: 0; outline: none; }
+  .input .unit { font: 500 10.5px var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 12px; border-radius: var(--radius-pill); font: 500 12px var(--font-sans); background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip[aria-pressed="true"], .chip.on { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .chip .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .chip[aria-pressed="true"] .n, .chip.on .n { color: var(--on-ink-muted); }
+  .chip.dashed { border-style: dashed; color: var(--text-secondary); }
+  .chip svg { width: 11px !important; height: 11px; }
+
+  /* type picker tiles */
+  .types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tchip { border: 1px solid var(--border); background: var(--surface-card); border-radius: var(--radius-lg); padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 10.5px/1.15 var(--font-sans); color: var(--text-primary); cursor: pointer; text-align: center; }
+  .tchip svg { width: 15px !important; height: 15px; color: var(--text-secondary); }
+  .tchip[aria-pressed="true"] { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .tchip[aria-pressed="true"] svg { color: var(--on-ink); }
+  .tchip .flag { font: 500 8.5px var(--font-mono); letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; }
+  .tchip[aria-pressed="true"] .flag { color: var(--on-ink-muted); }
+
+  .receipt { background: var(--surface-inset); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 10px 12px; font: 400 11.5px/1.6 var(--font-mono); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .receipt b { color: var(--text-primary); font-weight: 500; }
+  .receipt .row { display: flex; justify-content: space-between; gap: 8px; }
+
+  .muted-box { border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 9px 12px; color: var(--text-muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .muted-box svg { width: 12px !important; }
+
+  /* board */
+  .filterbar { display: flex; flex-direction: column; gap: 8px; }
+  .scrollrow { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .scrollrow::-webkit-scrollbar { display: none; }
+  .scrollrow .chip { flex: none; }
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pcard { background: var(--surface-card); border-radius: var(--radius-xl); border: 1px solid var(--hairline); box-shadow: var(--shadow-card); overflow: hidden; }
+  .pcard[hidden] { display: none !important; }
+  .photo { height: 70px; background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); position: relative; }
+  .photo .badge { position: absolute; left: 7px; top: 7px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 3px 7px; font: 600 9.5px var(--font-sans); display: inline-flex; gap: 4px; align-items: center; box-shadow: var(--shadow-raised); }
+  .photo .badge.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .photo .badge svg { width: 9px !important; }
+  .pcard .in { padding: 8px 10px 10px; }
+  .pcard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .pcard .pl { font: 400 10.5px var(--font-sans); color: var(--text-secondary); margin-top: 3px; display: flex; gap: 5px; align-items: center; }
+  .pcard .pl i { width: 5px; height: 5px; border-radius: 50%; background: var(--geo); display: inline-block; }
+  .pcard .meta { margin-top: 6px; font: 500 10.5px var(--font-mono); color: var(--text-primary); display: flex; justify-content: space-between; gap: 4px; }
+  .pcard .meta span:last-child { color: var(--text-muted); }
+  .stays-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .stays-strip::-webkit-scrollbar { display: none; }
+  .staycard { flex: none; width: 190px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .staycard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .staycard .px { font: 500 11px var(--font-mono); }
+  .staycard .px small { color: var(--text-muted); font-size: 10px; }
+  .staycard .nights { font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line { display: flex; justify-content: space-between; align-items: center; font: 400 11.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line button { border: 0; background: none; color: var(--accent); font: 600 11.5px var(--font-sans); cursor: pointer; padding: 0; }
+
+  /* nights grid */
+  .nights-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .nightcell { border-radius: 8px; background: var(--surface-card); border: 1px solid var(--border); padding: 6px 0 5px; text-align: center; }
+  .nightcell .d { font: 400 9.5px var(--font-mono); color: var(--text-faint); }
+  .nightcell .n { font: 600 12px var(--font-sans); }
+  .nightcell.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .nightcell.on .d { color: var(--on-ink-muted); } .nightcell.on .n { color: var(--on-ink); }
+  .nightcell.other { background: var(--surface-sunken); border-color: transparent; }
+  .nightcell.other .n { color: var(--text-muted); }
+  .nightcell.off { border-style: dashed; }
+
+  /* plan day */
+  .band { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-lg); }
+  .band.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .band.line { background: var(--surface-card); border: 1px solid var(--border); }
+  .band .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(255,255,255,.12); }
+  .band.line .ic { background: var(--geo-quiet); color: var(--geo); }
+  .band .ic svg { width: 11px !important; }
+  .band .k { font: 500 9.5px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; opacity: .7; }
+  .band .v { font: 600 13px var(--font-sans); }
+  .band .r { margin-left: auto; font: 500 10.5px var(--font-mono); opacity: .75; text-align: right; }
+  .timeline { position: relative; padding-left: 40px; display: flex; flex-direction: column; gap: 6px; }
+  .timeline::before { content: ""; position: absolute; left: 30px; top: 2px; bottom: 2px; width: 1px; background: var(--border-strong); }
+  .tl-time { position: absolute; left: 0; font: 400 9.5px var(--font-mono); color: var(--text-muted); }
+  .block { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 8px 10px; box-shadow: var(--shadow-card); position: relative; }
+  .block .nm { font: 600 12.5px var(--font-sans); }
+  .block .sub { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .block.ride { background: transparent; box-shadow: none; border: 1px dashed var(--border-strong); padding: 5px 10px; }
+  .block.ride .nm { font: 500 11px var(--font-sans); color: var(--text-secondary); }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .metric { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 7px 9px; }
+  .metric .v { font: 400 18px/1.1 var(--font-serif); font-variant-numeric: tabular-nums; }
+  .metric .k { font: 500 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 3px; }
+  .metric.strike .v { color: var(--text-muted); }
+
+  /* expenses */
+  .exp-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--hairline); align-items: baseline; }
+  .exp-row:first-of-type { border-top: 0; }
+  .exp-row .l { min-width: 0; }
+  .exp-row .nm { font: 600 12.5px var(--font-sans); }
+  .exp-row .how { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .exp-row .amt { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .exp-row .amt small { display: block; font-size: 10px; color: var(--text-muted); }
+  .daybars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; height: 92px; }
+  .daybar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 0; }
+  .daybar i { display: block; width: 100%; }
+  .daybar .stay { background: var(--surface-inverse); border-radius: 0 0 3px 3px; }
+  .daybar .daily { background: var(--geo); }
+  .daybar .once { background: var(--accent); border-radius: 3px 3px 0 0; }
+  .daylabels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font: 400 9.5px var(--font-mono); color: var(--text-muted); text-align: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .legend span { display: inline-flex; gap: 5px; align-items: center; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  /* sheet */
+  .scrim { background: var(--scrim); padding-top: 120px; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 2px; }
+  .sheet .t { font: 400 19px var(--font-serif); }
+  .sheet-actions { display: flex; gap: 8px; }
+  .btn { flex: 1; height: 42px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 13px var(--font-sans); color: var(--text-primary); }
+  .btn.primary { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+
+  /* map */
+  .map { height: 330px; position: relative; background: var(--map-land); overflow: hidden; }
+  .map .water { position: absolute; right: -40px; top: -20px; width: 160px; height: 420px; background: var(--map-water); border-radius: 50% 0 0 50%; transform: rotate(8deg); }
+  .map .road { position: absolute; background: var(--map-road); height: 5px; border-radius: 3px; transform-origin: left center; }
+  .mk { position: absolute; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-card); border: 1.5px solid var(--surface-inverse); color: var(--text-primary); box-shadow: var(--shadow-raised); transform: translate(-50%, -50%); }
+  .mk svg { width: 11px !important; }
+  .mk.stay { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-card); width: 30px; height: 30px; }
+  .mk.start { background: var(--geo); color: var(--on-ink); border-color: var(--surface-card); }
+  .mk.faded { opacity: .25; }
+  .map-filter { position: absolute; left: 10px; right: 10px; top: 10px; }
+  .map-filter .chip { box-shadow: var(--shadow-raised); }
+  .map-count { position: absolute; left: 10px; bottom: 10px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 5px 10px; font: 500 10.5px var(--font-sans); box-shadow: var(--shadow-raised); }
+
+  .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--surface-inverse); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-card); }
+  .toggle.off { background: var(--stone-250); }
+  .toggle.off::after { right: auto; left: 2px; }
+  .list-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--hairline); }
+  .list-row:first-child { border-top: 0; }
+  .list-row .nm { font: 500 12.5px var(--font-sans); flex: 1; min-width: 0; }
+  .list-row .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border-strong); flex: none; display: grid; place-items: center; }
+  .check.on { background: var(--surface-inverse); border-color: var(--surface-inverse); color: var(--on-ink); }
+  .check svg { width: 9px !important; }
+
+  @media (max-width: 420px) {
+    .wrap { padding-inline: 16px; }
+    h1 { font-size: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ---------- this sheet's additions ---------- */
+  .block.travel { background: var(--geo-quiet); border-color: rgba(61,138,156,.28); box-shadow: none; display: flex; gap: 9px; align-items: flex-start; }
+  .block.travel .ic { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-card); color: var(--geo); display: grid; place-items: center; flex: none; margin-top: 1px; }
+  .block.travel .ic svg { width: 11px !important; }
+  .block.travel .nm { font: 600 12.5px var(--font-sans); }
+  .block.travel .lock { margin-left: auto; font: 500 9px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--geo); white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+  .block.travel .lock svg { width: 9px !important; }
+  .block.tall { min-height: 74px; }
+  .gapchip { align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; border: 1px dashed var(--geo); color: var(--geo); background: var(--surface-card); border-radius: var(--radius-pill); padding: 4px 10px; font: 600 11px var(--font-sans); cursor: pointer; }
+  .gapchip svg { width: 10px !important; }
+  .gapchip small { font: 400 10px var(--font-mono); color: var(--text-muted); }
+  .menu-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--hairline); }
+  .menu-row:first-of-type { border-top: 0; }
+  .menu-row .sq { width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-secondary); display: grid; place-items: center; flex: none; }
+  .menu-row .sq svg { width: 15px !important; }
+  .menu-row.new .sq { background: var(--geo-quiet); color: var(--geo); }
+  .menu-row .nm { font: 600 13px var(--font-sans); }
+  .menu-row .d { font: 400 11px var(--font-sans); color: var(--text-secondary); margin-top: 2px; }
+  .menu-row .newtag { margin-left: auto; font: 600 9px var(--font-mono); letter-spacing: .05em; color: var(--geo); text-transform: uppercase; }
+  .modes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .modes .tchip { padding: 7px 0 6px; font-size: 10px; }
+  .route-pair { display: grid; grid-template-columns: 18px 1fr; gap: 0 8px; }
+  .route-pair .rail { display: flex; flex-direction: column; align-items: center; padding: 15px 0; }
+  .route-pair .rail i { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--geo); background: var(--surface-card); }
+  .route-pair .rail i.fill { background: var(--geo); }
+  .route-pair .rail b { flex: 1; width: 1.5px; background: var(--geo); opacity: .4; margin: 3px 0; }
+  .route-pair .stack { display: flex; flex-direction: column; gap: 6px; }
+  .opt { font: 400 10px var(--font-mono); color: var(--text-faint); margin-left: auto; }
+  .est { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--geo-quiet); border-radius: var(--radius-lg); padding: 8px 10px; font: 400 11.5px var(--font-sans); color: var(--stone-700); }
+  .est b { font-weight: 600; color: var(--text-primary); }
+  .est button { border: 0; background: none; color: var(--geo); font: 600 11.5px var(--font-sans); cursor: pointer; padding: 0; white-space: nowrap; }
+  .tz { font: 400 10.5px var(--font-mono); color: var(--text-muted); }
+  .leg { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .leg-head { display: flex; align-items: center; gap: 8px; }
+  .leg-head .k { font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .leg-head .edit { margin-left: auto; font: 600 11.5px var(--font-sans); color: var(--accent); }
+  .leg-line { display: flex; align-items: baseline; gap: 6px; font: 600 15px var(--font-sans); }
+  .leg-line svg { width: 12px !important; color: var(--geo); align-self: center; }
+  .leg-times { display: flex; justify-content: space-between; font: 400 11px var(--font-mono); color: var(--text-secondary); }
+  .leg-then { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--hairline); padding-top: 8px; font: 400 12px var(--font-sans); }
+  .leg-then svg { width: 11px !important; color: var(--geo); }
+  .leg-then .r { margin-left: auto; font: 500 10.5px var(--font-mono); color: var(--text-secondary); }
+  .leg-add { border: 1px dashed var(--border-strong); border-radius: var(--radius-xl); padding: 12px; display: flex; gap: 10px; align-items: center; color: var(--text-secondary); font: 500 12.5px var(--font-sans); }
+  .leg-add svg { width: 12px !important; }
+  .metric .of { font: 400 10px var(--font-mono); color: var(--geo); margin-top: 2px; }
+  .exp-row .nm svg { width: 10px !important; color: var(--geo); margin-right: 4px; }
+  .seg.small button { padding: 5px 0; font-size: 11px; }
+  [data-when][hidden] { display: none !important; }
+  .route { display: flex; flex-direction: column; gap: 6px; }
+  .rleg { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-left: 2px solid var(--geo); margin-left: 12px; }
+  .rleg > svg { width: 11px !important; color: var(--geo); margin-top: 3px; flex: none; }
+  .rleg .rl { font: 600 12px var(--font-sans); }
+  .rleg .rs { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .rleg .rs b { color: var(--text-primary); font-weight: 500; }
+  .rleg .rtag { display: inline-block; margin-top: 4px; font: 500 9px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--geo); background: var(--geo-quiet); border-radius: 4px; padding: 1px 5px; }
+  .rleg.ask { border-left-style: dashed; color: var(--text-secondary); }
+  .rleg.ask .rl { color: var(--accent); }
+  .rstay { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 9px 12px; }
+  .rstay .rd { font: 500 10px var(--font-mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .rstay .rn { font: 400 17px/1.2 var(--font-serif); margin-top: 2px; }
+  .rstay .rx { font: 400 11px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .air { display: flex; gap: 9px; align-items: center; padding: 9px 10px; border-radius: var(--radius-lg); background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); color: var(--text-secondary); }
+  .air > svg { width: 11px !important; color: var(--geo); }
+  .air .nm { font: 600 12px var(--font-sans); color: var(--text-primary); }
+  .air .sub { font: 400 10.5px var(--font-mono); }
+  .air .r { margin-left: auto; font: 500 9.5px var(--font-mono); letter-spacing: .04em; white-space: nowrap; }
+  .strip { display: flex; gap: 5px; align-items: stretch; }
+  .sd { flex: 1; min-width: 0; background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .sd .w { font: 500 9px var(--font-mono); color: var(--text-muted); }
+  .sd .n { font: 600 14px var(--font-sans); }
+  .sd .p { font: 400 9px var(--font-sans); color: var(--text-secondary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sd.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .sd.on .w, .sd.on .p { color: var(--on-ink-muted); } .sd.on .n { color: var(--on-ink); }
+  .sdf { display: grid; place-items: center; color: var(--geo); }
+  .sdf svg { width: 10px !important; }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Mockups · nothing built yet</div>
+  <h1>Travel time, on the days it happens</h1>
+  <p class="lede">Worked through one real trip: you start in Houston, fly IAH to MCO, pick up a car and drive to the hotel. Feature 2 adds a longer trip: Hawaii, then Japan, then Hawaii again. Travel counts as planned time, because it takes up the day either way. You can add travel with just how long it takes. You don't need a place at either end the way Map routes do. And the flight's cost lands in Expenses without pretending to be a pin.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#travel">1 · Add just travel time</a>
+    <a href="#there">2 · Long legs on the days</a>
+    <a href="#day1">3 · Day 1 on the Plan tab</a>
+    <a href="#money">4 · Expenses</a>
+    <a href="#under">What it would change</a>
+  </nav>
+
+  <!-- ============ 1 ============ -->
+  <section class="feature" id="travel">
+    <div class="eyebrow">Feature 1</div>
+    <h2>Add just travel time</h2>
+    <p class="ask">A new <b>Travel</b> option in the day's <em>+ Add</em> sheet. It needs one thing: how long. A mode, a from and to, and a price are all optional. When both ends are places the map knows, it offers Google's estimate. When they aren't, you type the minutes.</p>
+    <div class="today"><b>Today:</b> travel comes in two ways, and both get in the way. A <em>Custom event</em> takes a title, a kind (Travel / Lodging / Other), minutes and a cost, so a flight is "Other, 150 minutes" with no from, to or times. A Map route (Plan a trip) needs a stop at each end, so you can't add "drive from the airport" unless the airport is an idea and is already on the day.</div>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>1a · The add sheet gets a Travel row</h3>
+        <p class="note">It sits beside the three that are there today. Custom event stays for things that aren't travel, like "Laundry" or "Nap".</p>
+        <div class="phone">
+          <div class="scrim" style="padding-top:160px">
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="t">Add to Thu Oct 22</div>
+              <div>
+                <div class="menu-row"><div class="sq"><i class="fa-solid fa-square-plus"></i></div><div><div class="nm">Propose a block</div><div class="d">Ideas for a stretch of the day, put to a vote</div></div></div>
+                <div class="menu-row"><div class="sq"><i class="fa-solid fa-location-dot"></i></div><div><div class="nm">Place an idea</div><div class="d">7 ideas not on the calendar yet</div></div></div>
+                <div class="menu-row new"><div class="sq"><i class="fa-solid fa-route"></i></div><div><div class="nm">Travel</div><div class="d">A flight, a drive, a train. Just how long.</div></div><span class="newtag">New</span></div>
+                <div class="menu-row"><div class="sq"><i class="fa-solid fa-clock"></i></div><div><div class="nm">Custom event</div><div class="d">Anything else that takes time</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1b · The travel form (try the modes)</h3>
+        <p class="note">The mode changes the fields. <b>Flight</b> asks for departure and landing times, each in its own airport's time zone. <b>Drive</b> asks for minutes, with an estimate when both ends are places.</p>
+        <div class="phone">
+          <div class="scrim" style="padding-top:28px">
+            <div class="sheet" style="gap:12px">
+              <div class="grab"></div>
+              <div class="t">Travel</div>
+              <div class="modes" role="group" aria-label="How">
+                <button class="tchip" type="button" data-mode="flight" aria-pressed="false"><i class="fa-solid fa-plane"></i>Flight</button>
+                <button class="tchip" type="button" data-mode="drive" aria-pressed="true"><i class="fa-solid fa-car"></i>Drive</button>
+                <button class="tchip" type="button" data-mode="train" aria-pressed="false"><i class="fa-solid fa-train"></i>Train</button>
+                <button class="tchip" type="button" data-mode="bus" aria-pressed="false"><i class="fa-solid fa-bus"></i>Bus</button>
+                <button class="tchip" type="button" data-mode="walk" aria-pressed="false"><i class="fa-solid fa-person-walking"></i>Walk</button>
+                <button class="tchip" type="button" data-mode="other" aria-pressed="false"><i class="fa-solid fa-ellipsis"></i>Other</button>
+              </div>
+
+              <div class="route-pair">
+                <div class="rail"><i></i><b></b><i class="fill"></i></div>
+                <div class="stack">
+                  <div class="input"><input data-from value="MCO airport" aria-label="From"><span class="opt">from · optional</span></div>
+                  <div class="input"><input data-to value="Hotel Alma" aria-label="To"><span class="opt">to · optional</span></div>
+                </div>
+              </div>
+
+              <div data-when="drive train bus walk other" class="field">
+                <div class="cap">How long</div>
+                <div class="input"><input value="35" inputmode="numeric" aria-label="Minutes"><span class="unit">MIN</span></div>
+                <div class="est" data-when="drive train bus walk"><span>Google says <b>32 min</b> by car at 3:30 PM</span><button type="button">Use it</button></div>
+              </div>
+
+              <div data-when="flight" class="field" hidden>
+                <div class="two">
+                  <div class="field"><div class="cap">Departs</div><div class="input"><input value="11:05 AM"></div><div class="tz">Houston time · CT</div></div>
+                  <div class="field"><div class="cap">Lands</div><div class="input"><input value="2:30 PM"></div><div class="tz">Orlando time · ET</div></div>
+                </div>
+                <div class="hint">2h 25m in the air. On the calendar it runs 12:05 to 2:30 PM, in Orlando time like the rest of the trip.</div>
+              </div>
+
+              <div class="field">
+                <div class="cap">Cost <span style="text-transform:none;letter-spacing:0">· optional</span></div>
+                <div class="two">
+                  <div class="input"><input data-cost value="0" inputmode="decimal" aria-label="Cost"><span class="unit">USD</span></div>
+                  <div class="seg small" role="group"><button type="button" aria-pressed="true">Each</button><button type="button" aria-pressed="false">Group</button></div>
+                </div>
+              </div>
+
+              <div class="sheet-actions"><button class="btn" type="button">Back</button><button class="btn primary" type="button" data-save>Place after Rental car pickup</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1c · Or tap the gap between two things</h3>
+        <p class="note">Between two blocks on the day, a <em>+ travel</em> chip fills in the from and to for you and places the ride right after the first one. If the gap is too short, the next block gets pushed or flagged, the same way the Map planner handles it today.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Thu Oct 22</div><div class="s">DAY 1 · ORLANDO</div></div></div>
+          <div class="body">
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">2:30</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-key"></i></div><div><div class="nm">Rental car pickup</div><div class="sub">45m · MCO</div></div></div>
+              <button class="gapchip" type="button"><i class="fa-solid fa-plus"></i>travel<small>MCO → Hotel Alma · ~32 min</small></button>
+              <span class="tl-time" style="top:104px">4:00</span>
+              <div class="block" style="margin-top:22px"><div class="nm">Check in, drop bags</div><div class="sub">30m · Hotel Alma</div></div>
+              <button class="gapchip" type="button"><i class="fa-solid fa-plus"></i>travel<small>Hotel Alma → Disney Springs · ~14 min</small></button>
+              <span class="tl-time" style="top:196px">5:30</span>
+              <div class="block" style="margin-top:14px"><div class="nm">Disney Springs, dinner</div><div class="sub">2h 30m · $45 each</div></div>
+            </div>
+            <div class="hint">The chip only shows when there's a gap of 5 minutes or more and no travel already in it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Where Travel lives</h4>
+        <ol>
+          <li><b>Its own row in + Add</b>, as a travel item with a mode. <span class="rec">Recommend</span> One form whether you start from the sheet, a gap chip, or Where we'll be (feature 2).</li>
+          <li>Fold it into Custom event with the mode chips on top. One fewer row, but the form gets heavy for "Nap".</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>Do you want Ferry and Boat as modes, or is Other enough?</li>
+          <li>Should a gap chip also show when there's no gap but the two places are far apart? That would flag "no time to get there" instead of offering travel.</li>
+          <li>Should flights take any time zone, or only "home" and "trip"? Two zones covers your trip. A trip with a stop in a third country needs any zone.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section class="feature" id="there">
+    <div class="eyebrow">Feature 2</div>
+    <h2>Long legs live on the days</h2>
+    <p class="ask">There's no special "getting there" setting. A flight is a travel item from feature 1, placed on the day it leaves. That covers a trip with one flight each way and a trip with five. The first and last legs are just legs whose far end is home. <em>Where we'll be</em> shows each leg between the stays it connects, so the whole route reads top to bottom.</p>
+    <div class="today"><b>The example:</b> fly Houston to Honolulu and stay 3 nights. Fly to Tokyo for 4 nights, then back to Honolulu for 2, then home. Going west, the flight to Tokyo crosses the date line and lands the next day. Coming back, the flight from Tokyo lands <em>earlier on the same date</em>, so Saturday happens twice.</div>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>2a · Where we'll be, with the legs between stays</h3>
+        <p class="note">Legs come from the travel items on the calendar, so this list never disagrees with the Plan tab. A change of place with no leg in between shows a dashed <em>+ travel</em> prompt. It opens the 1b form with the from, to and day filled in.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Where we'll be</div><div class="s">12 DAYS · NOV 6 – 16</div></div></div>
+          <div class="body" style="gap:0">
+            <div class="route">
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">Houston IAH → Honolulu HNL</div><div class="rs">Fri 6 · 9:00 AM CST → 1:45 PM HST · $412 each</div></div></div>
+              <div class="rstay"><div class="rd">Fri 6 – Sun 8</div><div class="rn">Honolulu</div><div class="rx">3 nights · Kaimana Inn</div></div>
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">HNL → Tokyo HND</div><div class="rs">Mon 9, 11:30 AM HST → <b>Tue 10</b>, 3:20 PM JST</div><div class="rtag">Crosses the date line</div></div></div>
+              <div class="rstay"><div class="rd">Tue 10 – Fri 13</div><div class="rn">Tokyo</div><div class="rx">4 nights · Hotel Sora</div></div>
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">HND → HNL</div><div class="rs">Sat 14, 9:00 PM JST → <b>Sat 14</b>, 9:50 AM HST</div><div class="rtag">Lands before it left: Sat 14 twice</div></div></div>
+              <div class="rstay"><div class="rd">Sat 14 – Sun 15</div><div class="rn">Honolulu</div><div class="rx">2 nights · Kaimana Inn</div></div>
+              <div class="rleg"><i class="fa-solid fa-plane"></i><div><div class="rl">HNL → Houston IAH</div><div class="rs">Mon 16, 2:00 PM HST → Tue 17, 1:40 AM CST</div><div class="rtag">Red-eye · lands after the trip ends</div></div></div>
+              <div class="rleg ask"><i class="fa-solid fa-plus"></i><div><div class="rl">Add a side trip</div><div class="rs">e.g. a day on Maui, Sun 15</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2b · Mon Nov 9: leaving Honolulu</h3>
+        <p class="note">The flight starts on the day it leaves, on that day's clock. It runs off the bottom of the day, the same way overnight plans already do.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Mon Nov 9</div><div class="s">DAY 4 · HONOLULU → TOKYO · HST</div></div></div>
+          <div class="body">
+            <div class="band line"><div class="ic"><i class="fa-solid fa-sun"></i></div><div><div class="k">Wakes at</div><div class="v">Kaimana Inn</div></div><div class="r">CHECK OUT<br>8:30</div></div>
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">7:30</span>
+              <div class="block"><div class="nm">Breakfast, pack up</div><div class="sub">1h</div></div>
+              <span class="tl-time" style="top:58px">8:30</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-car"></i></div><div><div class="nm">Drive → HNL, return car</div><div class="sub">35m</div></div></div>
+              <span class="tl-time" style="top:112px">9:30</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-clock"></i></div><div><div class="nm">At the airport</div><div class="sub">2h · international</div></div></div>
+              <span class="tl-time" style="top:164px">11:30</span>
+              <div class="block travel tall" style="border-bottom-style:dashed;border-radius:12px 12px 0 0"><div class="ic"><i class="fa-solid fa-plane"></i></div><div><div class="nm">Flight HNL → HND</div><div class="sub">8h 50m · $640 each</div><div class="sub" style="color:var(--geo)">continues on Tue 10 →</div></div><span class="lock"><i class="fa-solid fa-lock"></i>Booked</span></div>
+            </div>
+            <div class="hint">No "Sleeps at" band: Monday night disappears over the date line, so there's no night to book here and Where we'll be skips it.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2c · Tue Nov 10: landing in Tokyo</h3>
+        <p class="note">You lose a day crossing the date line. The new day starts on the new clock. Everything before landing is greyed "in the air" and can't take plans.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Tue Nov 10</div><div class="s">DAY 5 · TOKYO · JST</div></div></div>
+          <div class="body">
+            <div class="air"><i class="fa-solid fa-plane"></i><div><div class="nm">In the air</div><div class="sub">since Mon 11:30 AM Honolulu time</div></div><span class="r">UNTIL 3:20 PM</span></div>
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">3:20</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-passport"></i></div><div><div class="nm">Immigration, bags</div><div class="sub">1h</div></div></div>
+              <span class="tl-time" style="top:58px">4:20</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-train"></i></div><div><div class="nm">Keikyu line → Shinagawa</div><div class="sub">40m · ¥330</div></div></div>
+              <span class="tl-time" style="top:110px">5:15</span>
+              <div class="block"><div class="nm">Check in, drop bags</div><div class="sub">30m · Hotel Sora</div></div>
+              <span class="tl-time" style="top:162px">7:00</span>
+              <div class="block" style="margin-top:8px"><div class="nm">Ramen near the hotel</div><div class="sub">1h · ¥1,400 each</div></div>
+            </div>
+            <div class="band ink"><div class="ic"><i class="fa-solid fa-bed"></i></div><div><div class="k">Sleeps at</div><div class="v">Hotel Sora</div></div><div class="r">NIGHT 1<br>OF 4</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2d · Sat Nov 14, twice</h3>
+        <p class="note">Coming back east you land before you left, on the same date. Trip days are numbered by the days you live, not by date, so Day 9 and Day 10 are both Sat 14. The day strip labels each one by place.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="body" style="padding-top:4px">
+            <div class="strip">
+              <div class="sd"><span class="w">FRI</span><span class="n">13</span><span class="p">Tokyo</span></div>
+              <div class="sd on"><span class="w">SAT</span><span class="n">14</span><span class="p">Tokyo</span></div>
+              <div class="sdf"><i class="fa-solid fa-plane"></i></div>
+              <div class="sd on"><span class="w">SAT</span><span class="n">14</span><span class="p">Honolulu</span></div>
+              <div class="sd"><span class="w">SUN</span><span class="n">15</span><span class="p">Honolulu</span></div>
+            </div>
+            <div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+              <div class="cap">Day 9 · Sat 14 · Tokyo · JST</div>
+              <div class="block"><div class="nm">Tsukiji outer market</div><div class="sub">10:00 · 2h</div></div>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-plane"></i></div><div><div class="nm">Flight HND → HNL</div><div class="sub">9:00 PM · 7h 50m · continues on Day 10 →</div></div></div>
+            </div>
+            <div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+              <div class="cap">Day 10 · Sat 14 · Honolulu · HST</div>
+              <div class="air" style="margin:0"><i class="fa-solid fa-plane"></i><div><div class="nm">In the air</div><div class="sub">since 9:00 PM Tokyo time</div></div><span class="r">UNTIL 9:50 AM</span></div>
+              <div class="block"><div class="nm">Beach day, Waikiki</div><div class="sub">1:00 PM · 3h</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>Where a day's clock comes from</h4>
+        <ol>
+          <li><b>The place you wake up</b>, or the place you land on a day that starts in the air. <span class="rec">Recommend</span> Each day has one clock, set by its stay in Where we'll be. A flight's two ends are the only place that shows two time zones.</li>
+          <li>One clock for the whole trip. Simple, but on a Japan leg every time would be 19 hours off, which defeats the calendar.</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>When you add a flight to Tokyo, should Where we'll be fill in Tokyo for the days after it until the next leg? Or suggest it and let you confirm?</li>
+          <li>Is a day that exists twice (Sat 14 in 2d) better as two trip days, as shown? The other option is one Sat 14 with a Tokyo half and a Honolulu half.</li>
+          <li>The flight home lands Tue 17 at 1:40 AM, after the trip's last day. Should it end at midnight on Day 12 with "lands Tue 1:40 AM" as a note (shown), or should the trip grow a Day 13?</li>
+          <li>Group trips: is it enough for each flight to have its own Who's going, so one friend can fly in from Denver on a different flight? Or does that need more than a block per traveler?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section class="feature" id="day1">
+    <div class="eyebrow">Feature 3</div>
+    <h2>Day 1 on the Plan tab</h2>
+    <p class="ask">Travel blocks are real blocks. They count as planned time and you can't place over them. They're teal so you can spot them at a glance. Booked ones (the flights) carry a lock and can't be dragged. The drive can be dragged like anything else.</p>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>3a · Thu Oct 22</h3>
+        <p class="note">The metrics count travel, and split it out underneath so a heavy travel day doesn't look like a packed sightseeing day.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Thu Oct 22</div><div class="s">DAY 1 · ORLANDO</div></div></div>
+          <div class="body">
+            <div class="metrics">
+              <div class="metric"><div class="v">6h 42m</div><div class="k">Planned</div><div class="of">3h 42m travel</div></div>
+              <div class="metric"><div class="v">3h 18m</div><div class="k">Free</div></div>
+              <div class="metric"><div class="v">$45</div><div class="k">Today each</div></div>
+            </div>
+            <div class="timeline">
+              <span class="tl-time" style="top:8px">12:05</span>
+              <div class="block travel tall"><div class="ic"><i class="fa-solid fa-plane"></i></div><div><div class="nm">Flight IAH → MCO</div><div class="sub">2h 25m · left 11:05 CT · $289 each</div></div><span class="lock"><i class="fa-solid fa-lock"></i>Booked</span></div>
+              <span class="tl-time" style="top:88px">2:30</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-key"></i></div><div><div class="nm">Rental car pickup</div><div class="sub">45m · $210 group</div></div></div>
+              <span class="tl-time" style="top:140px">3:15</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-car"></i></div><div><div class="nm">Drive MCO → Hotel Alma</div><div class="sub">32m · 19 mi</div></div></div>
+              <span class="tl-time" style="top:192px">3:47</span>
+              <div class="block"><div class="nm">Check in, drop bags</div><div class="sub">30m · Hotel Alma</div></div>
+              <span class="tl-time" style="top:244px">5:30</span>
+              <div class="block" style="margin-top:14px"><div class="nm">Disney Springs, dinner</div><div class="sub">2h 30m · $45 each</div></div>
+            </div>
+            <div class="band ink"><div class="ic"><i class="fa-solid fa-bed"></i></div><div><div class="k">Sleeps at</div><div class="v">Hotel Alma</div></div><div class="r">NIGHT 1<br>OF 4</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>3b · Mon Oct 26, heading home</h3>
+        <p class="note">The flight's "at the airport by" time is a hard stop. Anything placed after it goes red, and the Map planner treats it as the day's last stop.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Mon Oct 26</div><div class="s">DAY 5 · ORLANDO</div></div></div>
+          <div class="body">
+            <div class="band line"><div class="ic"><i class="fa-solid fa-sun"></i></div><div><div class="k">Wakes at</div><div class="v">Hotel Alma</div></div><div class="r">CHECK OUT<br>11:00</div></div>
+            <div class="timeline">
+              <span class="tl-time" style="top:6px">10:00</span>
+              <div class="block"><div class="nm">Breakfast, pack up</div><div class="sub">1h 30m</div></div>
+              <span class="tl-time" style="top:58px">12:00</span>
+              <div class="block" style="margin-top:10px"><div class="nm">ICON Park</div><div class="sub">1h 45m · $32 each</div></div>
+              <span class="tl-time" style="top:118px">2:00</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-car"></i></div><div><div class="nm">Drive → MCO, return car</div><div class="sub">50m · leave by 2:20</div></div></div>
+              <span class="tl-time" style="top:172px">3:15</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-clock"></i></div><div><div class="nm">At the airport</div><div class="sub">2h · security, gate</div></div><span class="lock"><i class="fa-solid fa-lock"></i>Booked</span></div>
+              <span class="tl-time" style="top:224px">5:15</span>
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-plane"></i></div><div><div class="nm">Flight MCO → IAH</div><div class="sub">2h 25m · lands 6:40 CT</div></div><span class="lock"><i class="fa-solid fa-lock"></i>Booked</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>How the metrics count travel</h4>
+        <ol>
+          <li><b>In Planned, with a "travel" line under it.</b> <span class="rec">Recommend</span> It's honest about the day being full, and you can still see how much of it is getting around.</li>
+          <li>A fourth tile, Travel, next to Planned and Free. Clearer, but the row gets cramped on a phone.</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>Should a flight that runs past midnight (a red-eye) show on both days, the way overnight plans already do?</li>
+          <li>Do you want the waiting time at the airport as its own block (shown), or folded into the flight?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4 ============ -->
+  <section class="feature" id="money">
+    <div class="eyebrow">Feature 4</div>
+    <h2>Expenses</h2>
+    <p class="ask">Travel is priced like everything else: per person or for the group, and split among whoever's going. It shows up as soon as it's on the calendar. Flights and other long legs are grouped in their own card, because they're usually the biggest numbers and don't really belong to one day.</p>
+    <div class="screens">
+      <div class="screen-col">
+        <h3>4a · A Travel between places card</h3>
+        <p class="note">It sits at the top, above the days, because it's usually the biggest number and it isn't really "a day's" cost.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Expenses</div><div class="s">5 DAYS · 2 TRAVELERS</div></div></div>
+          <div class="body">
+            <div class="card" style="padding:12px 14px">
+              <div class="cap">Your share</div>
+              <div style="font:400 30px/1.1 var(--font-serif);margin-top:4px">$1,268</div>
+              <div class="hint">of $2,536 for the whole trip</div>
+            </div>
+            <div class="card" style="padding:4px 14px 6px">
+              <div class="cap" style="padding-top:10px">Travel between places</div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-plane"></i>Flight IAH ⇄ MCO</div><div class="how">$289 each · round trip</div></div><div class="amt">$289<small>you</small></div></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-key"></i>Rental car</div><div class="how">$210 group ÷ 2</div></div><div class="amt">$105<small>you</small></div></div>
+            </div>
+            <div class="card" style="padding:4px 14px 6px">
+              <div class="cap" style="padding-top:10px">Thu Oct 22</div>
+              <div class="exp-row"><div class="l"><div class="nm">Disney Springs, dinner</div><div class="how">$45 each</div></div><div class="amt">$45</div></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-car"></i>Drive MCO → Hotel Alma</div><div class="how">no cost</div></div><div class="amt" style="color:var(--text-muted)">—</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="decide">
+      <div>
+        <h4>Open questions for you</h4>
+        <ul>
+          <li>Should a rental car be a travel step (shown), or a per-day price like the stays mockup's "per day" cost? Per day would spread $210 across the days, which reads better in the day bars.</li>
+          <li>Should a drive be able to guess a gas cost from distance, or stay free unless you type a price?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ under ============ -->
+  <section class="feature" id="under">
+    <div class="eyebrow">For later</div>
+    <h2>What it would change underneath</h2>
+    <p class="ask">A sketch only, to show the size of the work. Nothing here is decided.</p>
+    <div class="decide" style="margin-top:0">
+      <div>
+        <h4>Travel items</h4>
+        <ul>
+          <li><code>mode</code> gains <code>flight</code> and <code>other</code> next to car / bus / train / walk.</li>
+          <li><code>from_label</code> / <code>to_label</code> (text), plus optional <code>from_pin_id</code> / <code>to_pin_id</code> when an end is a place, so estimates and the next ride can start there.</li>
+          <li><code>booked</code>: a fixed time that can't be dragged and asks before Move dates shifts it.</li>
+          <li><code>depart_tz</code> / <code>arrive_tz</code> for flights only. Each day shows its own clock (see Days and clocks).</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Days and clocks</h4>
+        <ul>
+          <li>Each trip day gets a time zone, taken from its stay's location (Google's Time Zone API, looked up once when the stay is set). A day that starts in the air takes the landing airport's zone.</li>
+          <li>Trip days are already indexed by day number, not by date, so a date that happens twice is two days with the same label.</li>
+          <li>Where we'll be reads legs from placed travel items with a mode and a from and to. Nothing is stored twice.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Money and planner</h4>
+        <ul>
+          <li>Expenses groups travel items whose mode is flight, train or bus into the Travel between places card. They still come from plans, as they do today.</li>
+          <li>The day metrics add a travel sum (items with a mode). Map trip planning can start from a landing's <code>to_pin_id</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // 1b: mode chips swap the drive fields for the flight fields.
+  const chips = document.querySelectorAll("[data-mode]");
+  const save = document.querySelector("[data-save]");
+  const from = document.querySelector("[data-from]");
+  const to = document.querySelector("[data-to]");
+  const cost = document.querySelector("[data-cost]");
+  const presets = {
+    flight: ["Houston IAH", "Orlando MCO", "289", "Place on Thu 22 · 12:05 PM"],
+    drive: ["MCO airport", "Hotel Alma", "0", "Place after Rental car pickup"],
+  };
+  chips.forEach((chip) => chip.addEventListener("click", () => {
+    const mode = chip.dataset.mode;
+    chips.forEach((c) => c.setAttribute("aria-pressed", String(c === chip)));
+    document.querySelectorAll("[data-when]").forEach((el) => {
+      el.hidden = !el.dataset.when.split(" ").includes(mode);
+    });
+    const p = presets[mode];
+    if (p) { from.value = p[0]; to.value = p[1]; cost.value = p[2]; save.textContent = p[3]; }
+  }));
+  document.querySelectorAll(".seg").forEach((seg) => seg.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  }));
+</script>
