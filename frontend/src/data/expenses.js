@@ -1,4 +1,6 @@
 import { tripDayLabel } from "./trip";
+import { isLongLeg } from "../lib/travel";
+import { clockLabel } from "../lib/planTime";
 
 // What the trip costs, derived from the plans the app has already fetched
 // — there is no expenses endpoint (see docs/features/
@@ -56,7 +58,8 @@ export function travelersFor(scope, travelers, myTravelerId) {
   return travelers.filter((t) => t.id === scope);
 }
 
-// One row per scheduled stop with a visible price, grouped by trip day,
+// One row per scheduled stop with a visible price, grouped by trip day
+// (flights and other long legs apart, in `legs`),
 // plus the summary for `shownIds` — the travelers the viewer chose to see.
 // `daily` is the rows for stays and prices paid by the day
 // (lib/dailyCosts.js buildDailyCosts), which aren't counted through the
@@ -79,6 +82,9 @@ export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) 
         rows.push({
           key: `${plan.id}-${item.pinId ?? "t"}-${item.travelItemId ?? "p"}-${index}`,
           dayIndex,
+          // A flight or other long leg (lib/travel.js): listed with the
+          // trip's travel between places rather than under its day.
+          leg: isLongLeg(item),
           title: item.title,
           startMinuteOfDay: item.startMinuteOfDay,
           costBasis: item.costBasis,
@@ -98,12 +104,26 @@ export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) 
   const priced = rows.filter((r) => r.totalCents > 0);
   const free = rows.filter((r) => r.totalCents === 0);
 
+  // Each says its day and time, since they aren't under a day's heading.
+  const legs = priced
+    .filter((row) => row.leg)
+    .sort((a, b) => (a.dayIndex ?? 0) - (b.dayIndex ?? 0) || (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0))
+    .map((row) => ({
+      ...row,
+      howLabel: [tripDayLabel(row.dayIndex, trip), row.startMinuteOfDay != null ? clockLabel(row.startMinuteOfDay) : null]
+        .filter(Boolean)
+        .join(" · "),
+      startMinuteOfDay: null,
+    }));
+
   const byDay = new Map();
-  priced.forEach((row) => {
+  priced
+    .filter((row) => !row.leg)
+    .forEach((row) => {
     const key = row.dayIndex ?? 0;
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key).push(row);
-  });
+    });
 
   const days = [...byDay.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -125,6 +145,7 @@ export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) 
 
   return {
     days,
+    legs,
     daily,
     freeRows: free.sort((a, b) => (a.dayIndex ?? 0) - (b.dayIndex ?? 0) || (a.startMinuteOfDay ?? 0) - (b.startMinuteOfDay ?? 0)),
     shownCents: counted.reduce((sum, r) => sum + r.shownCents, 0),

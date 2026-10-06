@@ -34,8 +34,32 @@ def test_items_typed_in_by_hand_have_no_mode(client, trip):
 
 
 @pytest.mark.parametrize("fields", [{"mode": "ferry"}, {"kind": "other"}, {"kind": "lodging"}, {"distance_meters": -1}])
-def test_a_mode_is_one_of_four_and_only_on_travel(client, trip, fields):
+def test_a_mode_is_one_of_five_and_only_on_travel(client, trip, fields):
     assert ride(client, trip, **fields).status_code == 422
+
+
+def test_a_flight_says_where_it_goes(client, trip):
+    res = ride(client, trip, title="Flight", mode="flight", duration_minutes=145, from_label="Houston IAH", to_label="Orlando MCO")
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert (body["mode"], body["from_label"], body["to_label"]) == ("flight", "Houston IAH", "Orlando MCO")
+
+
+def test_items_typed_in_by_hand_have_no_from_or_to(client, trip):
+    res = client.post(f"/api/trips/{trip.id}/travel-items", json={"title": "Scooter hire"}, headers=JAE)
+    assert (res.json()["from_label"], res.json()["to_label"]) == ("", "")
+
+
+def test_only_travel_has_a_from_and_to(client, trip):
+    res = client.post(f"/api/trips/{trip.id}/travel-items", json={"title": "Nap", "kind": "other", "to_label": "Hotel"}, headers=JAE)
+    assert res.status_code == 422
+
+
+def test_a_from_and_to_can_be_changed_and_cleared(client, trip):
+    item_id = ride(client, trip, from_label="MCO", to_label="Hotel Alma").json()["id"]
+    res = client.patch(f"/api/travel-items/{item_id}", json={"to_label": "Hotel Bardo", "from_label": None}, headers=JAE)
+    assert res.status_code == 200, res.text
+    assert (res.json()["from_label"], res.json()["to_label"]) == ("", "Hotel Bardo")
 
 
 def test_a_mode_cant_be_patched_onto_something_else(client, trip):
@@ -48,9 +72,11 @@ def test_a_mode_cant_be_patched_onto_something_else(client, trip):
 
 def test_a_ride_that_stops_being_travel_forgets_how_it_went(client, trip):
     item_id = ride(client, trip).json()["id"]
+    client.patch(f"/api/travel-items/{item_id}", json={"from_label": "Port", "to_label": "Geban Bay"}, headers=JAE)
     res = client.patch(f"/api/travel-items/{item_id}", json={"kind": "other"}, headers=JAE)
     assert res.status_code == 200, res.text
-    assert (res.json()["mode"], res.json()["distance_meters"]) == (None, None)
+    body = res.json()
+    assert (body["mode"], body["distance_meters"], body["from_label"], body["to_label"]) == (None, None, "", "")
 
 
 def test_a_ride_goes_straight_onto_the_calendar_between_two_plans(client, trip):

@@ -51,12 +51,17 @@ def update_travel_item(
     if fields.get("mode") is not None and kind != "travel":
         raise HTTPException(status_code=422, detail="Only a travel item can have a travel mode")
     for field, value in fields.items():
+        # null clears a label, the same as an empty string.
+        if field in ("from_label", "to_label") and value is None:
+            value = ""
         setattr(item, field, value)
     if item.kind != "travel":
         # A ride turned into something else isn't a ride any more: how it
-        # got there and how far it went no longer describe it.
+        # got there, how far it went and between where no longer describe it.
         item.mode = None
         item.distance_meters = None
+        item.from_label = ""
+        item.to_label = ""
     db.commit()
     db.refresh(item)
     bus.publish(item.trip_id, "travel_item.updated", {"travel_item_id": item.id})

@@ -700,8 +700,10 @@ class AvailabilityOverrideToggle(BaseModel):
 # event form writes.
 TravelItemKind = Literal["travel", "lodging", "other"]
 
-# How a ride planned on the Map tab gets there (models.py TravelItem.mode).
-TravelMode = Literal["car", "bus", "train", "walk"]
+# How a travel item gets there (models.py TravelItem.mode): a ride planned
+# on the Map tab, or travel added from the day's Travel form, flights
+# included. A travel item with no mode is "Other".
+TravelMode = Literal["car", "bus", "train", "walk", "flight"]
 
 
 def _mode_needs_travel(kind: str | None, mode: str | None) -> None:
@@ -719,10 +721,17 @@ class TravelItemCreate(BaseModel):
     link: WebLink = ""
     mode: TravelMode | None = None
     distance_meters: int | None = Field(default=None, ge=0)
+    # Where a leg starts and ends, as typed ("Houston IAH", "Hotel Alma").
+    # Text only: a leg's far end is often somewhere the trip has no idea
+    # for, like home.
+    from_label: str = Field(default="", max_length=200)
+    to_label: str = Field(default="", max_length=200)
 
     @model_validator(mode="after")
     def _mode_only_on_travel(self) -> "TravelItemCreate":
         _mode_needs_travel(self.kind, self.mode)
+        if (self.from_label or self.to_label) and self.kind != "travel":
+            raise ValueError("Only a travel item can have a from and to")
         return self
 
 
@@ -740,6 +749,8 @@ class TravelItemUpdate(BaseModel):
     link: WebLink | None = None
     mode: TravelMode | None = None
     distance_meters: int | None = Field(default=None, ge=0)
+    from_label: str | None = Field(default=None, max_length=200)
+    to_label: str | None = Field(default=None, max_length=200)
 
 
 class TravelItemOut(BaseModel):
@@ -755,6 +766,8 @@ class TravelItemOut(BaseModel):
     link: str
     mode: str | None = None
     distance_meters: int | None = None
+    from_label: str = ""
+    to_label: str = ""
     added_by_id: int | None
     added_at: datetime
 

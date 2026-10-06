@@ -429,13 +429,18 @@ class TravelItem(Base):
     cost_basis: Mapped[str] = mapped_column(String(16), default="per_head")  # as Pin.cost_basis
     notes: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(500), default="")
-    # A ride planned between two places from the Map tab's trip builder
-    # (car/bus/train/walk — schemas.py TravelMode). NULL for everything
-    # typed in by hand. Only a "travel" item has one; `distance_meters` is
+    # How a travel item goes (car/bus/train/walk/flight — schemas.py
+    # TravelMode): a ride planned from the Map tab's trip builder, or one
+    # added from the day's Travel form. NULL for "Other" and for custom
+    # events. Only a "travel" item has one; `distance_meters` is
     # the route's length as Google measured it, kept so a ride can say how
     # far it goes without asking Google again.
     mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
     distance_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Where a travel item leaves from and goes to, as typed. Empty when
+    # nobody said; only a "travel" item has them.
+    from_label: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    to_label: Mapped[str] = mapped_column(String(200), default="", server_default="")
     added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

@@ -6,6 +6,9 @@ import DayPlacesSheet from "../components/places/DayPlacesSheet";
 import ChoosePlaceSheet from "../components/places/ChoosePlaceSheet";
 import { useCan, usePlannerDispatch, usePlannerState } from "../state/PlannerContext";
 import { getTripDays, tripDayTitle } from "../data/trip";
+import ModeIcon from "../components/trip/ModeIcon";
+import { clockLabel } from "../lib/planTime";
+import { formatMinutes, longLegsByDay } from "../lib/travel";
 import {
   NO_PLACES,
   calendarPlacesOnDay,
@@ -50,6 +53,9 @@ export default function DayPlaces() {
   const [error, setError] = useState("");
 
   const setCount = dates.filter((d) => isSet(placesOn(dayPlaces, d))).length;
+  // Flights and other long legs on the calendar, on the day they leave,
+  // so the route between stays reads down the list (lib/travel.js).
+  const legs = useMemo(() => longLegsByDay(plans), [plans]);
   const selectedNumbers = selected.map((i) => i + 1);
 
   // Where the calendar already puts an unset day, offered as its stay.
@@ -163,6 +169,7 @@ export default function DayPlaces() {
                 timeline={timelineAt(dayPlaces, dates, i)}
                 previousStay={stayBefore(dayPlaces, dates, i)}
                 lodging={pins[placesOn(dayPlaces, date).lodgingPinId]?.title ?? null}
+                legs={legs.get(i + 1) ?? []}
                 suggestion={suggestions[i]}
                 canEdit={canEdit}
                 selecting={selecting}
@@ -225,7 +232,7 @@ export default function DayPlaces() {
   );
 }
 
-function DayRow({ number, label, title, day, run, timeline, previousStay, lodging, suggestion, canEdit, selecting, selected, onOpen, onUse }) {
+function DayRow({ number, label, title, day, run, timeline, previousStay, lodging, legs, suggestion, canEdit, selecting, selected, onOpen, onUse }) {
   const set = isSet(day);
   const summary = set ? describeDay(day, previousStay, lodging) : "Not set";
   const offerUse = canEdit && !selecting && !set && suggestion.length > 0;
@@ -259,6 +266,18 @@ function DayRow({ number, label, title, day, run, timeline, previousStay, lodgin
           ))}
           {!set ? <span style={{ font: "500 12.5px var(--font-sans)", color: "var(--text-faint)" }}>Not set</span> : null}
           {!day.stay && day.visits.length ? <span style={{ font: "400 11px var(--font-sans)", color: "var(--text-muted)" }}>no stay set</span> : null}
+          {legs.map((leg) => (
+            <span
+              key={leg.key}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, font: "500 12px var(--font-sans)", color: "var(--geo)", minWidth: 0 }}
+            >
+              <ModeIcon mode={leg.mode} style={{ width: 11, height: 11, flex: "none" }} />
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{leg.title}</span>
+              <span className="mono-data-sm" style={{ flex: "none", color: "var(--text-muted)" }}>
+                {clockLabel(leg.startMinuteOfDay)} · {formatMinutes(leg.durationMinutes)}
+              </span>
+            </span>
+          ))}
           {!set && suggestion.length ? (
             <span style={{ width: "100%", font: "400 11.5px var(--font-sans)", color: "var(--text-secondary)" }}>
               Plans are in {joinNames(suggestion)}
