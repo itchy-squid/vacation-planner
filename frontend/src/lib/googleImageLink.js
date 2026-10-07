@@ -30,3 +30,22 @@ function webUrl(value) {
     return null;
   }
 }
+
+// Google Maps' own links: "google.com/maps/…", "maps.google.com/…",
+// "maps.app.goo.gl/…" and "goo.gl/maps/…". Their page's only image is a
+// picture of the map, so the photo picker doesn't look there; an idea that
+// is a Google place offers the place's own photos instead.
+export function isGoogleMapsLink(link) {
+  const trimmed = (link ?? "").trim();
+  if (!trimmed) return false;
+  let url;
+  try {
+    url = new globalThis.URL(HAS_SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  if (host === "maps.app.goo.gl" || /^maps\.google\./.test(host)) return true;
+  if (host === "goo.gl") return url.pathname.startsWith("/maps");
+  return GOOGLE_HOST.test(host) && url.pathname.startsWith("/maps");
+}

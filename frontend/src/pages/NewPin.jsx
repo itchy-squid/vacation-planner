@@ -93,6 +93,7 @@ export default function NewPin() {
         // made to the last one.
         key={picked.placeId}
         place={picked}
+        tripId={trip.id}
         knownRegions={knownRegions}
         canSetCost={ideaAccess.canSetCost(null)}
         submitting={submitting}

@@ -124,6 +124,7 @@ def update_pin(
     # A spot placed by hand is no longer that Google place.
     if "lat" in fields and "google_place_id" not in fields:
         fields["google_place_id"] = None
+    _settle_photo(pin, fields)
     for field, value in fields.items():
         setattr(pin, field, value)
     db.commit()
@@ -137,6 +138,22 @@ def update_pin(
     if "photo_url" in fields and pin.photo_url and not photo_storage.is_our_blob_url(pin.photo_url):
         background_tasks.add_task(_mirror_pin_photo, pin.id, pin.trip_id, pin.photo_url)
     return pin
+
+
+def _settle_photo(pin: Pin, fields: dict) -> None:
+    """A pin has one photo: a link (photo_url) or one of its Google place's
+    photos (photo_google_index), so setting either clears the other. A
+    Google photo belongs to its place, so it goes when the place does."""
+    if fields.get("photo_google_index") is not None:
+        fields["photo_url"] = None
+        fields["photo_source_url"] = None
+    elif fields.get("photo_url"):
+        fields["photo_google_index"] = None
+    if "google_place_id" in fields and fields["google_place_id"] != pin.google_place_id and "photo_google_index" not in fields:
+        fields["photo_google_index"] = None
+    place_id = fields.get("google_place_id", pin.google_place_id)
+    if fields.get("photo_google_index", pin.photo_google_index) is not None and place_id is None:
+        raise HTTPException(status_code=422, detail="A Google photo needs the idea to be a Google place")
 
 
 @router.delete("/api/pins/{pin_id}", status_code=204)

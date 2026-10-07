@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PhotoCredit from "../photos/PhotoCredit";
 
 // Honest placeholder texture, not an error state — see design_system
 // readme "Backgrounds and imagery". Photography is intentionally
@@ -11,7 +12,12 @@ import { useEffect, useState } from "react";
 // treatment the placeholder had. Anything without a photo — every pin
 // from before that flow, plus anyone who skipped the image — keeps the
 // texture, so the two coexist on the same board by design.
-export default function PhotoPlaceholder({ height = 112, label = "photo", dark = false, radius, src, alt = "", children }) {
+//
+// `credit` names who took a Google photo (components/photos/usePinPhoto.js);
+// Google requires it wherever the photo is shown, so it's drawn over the
+// photo's corner, and it's loaded with `referrerPolicy` (usePinPhoto.js says
+// which).
+export default function PhotoPlaceholder({ height = 112, label = "photo", dark = false, radius, src, alt = "", credit, referrerPolicy = "no-referrer", children }) {
   // A pin's photo is hotlinked from someone else's site, so it can 404,
   // hotlink-block, or go behind a login long after it was picked. Falling
   // back to the texture keeps that a non-event rather than a broken-image
@@ -37,7 +43,7 @@ export default function PhotoPlaceholder({ height = 112, label = "photo", dark =
           src={src}
           alt={alt}
           loading="lazy"
-          referrerPolicy="no-referrer"
+          referrerPolicy={referrerPolicy}
           onError={() => setFailed(true)}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
         />
@@ -49,6 +55,7 @@ export default function PhotoPlaceholder({ height = 112, label = "photo", dark =
           {label}
         </span>
       )}
+      {showPhoto ? <PhotoCredit credit={credit} overlay /> : null}
       {children}
     </div>
   );

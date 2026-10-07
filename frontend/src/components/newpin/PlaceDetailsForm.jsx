@@ -3,6 +3,7 @@ import TextField from "../forms/TextField";
 import Stepper from "../forms/Stepper";
 import CostField from "../forms/CostField";
 import Button from "../core/Button";
+import PhotoPicker from "../photos/PhotoPicker";
 import { NewPinHeader, AddModeSwitch, SourceTag } from "./NewPinChrome";
 import { areaLine, googleMapsPlaceUrl, regionFor } from "../../lib/places";
 import { fmtMin } from "../../data/derive";
@@ -16,17 +17,21 @@ const MIN_MINUTES = 15;
  * values came from the search. Time and cost are typed for now.
  *
  *   place         a lib/places.js search result
+ *   tripId        the trip, for the photo picker
  *   knownRegions  the regions the trip already uses, to match against
  *   canSetCost    whether this person may price their own ideas
  *   onSubmit(payload)  the POST /api/trips/{id}/pins body
  */
-export default function PlaceDetailsForm({ place, knownRegions, canSetCost, submitting, error, onBack, onLink, onSubmit }) {
+export default function PlaceDetailsForm({ place, tripId, knownRegions, canSetCost, submitting, error, onBack, onLink, onSubmit }) {
   const [suggestedRegion] = useState(() => regionFor(place, knownRegions));
   const [title, setTitle] = useState(place.name);
   const [region, setRegion] = useState(suggestedRegion.name);
   const [minutes, setMinutes] = useState(DEFAULT_MINUTES);
   const [cost, setCost] = useState("");
   const [costBasis, setCostBasis] = useState("per_head");
+  // One of the place's Google photos (its position), a pasted image link,
+  // or neither.
+  const [photo, setPhoto] = useState({ url: "", sourceUrl: "", googleIndex: null });
 
   const mapsUrl = googleMapsPlaceUrl(place);
   const canSubmit = title.trim().length > 0 && !submitting;
@@ -47,6 +52,8 @@ export default function PlaceDetailsForm({ place, knownRegions, canSetCost, subm
       duration_minutes: minutes,
       notes: "",
       tags: [],
+      ...(photo.googleIndex != null ? { photo_google_index: photo.googleIndex } : {}),
+      ...(photo.url.trim() ? { photo_url: photo.url.trim(), photo_source_url: photo.sourceUrl || photo.url.trim() } : {}),
       // Only sent when set: pricing needs its own permission.
       ...(canSetCost && costCents > 0 ? { cost_cents: costCents, cost_basis: costBasis } : {}),
     });
@@ -137,13 +144,22 @@ export default function PlaceDetailsForm({ place, knownRegions, canSetCost, subm
             </a>
           </div>
 
+          <PhotoPicker
+            tripId={tripId}
+            link={mapsUrl}
+            placeId={place.placeId}
+            photoUrl={photo.url}
+            googleIndex={photo.googleIndex}
+            onPick={(url, sourceUrl, origin, googleIndex) => setPhoto({ url, sourceUrl: sourceUrl ?? "", googleIndex: googleIndex ?? null })}
+          />
+
           {error ? <div style={{ font: "500 12.5px var(--font-sans)", color: "#b3423a" }}>{error}</div> : null}
 
           <Button variant="accent" type="submit" disabled={!canSubmit} style={{ marginTop: 4 }}>
             {submitting ? "Adding…" : "Add to board"}
           </Button>
           <div style={{ textAlign: "center", font: "400 11px var(--font-sans)", color: "var(--text-muted)" }}>
-            Everyone on the trip sees it once it’s added. You can add a photo from its page afterwards.
+            Everyone on the trip sees it once it’s added.
           </div>
         </form>
       </div>

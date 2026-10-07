@@ -473,6 +473,8 @@ def _check_location(pin: BaseModel, fields_set: set[str] | None = None) -> None:
 Latitude = Annotated[float, Field(ge=-90, le=90)]
 Longitude = Annotated[float, Field(ge=-180, le=180)]
 GooglePlaceId = Annotated[str, Field(min_length=1, max_length=300)]
+# Which of a place's Google photos (Google returns at most ten).
+GooglePhotoIndex = Annotated[int, Field(ge=0, le=9)]
 
 
 class PinCreate(BaseModel):
@@ -501,11 +503,18 @@ class PinCreate(BaseModel):
     # it came from, kept so the pin can credit and link back to it.
     photo_url: WebLink | None = None
     photo_source_url: WebLink | None = None
+    # One of the place's own Google photos instead (models.py Pin).
+    photo_google_index: GooglePhotoIndex | None = None
 
     @model_validator(mode="after")
     def _location_is_all_or_nothing(self) -> "PinCreate":
         _check_location(self)
         _check_cost_days(self)
+        if self.photo_google_index is not None:
+            if self.google_place_id is None:
+                raise ValueError("photo_google_index needs a google_place_id")
+            if self.photo_url:
+                raise ValueError("photo_google_index and photo_url can't both be set")
         return self
 
 
@@ -525,6 +534,9 @@ class PinUpdate(BaseModel):
     tags: list[str] | None = None
     photo_url: WebLink | None = None
     photo_source_url: WebLink | None = None
+    # One of the place's own Google photos; null removes it. Picking one
+    # clears photo_url, and setting photo_url clears it (routers/pins.py).
+    photo_google_index: GooglePhotoIndex | None = None
     # An exact spot set after the pin was added (the Map tab's "Pin a spot").
     # Send lat and lng together; both null removes it. Coordinates without
     # google_place_id clear any place ID (routers/pins.py update_pin).
@@ -648,6 +660,7 @@ class PinOut(BaseModel):
     tags: list[str]
     photo_url: str | None
     photo_source_url: str | None
+    photo_google_index: int | None = None
     added_by_id: int | None
     added_at: datetime
     # Included so the frontend can render the availability grid straight off

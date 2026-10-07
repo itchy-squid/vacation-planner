@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's built-in test runner, no dependencies).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { googleImageLink } from "./googleImageLink.js";
+import { googleImageLink, isGoogleMapsLink } from "./googleImageLink.js";
 
 test("a Google Images link gives its image and the page it was on", () => {
   assert.deepEqual(
@@ -26,4 +26,19 @@ test("other links aren't Google Images links", () => {
   assert.equal(googleImageLink("https://www.google.com/maps/place/Eiffel+Tower"), null);
   assert.equal(googleImageLink("https://notgoogle.com/imgres?imgurl=https://x.com/a.jpg"), null);
   assert.equal(googleImageLink(""), null);
+});
+
+test("Google Maps links are recognised", () => {
+  for (const link of [
+    "https://www.google.com/maps/place/Eiffel+Tower/@48.85,2.29,17z",
+    "https://www.google.com/maps/search/?api=1&query=Beauty+Cave&query_place_id=ChIJx",
+    "maps.app.goo.gl/5BzP8kp4vJ8h1Qj57",
+    "https://goo.gl/maps/abc",
+    "https://maps.google.co.uk/?q=x",
+  ]) {
+    assert.equal(isGoogleMapsLink(link), true, link);
+  }
+  for (const link of ["https://www.google.com/imgres?imgurl=https://x.com/a.jpg", "https://goo.gl/abc", "https://example.com/maps", ""]) {
+    assert.equal(isGoogleMapsLink(link), false, link);
+  }
 });

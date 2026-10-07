@@ -23,6 +23,7 @@ import { useRegionPreview } from "../components/map/useRegionPreview";
 import { useKnownRegions } from "../components/map/useKnownRegions";
 import FindOnGoogle from "../components/newpin/FindOnGoogle";
 import { googleMapsPlaceUrl, otherTripRegion } from "../lib/places";
+import { usePinPhoto } from "../components/photos/usePinPhoto";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
 
@@ -84,6 +85,8 @@ function baselineFrom(pin) {
     link: pin.link ?? "",
     photoUrl: pin.photoUrl ?? "",
     photoSourceUrl: pin.photoSourceUrl ?? "",
+    // One of its Google place's photos instead (lib/placePhotos.js), or null.
+    photoGoogleIndex: pin.photoGoogleIndex ?? null,
     // Its exact spot, if it has one: { lat, lng, placeId } (placeId when it
     // came from a place search). null means it shows in its region.
     location: pin.lat != null ? { lat: pin.lat, lng: pin.lng, placeId: pin.googlePlaceId ?? null } : null,
@@ -195,6 +198,8 @@ export default function EditVisit() {
 
   const baseline = useMemo(() => baselineFrom(pin), [pin]);
   const form = draft ?? baseline;
+  // The photo as it stands in the form: a link photo, or a Google one looked up for its place.
+  const photo = usePinPhoto({ photoUrl: form?.photoUrl, googlePlaceId: form?.location?.placeId, photoGoogleIndex: form?.photoGoogleIndex });
 
   // Only what actually differs, in the shape PATCH_PIN expects — an
   // untouched field is never sent, so two people editing different fields
@@ -290,7 +295,14 @@ export default function EditVisit() {
 
   function setField(key, value) {
     setSaveError("");
-    setDraft((current) => ({ ...(current ?? baseline), [key]: value }));
+    setDraft((current) => {
+      const before = current ?? baseline;
+      const next = { ...before, [key]: value };
+      // A Google photo is its place's: a different place (or none) can't
+      // keep it. The backend drops it too (routers/pins.py _settle_photo).
+      if (key === "location" && (value?.placeId ?? null) !== (before.location?.placeId ?? null)) next.photoGoogleIndex = null;
+      return next;
+    });
   }
 
   // Somewhere to stay is usually paid by the night, so becoming one starts
@@ -514,7 +526,7 @@ export default function EditVisit() {
 
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
 
-        <PhotoPlaceholder height={150} label="photo placeholder" src={form.photoUrl} alt={pin.title}>
+        <PhotoPlaceholder height={150} label="photo placeholder" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} alt={pin.title}>
           {canEdit ? (
             // Positioned so it draws above the photo, which PhotoPlaceholder
             // lays over the whole box; otherwise the photo swallows the tap.
@@ -535,11 +547,14 @@ export default function EditVisit() {
             <PhotoPicker
               tripId={state.trip.id}
               link={form.link}
+              placeId={form.location?.placeId ?? null}
               photoUrl={form.photoUrl}
+              googleIndex={form.photoGoogleIndex}
               current={baseline.photoUrl}
-              onPick={(url, sourceUrl) => {
+              onPick={(url, sourceUrl, origin, googleIndex) => {
                 setField("photoUrl", url);
                 setField("photoSourceUrl", sourceUrl ?? baseline.photoSourceUrl);
+                setField("photoGoogleIndex", googleIndex ?? null);
               }}
             />
             <div style={{ marginTop: 10 }}>

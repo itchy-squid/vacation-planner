@@ -1,6 +1,7 @@
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
 import HeartButton from "../core/HeartButton";
 import { usePinHeart } from "../../state/PlannerContext";
+import { usePinPhoto } from "../photos/usePinPhoto";
 
 // The two photo heights the masonry rhythm alternates between (handoff
 // README screen 2). Exported so anything elsewhere that wants to preview
@@ -25,6 +26,7 @@ export const BOARD_PHOTO_HEIGHT_SECONDARY = 150;
 // ("On the map" or "Shown in Cozumel"), teal for an exact spot.
 export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false, locationLabel = null }) {
   const heart = usePinHeart(pin);
+  const photo = usePinPhoto(pin);
   const photoHeight = column === 0 ? BOARD_PHOTO_HEIGHT_PRIMARY : BOARD_PHOTO_HEIGHT_SECONDARY;
   const dotColor = column === 0 ? "var(--accent)" : "var(--geo)";
   return (
@@ -40,7 +42,7 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
         cursor: "pointer",
       }}
     >
-      <PhotoPlaceholder height={photoHeight} label="photo" src={pin.photoUrl} alt={pin.title}>
+      <PhotoPlaceholder height={photoHeight} label="photo" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} alt={pin.title}>
         <div style={{ position: "absolute", top: 8, right: 8 }}>
           <HeartButton
             overlay
