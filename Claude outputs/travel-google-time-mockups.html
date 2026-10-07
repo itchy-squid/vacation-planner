@@ -1,0 +1,444 @@
+<title>Google Travel Times</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/solid.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/fontawesome.min.js"></script>
+<style>
+  /* Layout: a review sheet. Each feature is a band of phone screens drawn in the
+     app's own tokens, followed by the decisions it needs. Page chrome follows the
+     viewer's theme; the phones stay in the app's light palette, as the app does. */
+  :root {
+    /* page chrome */
+    --pg-bg: #e9e7ec; --pg-fg: #1b1a1f; --pg-muted: #5d5b66; --pg-line: rgba(27,26,31,.14);
+    --pg-panel: #f6f5f7; --pg-accent: #8f4478; --pg-tag: rgba(143,68,120,.10);
+    /* app tokens (frontend/src/styles/tokens) — light only, like the app */
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-inset: #f9f8fa; --surface-sunken: #eceaee;
+    --surface-inverse: #1b1a1f; --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95;
+    --text-faint: #a3a1ab; --accent: #8f4478; --accent-quiet: rgba(143,68,120,.06); --accent-quiet-strong: rgba(143,68,120,.13);
+    --geo: #3d8a9c; --geo-quiet: #eef2f3; --warn: #b4553f; --stone-250: #dcdae0; --stone-700: #4a4852;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --on-ink: #ffffff; --on-ink-muted: rgba(255,255,255,.6); --scrim: rgba(27,26,31,.42);
+    --map-land: #eceef0; --map-water: #aecfd8; --map-road: #ffffff;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(27,26,31,.06), 0 2px 8px rgba(27,26,31,.05);
+    --shadow-raised: 0 1px 3px rgba(27,26,31,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+      --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+    --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); font: 400 14px/1.55 var(--font-sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; }
+  h1 { font: 400 34px/1.15 var(--font-serif); margin: 0 0 10px; text-wrap: balance; }
+  .lede { max-width: 68ch; color: var(--pg-muted); margin: 0; }
+  .eyebrow { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pg-accent); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { font: 600 12.5px var(--font-sans); color: var(--pg-fg); text-decoration: none; padding: 6px 12px; border: 1px solid var(--pg-line); border-radius: 999px; }
+  .toc a:hover, .toc a:focus-visible { border-color: var(--pg-accent); outline: none; }
+
+  section.feature { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--pg-line); }
+  section.feature > h2 { font: 400 27px/1.2 var(--font-serif); margin: 6px 0 8px; text-wrap: balance; }
+  .ask { max-width: 70ch; color: var(--pg-muted); margin: 0 0 14px; }
+  .today { max-width: 76ch; background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 24px; }
+  .today b { font-weight: 600; }
+  .today code, .decide code { font: 400 12px var(--font-mono); background: var(--pg-tag); padding: 1px 5px; border-radius: 4px; }
+
+  .screens { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+  .screen-col { width: 340px; max-width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .screen-col h3 { font: 600 13.5px/1.3 var(--font-sans); margin: 0; }
+  .screen-col .note { font-size: 12.5px; color: var(--pg-muted); margin: 0; line-height: 1.5; }
+
+  .decide { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .decide > div { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .decide h4 { font: 600 13px var(--font-sans); margin: 0 0 8px; }
+  .decide ol, .decide ul { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+  .rec { display: inline-block; font: 600 10px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-accent); background: var(--pg-tag); padding: 1px 6px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
+
+  /* ---------- phone (app palette only below here) ---------- */
+  .phone { background: var(--surface-page); color: var(--text-primary); border-radius: 30px; border: 1px solid var(--pg-line); box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; position: relative; font-size: 13px; }
+  .phone .bar { height: 26px; }
+  .app-head { padding: 0 16px 10px; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+  .app-head .t { font: 400 22px/1.15 var(--font-serif); }
+  .app-head .s { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .hint { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .body { padding: 0 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
+  .navstrip { display: flex; justify-content: space-around; border-top: 1px solid var(--hairline); background: var(--surface-card); padding: 9px 4px 12px; font: 600 10.5px var(--font-sans); color: var(--text-muted); }
+  .navstrip .on { color: var(--accent); }
+
+  .seg { display: flex; background: var(--surface-sunken); border-radius: var(--radius-md); padding: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: 600 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+  .seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-primary); box-shadow: var(--shadow-raised); }
+  .seg button:focus-visible, .chip:focus-visible, .tchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .input { height: 44px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); display: flex; align-items: center; padding: 0 12px; font: 600 14px var(--font-sans); gap: 8px; }
+  .input input { border: 0; background: transparent; font: inherit; color: inherit; width: 100%; min-width: 0; outline: none; }
+  .input .unit { font: 500 10.5px var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 12px; border-radius: var(--radius-pill); font: 500 12px var(--font-sans); background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip[aria-pressed="true"], .chip.on { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .chip .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .chip[aria-pressed="true"] .n, .chip.on .n { color: var(--on-ink-muted); }
+  .chip.dashed { border-style: dashed; color: var(--text-secondary); }
+  .chip svg { width: 11px !important; height: 11px; }
+
+  /* type picker tiles */
+  .types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tchip { border: 1px solid var(--border); background: var(--surface-card); border-radius: var(--radius-lg); padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 10.5px/1.15 var(--font-sans); color: var(--text-primary); cursor: pointer; text-align: center; }
+  .tchip svg { width: 15px !important; height: 15px; color: var(--text-secondary); }
+  .tchip[aria-pressed="true"] { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .tchip[aria-pressed="true"] svg { color: var(--on-ink); }
+  .tchip .flag { font: 500 8.5px var(--font-mono); letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; }
+  .tchip[aria-pressed="true"] .flag { color: var(--on-ink-muted); }
+
+  .receipt { background: var(--surface-inset); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 10px 12px; font: 400 11.5px/1.6 var(--font-mono); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .receipt b { color: var(--text-primary); font-weight: 500; }
+  .receipt .row { display: flex; justify-content: space-between; gap: 8px; }
+
+  .muted-box { border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 9px 12px; color: var(--text-muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .muted-box svg { width: 12px !important; }
+
+  /* board */
+  .filterbar { display: flex; flex-direction: column; gap: 8px; }
+  .scrollrow { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .scrollrow::-webkit-scrollbar { display: none; }
+  .scrollrow .chip { flex: none; }
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pcard { background: var(--surface-card); border-radius: var(--radius-xl); border: 1px solid var(--hairline); box-shadow: var(--shadow-card); overflow: hidden; }
+  .pcard[hidden] { display: none !important; }
+  .photo { height: 70px; background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); position: relative; }
+  .photo .badge { position: absolute; left: 7px; top: 7px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 3px 7px; font: 600 9.5px var(--font-sans); display: inline-flex; gap: 4px; align-items: center; box-shadow: var(--shadow-raised); }
+  .photo .badge.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .photo .badge svg { width: 9px !important; }
+  .pcard .in { padding: 8px 10px 10px; }
+  .pcard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .pcard .pl { font: 400 10.5px var(--font-sans); color: var(--text-secondary); margin-top: 3px; display: flex; gap: 5px; align-items: center; }
+  .pcard .pl i { width: 5px; height: 5px; border-radius: 50%; background: var(--geo); display: inline-block; }
+  .pcard .meta { margin-top: 6px; font: 500 10.5px var(--font-mono); color: var(--text-primary); display: flex; justify-content: space-between; gap: 4px; }
+  .pcard .meta span:last-child { color: var(--text-muted); }
+  .stays-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .stays-strip::-webkit-scrollbar { display: none; }
+  .staycard { flex: none; width: 190px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .staycard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .staycard .px { font: 500 11px var(--font-mono); }
+  .staycard .px small { color: var(--text-muted); font-size: 10px; }
+  .staycard .nights { font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line { display: flex; justify-content: space-between; align-items: center; font: 400 11.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line button { border: 0; background: none; color: var(--accent); font: 600 11.5px var(--font-sans); cursor: pointer; padding: 0; }
+
+  /* nights grid */
+  .nights-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .nightcell { border-radius: 8px; background: var(--surface-card); border: 1px solid var(--border); padding: 6px 0 5px; text-align: center; }
+  .nightcell .d { font: 400 9.5px var(--font-mono); color: var(--text-faint); }
+  .nightcell .n { font: 600 12px var(--font-sans); }
+  .nightcell.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .nightcell.on .d { color: var(--on-ink-muted); } .nightcell.on .n { color: var(--on-ink); }
+  .nightcell.other { background: var(--surface-sunken); border-color: transparent; }
+  .nightcell.other .n { color: var(--text-muted); }
+  .nightcell.off { border-style: dashed; }
+
+  /* plan day */
+  .band { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-lg); }
+  .band.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .band.line { background: var(--surface-card); border: 1px solid var(--border); }
+  .band .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(255,255,255,.12); }
+  .band.line .ic { background: var(--geo-quiet); color: var(--geo); }
+  .band .ic svg { width: 11px !important; }
+  .band .k { font: 500 9.5px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; opacity: .7; }
+  .band .v { font: 600 13px var(--font-sans); }
+  .band .r { margin-left: auto; font: 500 10.5px var(--font-mono); opacity: .75; text-align: right; }
+  .timeline { position: relative; padding-left: 40px; display: flex; flex-direction: column; gap: 6px; }
+  .timeline::before { content: ""; position: absolute; left: 30px; top: 2px; bottom: 2px; width: 1px; background: var(--border-strong); }
+  .tl-time { position: absolute; left: 0; font: 400 9.5px var(--font-mono); color: var(--text-muted); }
+  .block { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 8px 10px; box-shadow: var(--shadow-card); position: relative; }
+  .block .nm { font: 600 12.5px var(--font-sans); }
+  .block .sub { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .block.ride { background: transparent; box-shadow: none; border: 1px dashed var(--border-strong); padding: 5px 10px; }
+  .block.ride .nm { font: 500 11px var(--font-sans); color: var(--text-secondary); }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .metric { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 7px 9px; }
+  .metric .v { font: 400 18px/1.1 var(--font-serif); font-variant-numeric: tabular-nums; }
+  .metric .k { font: 500 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 3px; }
+  .metric.strike .v { color: var(--text-muted); }
+
+  /* expenses */
+  .exp-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--hairline); align-items: baseline; }
+  .exp-row:first-of-type { border-top: 0; }
+  .exp-row .l { min-width: 0; }
+  .exp-row .nm { font: 600 12.5px var(--font-sans); }
+  .exp-row .how { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .exp-row .amt { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .exp-row .amt small { display: block; font-size: 10px; color: var(--text-muted); }
+  .daybars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; height: 92px; }
+  .daybar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 0; }
+  .daybar i { display: block; width: 100%; }
+  .daybar .stay { background: var(--surface-inverse); border-radius: 0 0 3px 3px; }
+  .daybar .daily { background: var(--geo); }
+  .daybar .once { background: var(--accent); border-radius: 3px 3px 0 0; }
+  .daylabels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font: 400 9.5px var(--font-mono); color: var(--text-muted); text-align: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .legend span { display: inline-flex; gap: 5px; align-items: center; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  /* sheet */
+  .scrim { background: var(--scrim); padding-top: 120px; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 2px; }
+  .sheet .t { font: 400 19px var(--font-serif); }
+  .sheet-actions { display: flex; gap: 8px; }
+  .btn { flex: 1; height: 42px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 13px var(--font-sans); color: var(--text-primary); }
+  .btn.primary { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+
+  /* map */
+  .map { height: 330px; position: relative; background: var(--map-land); overflow: hidden; }
+  .map .water { position: absolute; right: -40px; top: -20px; width: 160px; height: 420px; background: var(--map-water); border-radius: 50% 0 0 50%; transform: rotate(8deg); }
+  .map .road { position: absolute; background: var(--map-road); height: 5px; border-radius: 3px; transform-origin: left center; }
+  .mk { position: absolute; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-card); border: 1.5px solid var(--surface-inverse); color: var(--text-primary); box-shadow: var(--shadow-raised); transform: translate(-50%, -50%); }
+  .mk svg { width: 11px !important; }
+  .mk.stay { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-card); width: 30px; height: 30px; }
+  .mk.start { background: var(--geo); color: var(--on-ink); border-color: var(--surface-card); }
+  .mk.faded { opacity: .25; }
+  .map-filter { position: absolute; left: 10px; right: 10px; top: 10px; }
+  .map-filter .chip { box-shadow: var(--shadow-raised); }
+  .map-count { position: absolute; left: 10px; bottom: 10px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 5px 10px; font: 500 10.5px var(--font-sans); box-shadow: var(--shadow-raised); }
+
+  .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--surface-inverse); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-card); }
+  .toggle.off { background: var(--stone-250); }
+  .toggle.off::after { right: auto; left: 2px; }
+  .list-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--hairline); }
+  .list-row:first-child { border-top: 0; }
+  .list-row .nm { font: 500 12.5px var(--font-sans); flex: 1; min-width: 0; }
+  .list-row .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border-strong); flex: none; display: grid; place-items: center; }
+  .check.on { background: var(--surface-inverse); border-color: var(--surface-inverse); color: var(--on-ink); }
+  .check svg { width: 9px !important; }
+
+  @media (max-width: 420px) {
+    .wrap { padding-inline: 16px; }
+    h1 { font-size: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ---------- this sheet's additions ---------- */
+  .block.travel { background: var(--geo-quiet); border-color: rgba(61,138,156,.28); box-shadow: none; display: flex; gap: 9px; align-items: flex-start; }
+  .block.travel .ic { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-card); color: var(--geo); display: grid; place-items: center; flex: none; margin-top: 1px; }
+  .block.travel .ic svg { width: 11px !important; }
+  .block.travel .nm { font: 600 12.5px var(--font-sans); }
+  .block.travel .lock { margin-left: auto; font: 500 9px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--geo); white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+  .block.travel .lock svg { width: 9px !important; }
+  .block.tall { min-height: 74px; }
+  .gapchip { align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; border: 1px dashed var(--geo); color: var(--geo); background: var(--surface-card); border-radius: var(--radius-pill); padding: 4px 10px; font: 600 11px var(--font-sans); cursor: pointer; }
+  .gapchip svg { width: 10px !important; }
+  .gapchip small { font: 400 10px var(--font-mono); color: var(--text-muted); }
+  .menu-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--hairline); }
+  .menu-row:first-of-type { border-top: 0; }
+  .menu-row .sq { width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-secondary); display: grid; place-items: center; flex: none; }
+  .menu-row .sq svg { width: 15px !important; }
+  .menu-row.new .sq { background: var(--geo-quiet); color: var(--geo); }
+  .menu-row .nm { font: 600 13px var(--font-sans); }
+  .menu-row .d { font: 400 11px var(--font-sans); color: var(--text-secondary); margin-top: 2px; }
+  .menu-row .newtag { margin-left: auto; font: 600 9px var(--font-mono); letter-spacing: .05em; color: var(--geo); text-transform: uppercase; }
+  .modes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .modes .tchip { padding: 7px 0 6px; font-size: 10px; }
+  .route-pair { display: grid; grid-template-columns: 18px 1fr; gap: 0 8px; }
+  .route-pair .rail { display: flex; flex-direction: column; align-items: center; padding: 15px 0; }
+  .route-pair .rail i { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--geo); background: var(--surface-card); }
+  .route-pair .rail i.fill { background: var(--geo); }
+  .route-pair .rail b { flex: 1; width: 1.5px; background: var(--geo); opacity: .4; margin: 3px 0; }
+  .route-pair .stack { display: flex; flex-direction: column; gap: 6px; }
+  .opt { font: 400 10px var(--font-mono); color: var(--text-faint); margin-left: auto; }
+  .est { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--geo-quiet); border-radius: var(--radius-lg); padding: 8px 10px; font: 400 11.5px var(--font-sans); color: var(--stone-700); }
+  .est b { font-weight: 600; color: var(--text-primary); }
+  .est button { border: 0; background: none; color: var(--geo); font: 600 11.5px var(--font-sans); cursor: pointer; padding: 0; white-space: nowrap; }
+  .tz { font: 400 10.5px var(--font-mono); color: var(--text-muted); }
+  .leg { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .leg-head { display: flex; align-items: center; gap: 8px; }
+  .leg-head .k { font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .leg-head .edit { margin-left: auto; font: 600 11.5px var(--font-sans); color: var(--accent); }
+  .leg-line { display: flex; align-items: baseline; gap: 6px; font: 600 15px var(--font-sans); }
+  .leg-line svg { width: 12px !important; color: var(--geo); align-self: center; }
+  .leg-times { display: flex; justify-content: space-between; font: 400 11px var(--font-mono); color: var(--text-secondary); }
+  .leg-then { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--hairline); padding-top: 8px; font: 400 12px var(--font-sans); }
+  .leg-then svg { width: 11px !important; color: var(--geo); }
+  .leg-then .r { margin-left: auto; font: 500 10.5px var(--font-mono); color: var(--text-secondary); }
+  .leg-add { border: 1px dashed var(--border-strong); border-radius: var(--radius-xl); padding: 12px; display: flex; gap: 10px; align-items: center; color: var(--text-secondary); font: 500 12.5px var(--font-sans); }
+  .leg-add svg { width: 12px !important; }
+  .metric .of { font: 400 10px var(--font-mono); color: var(--geo); margin-top: 2px; }
+  .exp-row .nm svg { width: 10px !important; color: var(--geo); margin-right: 4px; }
+  .seg.small button { padding: 5px 0; font-size: 11px; }
+  [data-when][hidden] { display: none !important; }
+  .route { display: flex; flex-direction: column; gap: 6px; }
+  .rleg { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-left: 2px solid var(--geo); margin-left: 12px; }
+  .rleg > svg { width: 11px !important; color: var(--geo); margin-top: 3px; flex: none; }
+  .rleg .rl { font: 600 12px var(--font-sans); }
+  .rleg .rs { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .rleg .rs b { color: var(--text-primary); font-weight: 500; }
+  .rleg .rtag { display: inline-block; margin-top: 4px; font: 500 9px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--geo); background: var(--geo-quiet); border-radius: 4px; padding: 1px 5px; }
+  .rleg.ask { border-left-style: dashed; color: var(--text-secondary); }
+  .rleg.ask .rl { color: var(--accent); }
+  .rstay { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: 9px 12px; }
+  .rstay .rd { font: 500 10px var(--font-mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .rstay .rn { font: 400 17px/1.2 var(--font-serif); margin-top: 2px; }
+  .rstay .rx { font: 400 11px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .air { display: flex; gap: 9px; align-items: center; padding: 9px 10px; border-radius: var(--radius-lg); background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); color: var(--text-secondary); }
+  .air > svg { width: 11px !important; color: var(--geo); }
+  .air .nm { font: 600 12px var(--font-sans); color: var(--text-primary); }
+  .air .sub { font: 400 10.5px var(--font-mono); }
+  .air .r { margin-left: auto; font: 500 9.5px var(--font-mono); letter-spacing: .04em; white-space: nowrap; }
+  .strip { display: flex; gap: 5px; align-items: stretch; }
+  .sd { flex: 1; min-width: 0; background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .sd .w { font: 500 9px var(--font-mono); color: var(--text-muted); }
+  .sd .n { font: 600 14px var(--font-sans); }
+  .sd .p { font: 400 9px var(--font-sans); color: var(--text-secondary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sd.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .sd.on .w, .sd.on .p { color: var(--on-ink-muted); } .sd.on .n { color: var(--on-ink); }
+  .sdf { display: grid; place-items: center; color: var(--geo); }
+  .sdf svg { width: 10px !important; }
+
+  /* ---------- Google times additions ---------- */
+  .day { position: relative; display: flex; flex-direction: column; gap: 0; }
+  .day .block { margin: 0; }
+  .seam { position: relative; height: 0; }
+  .seam .gapchip, .gapzone .gapchip { position: absolute; right: 6px; top: -11px; z-index: 2; }
+  .gapzone { position: relative; height: 34px; }
+  .gapzone .gapchip { top: 6px; }
+  .gapchip.warn { border-color: var(--warn); color: var(--warn); }
+  .gapchip.warn small { color: var(--warn); }
+  .est .sub { display: block; font: 400 10.5px var(--font-sans); color: var(--text-muted); margin-top: 2px; }
+  .pushnote { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .pushnote b { color: var(--text-primary); font-weight: 600; }
+  .filled { font: 500 9px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--geo); margin-left: auto; }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Mockups · built in this change</div>
+  <h1>Google's time for travel, and travel between anything</h1>
+  <p class="lede">Two changes to the travel you add on a day. The Travel form now asks Google how long the trip takes and fills in the minutes for you, even when you type the places instead of picking ideas on the map. And the <em>+ travel</em> button now sits between <b>every</b> two activities, including ones back to back, showing Google's drive time. When the drive doesn't fit, adding it pushes what's after it later.</p>
+
+  <section class="feature" id="chips">
+    <div class="eyebrow">On the day</div>
+    <h2>A + travel button between every two activities</h2>
+    <p class="ask">Before, the chip only showed in a gap of 20 minutes or more. Now it shows between any two blocks for everyone, centred on the gap or on the seam between back-to-back blocks. When both ends are ideas on the map, it shows Google's drive time. It turns rust when the drive is longer than the gap.</p>
+    <div class="screens">
+      <div class="screen-col">
+        <h3>A · Thu Oct 22, three chips</h3>
+        <p class="note">Rental car pickup ends at 3:15 PM and check-in starts at 3:15 PM. The 35-minute drive doesn't fit, so the chip is rust. The 14-minute drive to Disney Springs fits in the 75-minute gap.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Thu Oct 22</div><div class="s">DAY 1 · ORLANDO</div></div></div>
+          <div class="body">
+            <div class="day">
+              <div class="block travel"><div class="ic"><i class="fa-solid fa-key"></i></div><div><div class="nm">Rental car pickup</div><div class="sub">2:30–3:15 PM · MCO</div></div></div>
+              <div class="seam"><button class="gapchip warn" type="button" aria-label="Add travel from MCO to Hotel Alma at 3:15 PM, about 35m by car, longer than the gap"><i class="fa-solid fa-plus"></i>travel<small>~35m</small></button></div>
+              <div class="block"><div class="nm">Check in, drop bags</div><div class="sub">3:15–3:45 PM · Hotel Alma</div></div>
+              <div class="gapzone"><button class="gapchip" type="button"><i class="fa-solid fa-plus"></i>travel<small>~14m</small></button></div>
+              <div class="block"><div class="nm">Disney Springs, dinner</div><div class="sub">5:00–7:30 PM · $45 each</div></div>
+              <div class="seam"><button class="gapchip" type="button"><i class="fa-solid fa-plus"></i>travel</button></div>
+              <div class="block"><div class="nm">Fireworks</div><div class="sub">7:30–8:00 PM · custom event</div></div>
+            </div>
+            <div class="hint">The last chip has no time: Fireworks is a custom event with no place on the map. The form will still ask Google once you type where it is.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>B · Tapping the rust chip</h3>
+        <p class="note">From and To come from the two ideas, it leaves at 3:15 PM, and Google's time fills in the minutes. Check-in and dinner don't both move: dinner's gap absorbs the push.</p>
+        <div class="phone">
+          <div class="scrim" style="padding-top:60px">
+            <div class="sheet" style="gap:12px">
+              <div class="grab"></div>
+              <div class="t">Travel</div>
+              <div class="modes" role="group" aria-label="How">
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-plane"></i>Flight</button>
+                <button class="tchip" type="button" aria-pressed="true"><i class="fa-solid fa-car"></i>Drive</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-train"></i>Train</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-bus"></i>Bus</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-person-walking"></i>Walk</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-ellipsis"></i>Other</button>
+              </div>
+              <div class="two">
+                <div class="field"><div class="cap">From</div><div class="input"><input value="MCO" aria-label="From"></div></div>
+                <div class="field"><div class="cap">To</div><div class="input"><input value="Hotel Alma" aria-label="To"></div></div>
+              </div>
+              <div class="two">
+                <div class="field"><div class="cap">Leaves at</div><div class="input"><input value="3:15 PM" aria-label="Leaves at"></div></div>
+                <div class="field"><div class="cap" style="display:flex">Minutes<span class="filled">From Google</span></div><div class="input"><input value="35" aria-label="Minutes"></div></div>
+              </div>
+              <div class="est" role="status"><span>Google says <b>35m</b> · 28.4 km</span></div>
+              <div class="pushnote">Doesn't fit before <b>Check in, drop bags</b>, so it moves later, to start at <b>3:50 PM</b>.</div>
+              <div class="sheet-actions"><button class="btn primary" type="button" style="flex:1">Add Drive MCO → Hotel Alma at 3:15 PM</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>C · From + Add, typing the places</h3>
+        <p class="note">Neither end is an idea. After a pause in typing, each is looked up on Google near the trip's places, and the bus is timed for that day of the week at 9:00 AM. The matched names show under the time, so a wrong match is easy to spot.</p>
+        <div class="phone">
+          <div class="scrim" style="padding-top:60px">
+            <div class="sheet" style="gap:12px">
+              <div class="grab"></div>
+              <div class="t">Travel</div>
+              <div class="modes" role="group" aria-label="How">
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-plane"></i>Flight</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-car"></i>Drive</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-train"></i>Train</button>
+                <button class="tchip" type="button" aria-pressed="true"><i class="fa-solid fa-bus"></i>Bus</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-person-walking"></i>Walk</button>
+                <button class="tchip" type="button" aria-pressed="false"><i class="fa-solid fa-ellipsis"></i>Other</button>
+              </div>
+              <div class="two">
+                <div class="field"><div class="cap">From</div><div class="input"><input value="hotel alma" aria-label="From"></div></div>
+                <div class="field"><div class="cap">To</div><div class="input"><input value="epcot" aria-label="To"></div></div>
+              </div>
+              <div class="two">
+                <div class="field"><div class="cap">Leaves at</div><div class="input"><input value="9:00 AM" aria-label="Leaves at"></div></div>
+                <div class="field"><div class="cap">Minutes</div><div class="input"><input value="40" aria-label="Minutes"></div></div>
+              </div>
+              <div class="est" role="status"><span>Google says <b>55m</b> · Walk 6m · Bus 302 41m · Walk 4m<span class="sub">Hotel Alma Orlando → EPCOT</span></span><button type="button">Use it</button></div>
+              <div class="hint" style="margin:0">You typed 40, so Google doesn't overwrite it. <em>Use it</em> puts 55 back. Flight and Other aren't asked: Google can't route them.</div>
+              <div class="sheet-actions"><button class="btn primary" type="button" style="flex:1">Add Bus hotel alma → epcot at 9:00 AM</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <div>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>Google is asked for the mode you picked, once you've filled in From and To. Ideas on the map use their spot. Typed text is searched near the trip's places.</li>
+          <li>Google's minutes fill the field until you type your own. Clearing the field hands it back to Google.</li>
+          <li>Bus and train are timed for that trip day's weekday, at the leave time, or 10:00 AM if there's none. Drive and walk ignore the time.</li>
+          <li>Answers are remembered for the page, so the chip's drive time and the form's don't cost two requests.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Pushing later blocks</h4>
+        <ul>
+          <li>Only from a <em>+ travel</em> chip. Each block in the way moves just past the one before it, and the push stops at the first gap big enough to absorb it.</li>
+          <li>Votes, locked blocks, and blocks that run past midnight aren't moved. The form says why, and saving falls back to "tap a free time to place it".</li>
+          <li>No chips on a day split into groups, as before.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>

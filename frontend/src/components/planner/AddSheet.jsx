@@ -52,7 +52,7 @@ function travelKindIcon(kind) {
   return (TRAVEL_KINDS.find((k) => k.value === kind) ?? TRAVEL_KINDS[2]).icon;
 }
 
-export default function AddSheet({ dayIndex, canPlace = true, onClose, onNotice, unplacedPins, unplacedTravelItems, dayRegions, allTripRegions, gap = null }) {
+export default function AddSheet({ dayIndex, canPlace = true, onClose, onNotice, unplacedPins, unplacedTravelItems, dayRegions, allTripRegions, gap = null, dayEntries = [] }) {
   const navigate = useNavigate();
   const state = usePlannerState();
   const dispatch = usePlannerDispatch();
@@ -119,6 +119,7 @@ export default function AddSheet({ dayIndex, canPlace = true, onClose, onNotice,
           <TravelForm
             dayIndex={dayIndex}
             gap={gap}
+            dayEntries={dayEntries}
             header={<SubHeader onBack={gap ? onClose : () => setMode("menu")} title="Travel" />}
             onDone={({ notice }) => {
               if (notice) onNotice?.(notice);

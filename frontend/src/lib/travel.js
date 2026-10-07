@@ -21,10 +21,6 @@ const VERBS = { flight: "Flight", car: "Drive", train: "Train", bus: "Bus", walk
 // isn't a flight: a drive from one city to the next, a long train.
 export const LONG_LEG_MIN = 120;
 
-// Leave at least this much room for a "+ travel" chip between two blocks:
-// the grid is a pixel a minute, and a shorter gap can't hold one.
-export const MIN_GAP_MIN = 20;
-
 /** "Flight IAH → MCO", "Drive to Hotel Alma", "Train", "Travel". */
 export function travelTitle(mode, from = "", to = "") {
   const verb = VERBS[mode] ?? "Travel";
@@ -121,9 +117,10 @@ function onlyTravel(plan) {
 }
 
 /**
- * The gaps on a day where travel could go: between two blocks for
- * everyone that follow one another, at least MIN_GAP_MIN apart, where
- * neither side is already travel. Each says where it starts and ends
+ * The places on a day where travel could go: between two blocks for
+ * everyone that follow one another, however close (back to back is a
+ * gap of nothing: the travel pushes what's after it later, pushesFor),
+ * where neither side is already travel. Each says where it starts and ends
  * (minutes of the day) and where from and to — the last stop before and
  * the first after, with a point when it's an idea on the map.
  */
@@ -138,7 +135,7 @@ export function travelGaps(entries, pins) {
     // Something overlapping either one sits between them.
     const latestEnd = Math.max(...settled.slice(0, i + 1).map((e) => e.endMin));
     if (latestEnd !== before.endMin) continue;
-    if (after.startMin - before.endMin < MIN_GAP_MIN) continue;
+    if (after.startMin < before.endMin) continue;
     if (before.endMin < DAY_START_MIN || after.startMin > DAY_END_MIN) continue;
     if (onlyTravel(before.plan) || onlyTravel(after.plan)) continue;
     gaps.push({
@@ -176,4 +173,68 @@ export function longLegsByDay(plans) {
     });
   byDay.forEach((legs) => legs.sort((a, b) => a.startMinuteOfDay - b.startMinuteOfDay));
   return byDay;
+}
+
+/**
+ * What has to move later for travel at [startMin, endMin) to fit, from the
+ * day's entries (lib/dayGrid.js plansOnDay): each block in the way is
+ * pushed just past the one before it, and the pushing stops at the first
+ * block there's already room for, so later gaps soak it up.
+ *
+ *   { moves: [{ plan, startMin, endMin }] }   in day order; empty when it fits
+ *   { blocked: "why" }                        when it can't be made to fit
+ *
+ * Only a placed or pencilled block moves. A vote or a locked block,
+ * something that started before the travel and runs into it, or a push
+ * past midnight blocks it.
+ */
+export function pushesFor(entries, startMin, endMin) {
+  const shown = entries.filter(({ plan }) => plan.status !== "draft");
+  const before = shown.find((e) => e.startMin < startMin && e.endMin > startMin);
+  if (before) return { blocked: `It would overlap ${planName(before.plan)}.` };
+  const moves = [];
+  let cursor = endMin;
+  for (const entry of shown) {
+    if (entry.startMin < startMin) continue;
+    if (entry.startMin >= cursor) break;
+    const { plan } = entry;
+    const name = planName(plan);
+    // The same blocks a drag can move (lib/planDrag.js dragKind).
+    if (plan.status !== "placed" && plan.status !== "pencilled") {
+      return { blocked: `${name} is ${plan.status === "locked" ? "locked" : "out for a vote"}, so it can't be pushed later.` };
+    }
+    if (entry.continuesBefore || entry.continuesAfter) return { blocked: `${name} runs past midnight, so it can't be pushed later.` };
+    const shift = cursor - entry.startMin;
+    const moved = { plan, startMin: entry.startMin + shift, endMin: entry.endMin + shift };
+    if (moved.endMin > DAY_END_MIN) return { blocked: `It would push ${name} past midnight.` };
+    moves.push(moved);
+    cursor = moved.endMin;
+  }
+  return { moves };
+}
+
+/** "Lunch", "Beach day": what a block is called on the calendar. */
+export function planName(plan) {
+  return plan.label?.trim() || plan.items?.[0]?.title || "a block";
+}
+
+// How far past the trip's own places a place search for travel still
+// prefers (lib/places.js searchPlaces bias), in degrees: about 50 km.
+const BIAS_PAD_DEG = 0.5;
+
+/**
+ * The area to look for a typed "from" or "to" in: the box around the
+ * trip's places on the map ({ lat, lng }), padded. Null when none are.
+ */
+export function biasAround(points) {
+  const usable = points.filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (!usable.length) return null;
+  const lats = usable.map((p) => p.lat);
+  const lngs = usable.map((p) => p.lng);
+  return {
+    south: Math.max(-90, Math.min(...lats) - BIAS_PAD_DEG),
+    north: Math.min(90, Math.max(...lats) + BIAS_PAD_DEG),
+    west: Math.max(-180, Math.min(...lngs) - BIAS_PAD_DEG),
+    east: Math.min(180, Math.max(...lngs) + BIAS_PAD_DEG),
+  };
 }

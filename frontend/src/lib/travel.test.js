@@ -11,6 +11,8 @@ import {
   longLegsByDay,
   minuteFromClock,
   minutesBetween,
+  biasAround,
+  pushesFor,
   travelGaps,
   travelTitle,
 } from "./travel.js";
@@ -66,13 +68,13 @@ test("there's room for travel between two blocks that follow one another", () =>
   const plans = [
     plan(540, 600, [stop("Check in", 60, 1)]),
     plan(630, 700, [stop("Beach", 70, 2)]),
-    plan(710, 760, [stop("Lunch", 50)]), // 10 minutes: too short
+    plan(700, 760, [stop("Lunch", 60)]), // back to back
     plan(800, 830, [leg("Drive", 30)]), // already travel
     plan(900, 960, [stop("Museum", 60)]),
     plan(1000, 1060, [stop("Ours", 60)], { forEveryone: false, branchId: 4 }),
   ];
   const gaps = travelGaps(plansOnDay(plans, 1), pins);
-  assert.equal(gaps.length, 1);
+  assert.deepEqual(gaps.map((g) => [g.startMin, g.endMin]), [[600, 630], [700, 700]]);
   assert.deepEqual(gaps[0], {
     startMin: 600,
     endMin: 630,
@@ -95,4 +97,39 @@ test("long legs are listed on the day they leave, in order", () => {
   const byDay = longLegsByDay(plans);
   assert.deepEqual([...byDay.keys()], [2]);
   assert.deepEqual(byDay.get(2).map((l) => [l.title, l.startMinuteOfDay]), [["Drive to Tampa", 300], ["Flight HNL → HND", 690]]);
+});
+
+test("travel that doesn't fit pushes what's after it later, until a gap soaks it up", () => {
+  const lunch = plan(700, 760, [stop("Lunch", 60)]);
+  const beach = plan(770, 890, [stop("Beach", 120)]);
+  const dinner = plan(1100, 1160, [stop("Dinner", 60)]);
+  const entries = plansOnDay([plan(600, 700, [stop("Museum", 100)]), lunch, beach, dinner], 1);
+
+  assert.deepEqual(pushesFor(entries, 700, 700 + 35), {
+    moves: [
+      { plan: lunch, startMin: 735, endMin: 795 },
+      { plan: beach, startMin: 795, endMin: 915 },
+    ],
+  });
+  assert.deepEqual(pushesFor(entries, 900, 930), { moves: [] });
+});
+
+test("travel can't push a vote, a block from before it, or anything past midnight", () => {
+  const vote = plan(700, 760, [stop("Lunch", 60)], { status: "contested", label: "Lunch spot" });
+  assert.match(pushesFor(plansOnDay([vote], 1), 690, 720).blocked, /Lunch spot is out for a vote/);
+  assert.match(pushesFor(plansOnDay([plan(600, 700, [stop("Museum", 100)])], 1), 650, 680).blocked, /overlap Museum/);
+  assert.match(pushesFor(plansOnDay([plan(1380, 1430, [stop("Late show", 50)])], 1), 1370, 1400).blocked, /past midnight/);
+  // Someone's private draft claims no time.
+  assert.deepEqual(pushesFor(plansOnDay([plan(700, 760, [stop("Idea", 60)], { status: "draft" })], 1), 690, 720), { moves: [] });
+});
+
+test("a typed place is looked for around the trip's places on the map", () => {
+  assert.equal(biasAround([]), null);
+  assert.equal(biasAround([{ lat: null, lng: null }]), null);
+  assert.deepEqual(biasAround([{ lat: 28.4, lng: -81.3 }, { lat: 28.6, lng: -81.5 }, null]), {
+    south: 27.9,
+    north: 29.1,
+    west: -82,
+    east: -80.8,
+  });
 });

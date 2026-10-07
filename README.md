@@ -69,7 +69,9 @@ The frontend needs a **browser key** baked in at build time:
    (`frontend/src/lib/places.js`); without it the search says it isn't
    working, and adding by hand still works. Routes times the rides in a
    trip planned from the Map tab (`frontend/src/lib/routeEstimates.js`);
-   without it each ride says it couldn't get times from Google.
+   without it each ride says it couldn't get times from Google. The day's
+   Travel form uses both: Places finds a typed from and to, and Routes
+   fills in how long (`frontend/src/components/planner/useTravelEstimate.js`).
 2. Create an API key. Restrict it to those four APIs, and to HTTP referrers:
    `http://localhost:5173/*` plus each environment's frontend URL (e.g.
    `https://vacations.dev.amandasanti.com/*`). The key ships in the built
