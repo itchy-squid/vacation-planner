@@ -23,6 +23,16 @@ button, input, textarea, select {
   color: inherit;
 }
 
+/* iOS Safari zooms the page in on any field under 16px when it's focused,
+   and leaves it zoomed. Fields set their size inline, hence !important;
+   only iOS matches -webkit-touch-callout, so other browsers keep the
+   designed sizes. */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
 button {
   cursor: pointer;
   background: none;
