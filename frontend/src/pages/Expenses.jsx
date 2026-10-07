@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TripHeader from "../components/core/TripHeader";
 import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
-import { buildExpenses, formatMoney, payerOf, travelersFor } from "../data/expenses";
+import { GROUPINGS, buildExpenses, formatMoney, payerOf, travelersFor } from "../data/expenses";
 import { getTripDays } from "../data/trip";
 import { buildDailyCosts } from "../lib/dailyCosts";
 import { tripDayNumbers } from "../lib/dayPlaces";
@@ -23,6 +23,9 @@ import { clockLabel } from "../lib/planTime";
 // is a hardcoded USD — the schema has nowhere to put a trip's currency
 // yet, and a fixed label at least stops the bare "$" from implying an
 // answer the app doesn't have (decision 10).
+//
+// Costs are listed by day or by category — the viewer picks, and it's one
+// or the other, never a mix (data/expenses.js buildExpenses).
 const CURRENCY = "USD";
 
 // Whose costs the screen shows, remembered per device (it's a view, not
@@ -45,6 +48,24 @@ function writeScope(v) {
   }
 }
 
+// By day or by category, remembered per device the same way.
+const GROUPING_KEY = "expenses.groupBy";
+function readGrouping() {
+  try {
+    const v = window.localStorage.getItem(GROUPING_KEY);
+    return GROUPINGS.includes(v) ? v : "day";
+  } catch {
+    return "day";
+  }
+}
+function writeGrouping(v) {
+  try {
+    window.localStorage.setItem(GROUPING_KEY, v);
+  } catch {
+    // As above: not kept.
+  }
+}
+
 export default function Expenses() {
   const state = usePlannerState();
   const { trip, plans, travelers, pins, dayPlaces } = state;
@@ -52,6 +73,11 @@ export default function Expenses() {
   const myId = me?.id ?? null;
 
   const [showFree, setShowFree] = useState(false);
+  const [grouping, setGrouping] = useState(readGrouping);
+  function chooseGrouping(value) {
+    setGrouping(value);
+    writeGrouping(value);
+  }
   // What I'm paying (me plus the people I pay for) is the default; someone
   // planning but not going has nobody's costs of their own, so they start
   // on everyone.
@@ -83,6 +109,7 @@ export default function Expenses() {
     () => buildExpenses(plans, { trip, travelers, shownIds: shown.map((t) => t.id), daily: dailyCosts.rows }),
     [plans, trip, travelers, shown, dailyCosts]
   );
+  const groups = grouping === "category" ? expenses.byCategory : expenses.byDay;
   const dayCount = useMemo(() => getTripDays(trip).length, [trip]);
   const payingFor = myId != null ? travelers.filter((t) => payerOf(t) === myId) : [];
 
@@ -147,17 +174,15 @@ export default function Expenses() {
             perTraveler={shown.length > 1 ? expenses.perTraveler : []}
           />
 
-          {expenses.legs.length > 0 && <DayCard label="Travel between places" rows={expenses.legs} />}
-
-          {expenses.daily.length > 0 && <DayCard label="Stays and daily costs" rows={expenses.daily} />}
+          <GroupingSwitch value={grouping} onChange={chooseGrouping} />
 
           {dailyCosts.waiting.length > 0 && <WaitingForDays items={dailyCosts.waiting} tripId={trip.id} />}
 
-          {expenses.days.map((day) => (
-            <DayCard key={day.dayIndex} label={day.label} rows={day.rows} />
+          {groups.map((g) => (
+            <GroupCard key={g.key} label={g.label} subtotalCents={g.shownCents} rows={g.rows} />
           ))}
 
-          {expenses.days.length === 0 && expenses.legs.length === 0 && expenses.daily.length === 0 && (
+          {groups.length === 0 && (
             <div
               style={{
                 borderRadius: "var(--radius-lg)",
@@ -229,7 +254,41 @@ function SummaryCard({ label, shownCents, tripTotalCents, perTraveler }) {
   );
 }
 
-function DayCard({ label, rows }) {
+function GroupingSwitch({ value, onChange }) {
+  const options = [
+    { value: "day", label: "By day" },
+    { value: "category", label: "By category" },
+  ];
+  return (
+    <div role="group" aria-label="Group expenses" style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", padding: 2 }}>
+      {options.map((opt) => {
+        const on = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(opt.value)}
+            style={{
+              flex: 1,
+              padding: "7px 0",
+              borderRadius: "calc(var(--radius-md) - 2px)",
+              background: on ? "var(--surface-card)" : "transparent",
+              boxShadow: on ? "var(--shadow-raised)" : "none",
+              font: "600 12px var(--font-sans)",
+              color: on ? "var(--text-primary)" : "var(--text-secondary)",
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// A day or a category, with what its costs come to for the people shown.
+function GroupCard({ label, subtotalCents, rows }) {
   return (
     <div
       style={{
@@ -242,8 +301,13 @@ function DayCard({ label, rows }) {
         gap: 12,
       }}
     >
-      <div className="serif-place" style={{ fontSize: 17, color: "var(--text-primary)" }}>
-        {label}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+        <div className="serif-place" style={{ fontSize: 17, color: "var(--text-primary)" }}>
+          {label}
+        </div>
+        <div className="mono-data" style={{ fontSize: 13, color: "var(--text-secondary)", flex: "none" }}>
+          {formatMoney(subtotalCents)}
+        </div>
       </div>
       {rows.map((row) => (
         <ExpenseRow key={row.key} row={row} />
@@ -261,7 +325,7 @@ function ExpenseRow({ row }) {
       : `${formatMoney(row.eachCents)} each`;
   const meta = [
     row.startMinuteOfDay != null ? clockLabel(row.startMinuteOfDay) : null,
-    // A stay or per-day price: its days and the multiplication.
+    // When it is (by category), or a stay's or per-day price's days.
     row.howLabel ?? null,
     price,
     `${row.headcount} ${row.headcount === 1 ? "person" : "people"}`,

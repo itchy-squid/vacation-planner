@@ -229,6 +229,24 @@ chips, defaulting to none selected — which means everyone, and is what makes
 > `· A, M` suffix now appears when that is a subset (a group on a split
 > day). See `trip-travelers-spec.md`.
 
+> **Superseded 2026-10-07:** costs are grouped one way at a time, never
+> mixed. Below the summary card a **By day / By category** switch
+> (remembered per device, `expenses.groupBy`) picks how the cards in item 4
+> are grouped. The separate "Travel between places" and "Stays and daily
+> costs" cards are gone; each card heading shows its subtotal for the
+> people shown.
+>
+> - **By day** (the default): every cost under the trip day it happens on.
+>   A stay or rental priced by the day is split into a day's worth under
+>   each of its days ("night 2 of 4 · $180/night"), with any leftover cent
+>   on the last day so the parts add up exactly. Something paid once is on
+>   its first day; a flight is on the day it leaves.
+> - **By category**: **Lodging** (stays, lodging travel items), **Travel**
+>   (travel items), **Rentals & daily** (other ideas priced by the day),
+>   **Activities** (everything else). Each row says its day and time. The
+>   categories come from fields the trip already has, not from tags, so
+>   decision 8 still holds. See `data/expenses.js` `buildExpenses`.
+
 ---
 
 ## 5. Proposal creation

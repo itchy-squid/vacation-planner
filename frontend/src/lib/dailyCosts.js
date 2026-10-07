@@ -53,10 +53,11 @@ export function countedByTheDay(pin) {
 
 /**
  * How many days of an idea's price are paid, and which days those are:
- * { count, first, last, label } — `count` 0 while none are known yet.
+ * { count, first, last, label, on } — `count` 0 while none are known yet.
  * `last` is the day it ends (a stay's check-out), so `label` reads
  * "Mar 12 – 16" for four nights from the 12th (or "Days 1–5" on a trip
- * without dates).
+ * without dates). `on` is the day each day's worth is paid on — every
+ * charged day for a price per day, just the first for one paid once.
  */
 export function chargedDays(pin, { dayPlaces = {}, days = [], trip = null } = {}) {
   if (pin.kind === "stay") {
@@ -64,11 +65,21 @@ export function chargedDays(pin, { dayPlaces = {}, days = [], trip = null } = {}
     if (!nights.length) return { count: 0, first: null, last: null, label: "" };
     const first = nights[0];
     const last = nights[nights.length - 1] + 1;
-    return { count: pin.costPer === "day" ? nights.length : 1, nights: nights.length, first, last, label: daysLabel(first, last, trip) };
+    return {
+      count: pin.costPer === "day" ? nights.length : 1,
+      nights: nights.length,
+      first,
+      last,
+      label: daysLabel(first, last, trip),
+      // The days each day's worth falls on: the nights themselves, which
+      // needn't be in a row.
+      on: pin.costPer === "day" ? nights : [first],
+    };
   }
   const count = daysCharged(pin.costStartDay, pin.costEndDay);
   if (!count) return { count: 0, first: null, last: null, label: "" };
-  return { count, first: pin.costStartDay, last: pin.costEndDay, label: daysLabel(pin.costStartDay, pin.costEndDay, trip) };
+  const on = pin.costPer === "day" ? Array.from({ length: count }, (_, i) => pin.costStartDay + i) : [pin.costStartDay];
+  return { count, first: pin.costStartDay, last: pin.costEndDay, label: daysLabel(pin.costStartDay, pin.costEndDay, trip), on };
 }
 
 /** "4 nights" for a stay, "3 days" for anything else. */
@@ -122,8 +133,12 @@ export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travele
         pinId: pin.id,
         title: pin.title,
         kind: pin.kind,
+        costPer: pin.costPer ?? "once",
         first: days.first,
+        on: days.on,
         howLabel: `${days.label} · ${rate}`,
+        rateLabel: rate,
+        dayCents: pin.costCents,
         startMinuteOfDay: null,
         costBasis: pin.costBasis ?? "per_head",
         eachCents,
@@ -139,6 +154,39 @@ export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travele
   rows.sort((a, b) => a.first - b.first || a.title.localeCompare(b.title));
   waiting.sort((a, b) => a.title.localeCompare(b.title));
   return { rows, waiting };
+}
+
+// `cents` in `n` parts that add back up to it exactly; what doesn't divide
+// evenly goes on the last.
+function splitCents(cents, n) {
+  const part = Math.floor(cents / n);
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? cents - part * (n - 1) : part));
+}
+
+/**
+ * A buildDailyCosts row as one row per day it's paid on, for listing the
+ * trip by day: a four-night stay is a night's worth under each of its four
+ * days, "night 2 of 4". The parts add up to the row exactly, for everyone
+ * and for each person, so totals read the same either way. Something paid
+ * once is the one row, on its first day.
+ */
+export function rowsByDay(row) {
+  const on = row.on ?? [row.first];
+  if (row.costPer !== "day" || on.length <= 1) {
+    return [{ ...row, key: `${row.key}-${on[0]}`, day: on[0], howLabel: row.rateLabel }];
+  }
+  const each = splitCents(row.eachCents, on.length);
+  const total = splitCents(row.totalCents, on.length);
+  const unit = row.kind === "stay" ? "night" : "day";
+  return on.map((day, i) => ({
+    ...row,
+    key: `${row.key}-${day}`,
+    day,
+    howLabel: `${unit} ${i + 1} of ${on.length} · ${formatCents(row.dayCents)}/${unit}`,
+    eachCents: each[i],
+    totalCents: total[i],
+    shownCents: each[i] * row.shownCount,
+  }));
 }
 
 function formatCents(cents) {

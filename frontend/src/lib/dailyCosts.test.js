@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's built-in test runner, no dependencies).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDailyCosts, chargedDays, daysCharged, dailyMoney } from "./dailyCosts.js";
+import { buildDailyCosts, chargedDays, daysCharged, dailyMoney, rowsByDay } from "./dailyCosts.js";
 
 const DAYS = [1, 2, 3, 4, 5, 6];
 const TRIP = { startDate: "2026-03-12", dayCount: 6 };
@@ -62,4 +62,39 @@ test("rows come out priced, and ideas with a price but no days wait", () => {
 test("a price the viewer can't see is left out", () => {
   const { rows, waiting } = buildDailyCosts({ 8: { ...CAR, costCents: null } }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
   assert.equal(rows.length + waiting.length, 0);
+});
+
+test("by day, a stay paid by the night is a night's worth under each night, adding up exactly", () => {
+  const pricey = { ...HOTEL, costCents: 10000 }; // $100 a night for the group, $25 each
+  const { rows } = buildDailyCosts({ 7: pricey }, { dayPlaces: staying(7, [1, 2, 4]), days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1, 2, 3] });
+  const parts = rowsByDay(rows[0]);
+  assert.deepEqual(parts.map((p) => p.day), [1, 2, 4]); // the nights themselves, not a range
+  assert.deepEqual(parts.map((p) => p.howLabel), ["night 1 of 3 · $100/night", "night 2 of 3 · $100/night", "night 3 of 3 · $100/night"]);
+  const sum = (key) => parts.reduce((s, p) => s + p[key], 0);
+  assert.equal(sum("totalCents"), rows[0].totalCents);
+  assert.equal(sum("eachCents"), rows[0].eachCents);
+  assert.equal(sum("shownCents"), rows[0].shownCents);
+});
+
+test("by day, what doesn't divide evenly goes on the last day", () => {
+  const { rows } = buildDailyCosts({ 8: { ...CAR, costCents: 1000 } }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
+  // 3 days at $10 for 4 people: $7.50 each over the 3 days.
+  const parts = rowsByDay(rows[0]);
+  assert.deepEqual(parts.map((p) => [p.day, p.totalCents, p.eachCents]), [
+    [1, 1000, 250],
+    [2, 1000, 250],
+    [3, 1000, 250],
+  ]);
+  const odd = rowsByDay({ ...rows[0], eachCents: 751, totalCents: 3004, shownCents: 751 });
+  assert.deepEqual(odd.map((p) => p.eachCents), [250, 250, 251]);
+});
+
+test("by day, a stay paid once is one row on its first night", () => {
+  const once = { ...HOTEL, costPer: "once", costCents: 90000 };
+  const { rows } = buildDailyCosts({ 7: once }, { dayPlaces: staying(7, [2, 3, 4]), days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
+  const parts = rowsByDay(rows[0]);
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].day, 2);
+  assert.equal(parts[0].totalCents, 90000);
+  assert.equal(parts[0].howLabel, "3 nights · paid once");
 });
