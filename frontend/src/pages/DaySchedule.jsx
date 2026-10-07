@@ -11,7 +11,7 @@ import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
 import { DayPlacesLine, DayTripDot, PlacesMismatch, StayBar } from "../components/places/DayPlacesLine";
 import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDayNumbers, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
-import { getTripDays, tripDayLabel } from "../data/trip";
+import { getTripDays } from "../data/trip";
 import { tripMinute, clockLabel } from "../lib/planTime";
 import {
   DAY_END_MIN,
@@ -642,24 +642,23 @@ export default function DaySchedule() {
   // Where a typed "MCO" is looked for: around the trip's places.
   const travelBias = useMemo(() => biasAround(Object.values(pins)), [pins]);
   const unplacedCount = unplacedPins.length + unplacedTravelItems.length;
+  // "Mar 12", for the places line; nothing on a trip without dates.
+  const todayDate = tripDays[dayIndex - 1]?.month ? `${tripDays[dayIndex - 1].month} ${tripDays[dayIndex - 1].n}` : "";
 
   return (
     <div className="screen">
       <div style={{ flex: "none", background: "var(--surface-page)", borderBottom: "1px solid var(--hairline)" }}>
         <TripHeader />
         <div style={{ padding: "6px var(--gutter-text) 12px" }}>
+          {/* No day heading: the selected chip in the strip below says
+              which day this is. */}
           <DayPlacesLine
             day={today}
             previousStay={stayBefore(dayPlaces, dates, dayIndex - 1)}
             fallback={`Scheduling · ${region}`}
+            date={todayDate}
             onAllDays={dates.length ? () => navigate(`/trips/${trip.id}/places`, { state: { fromDay: dayIndex } }) : null}
-          />
-          {/* Kept as this screen's heading: it's the day you're looking at,
-              which the header's trip name doesn't say. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="serif-place" style={{ flex: 1, minWidth: 0, fontSize: 24, marginTop: 2, color: "var(--text-primary)" }}>
-              {tripDayLabel(dayIndex, trip)}
-            </div>
+          >
             {travelMinutes > 0 && (
               <span className="mono-data-sm" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 5, color: "var(--geo)" }}>
                 <FontAwesomeIcon icon={faRoute} style={{ width: 10, height: 10 }} />
@@ -675,7 +674,7 @@ export default function DaySchedule() {
                 onClick={() => navigate(`/trips/${trip.id}/contests/${openBlocks[0].contestId}`)}
                 style={{
                   flex: "none",
-                  padding: "5px 11px",
+                  padding: "3px 9px",
                   borderRadius: "var(--radius-xl)",
                   background: "var(--surface-card)",
                   border: "1px solid var(--border)",
@@ -686,7 +685,7 @@ export default function DaySchedule() {
                 {openBlocks.length} block{openBlocks.length === 1 ? "" : "s"} open
               </button>
             )}
-          </div>
+          </DayPlacesLine>
         </div>
 
         <div className="day-marquee" style={{ position: "relative" }}>

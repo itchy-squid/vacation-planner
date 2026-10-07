@@ -1,19 +1,24 @@
 import { describeDay, includesPlace, isSet, placeNames } from "../../lib/dayPlaces";
 
 /**
- * The Plan tab's line above the day title (pages/DaySchedule.jsx): the
- * places set for the day ("Staying in Taipei · Day trip to North Coast"),
- * or, when none are, what the calendar suggests (`fallback`, the old
- * "Scheduling · Taipei"), and "All days", the whole trip in "Where we'll
- * be", which is where places are set and edited.
+ * The Plan tab's line above the day strip (pages/DaySchedule.jsx): the
+ * date, when the trip has dates ("Mar 12" — the strip's chips have the
+ * weekday and day but not the month); the places set for the day
+ * ("Staying in Taipei · Day trip to North Coast"), or, when none are, what
+ * the calendar suggests (`fallback`, the old "Scheduling · Taipei"); then
+ * on the right `children` (the day's travel time, open blocks) and "All
+ * days", the whole trip in "Where we'll be", which is where places are set
+ * and edited. The places wrap before anything on the right is pushed off.
  */
-export function DayPlacesLine({ day, previousStay, fallback, onAllDays }) {
+export function DayPlacesLine({ day, previousStay, fallback, date = "", onAllDays, children }) {
   const set = isSet(day);
+  const places = set ? describeDay(day, previousStay) : fallback;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div className="mono-caption" style={{ flex: 1, minWidth: 0, lineHeight: 1.4, color: set ? "var(--geo)" : undefined }}>
-        {set ? describeDay(day, previousStay) : fallback}
+        {date ? `${date} · ${places}` : places}
       </div>
+      {children}
       {onAllDays ? (
         <button type="button" onClick={onAllDays} style={{ flex: "none", font: "500 11.5px var(--font-sans)", color: "var(--accent)" }}>
           All days ›
