@@ -149,7 +149,7 @@ Engineering additions, not design-reviewed screens:
   `Claude outputs/stays-costs-types-mockups.html`.
 - **Tickets, passes and rentals** (`Pin.kind = "expense"`;
   `frontend/src/components/expenses/CostSheet.jsx`) — a cost that isn't a
-  place is added on Expenses ("Add a ticket, pass or rental", or "Add as
+  place is added on Expenses ("Add an expense", or "Add as
   a cost" from New idea's search) and never appears on the Ideas board,
   the map or the calendar: the frontend keeps these in `state.costs`, apart
   from `state.pins`. It's paid once (falling on its first day) or per day,

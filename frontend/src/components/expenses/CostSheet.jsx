@@ -164,7 +164,7 @@ export default function CostSheet({ cost = null, title: startTitle = "", onClose
     }
   }
 
-  const sheetTitle = isNew ? "Add a cost" : title || "Cost";
+  const sheetTitle = isNew ? "Add an expense" : title || "Cost";
   return (
     <BottomSheet label={sheetTitle} onClose={onClose}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 18px 12px", borderBottom: "1px solid var(--hairline)", flex: "none" }}>
@@ -326,7 +326,7 @@ export default function CostSheet({ cost = null, title: startTitle = "", onClose
               </Button>
             ) : null}
             <Button onClick={save} disabled={!ready}>
-              {isNew ? "Add cost" : "Save"}
+              {isNew ? "Add expense" : "Save"}
             </Button>
           </div>
         ) : (
