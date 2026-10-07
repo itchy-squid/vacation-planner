@@ -18,8 +18,14 @@
 //
 // A stay paid once counts once, if it's booked for any night at all.
 //
+// An expense (a park ticket, a rental car: a pin that isn't a place) is
+// counted here too, paid once or by the day, since it's never on the
+// calendar to be counted through the plans. Paid once, it falls on its
+// first day.
+//
 // Everyone on the trip shares it, the same rule stopMoney applies to a
-// stop on a plan for everyone.
+// stop on a plan for everyone — except an expense for only some of the
+// travelers (travelerIds).
 //
 // Days are days of the trip (1 is the first; backend app/tripdays.py), so
 // a trip can be costed before it has dates.
@@ -48,7 +54,15 @@ function daysLabel(first, last, trip) {
 
 /** Whether an idea's cost is counted here rather than through the plans. */
 export function countedByTheDay(pin) {
-  return pin.kind === "stay" || pin.costPer === "day";
+  return pin.kind === "stay" || pin.kind === "expense" || pin.costPer === "day";
+}
+
+/** Who shares a cost counted here: an expense's own travelers still on the trip, else everyone. */
+export function sharersOf(pin, travelers) {
+  const everyone = travelers.map((t) => t.id);
+  if (pin.kind !== "expense" || pin.travelerIds == null) return everyone;
+  const chosen = new Set(pin.travelerIds);
+  return everyone.filter((id) => chosen.has(id));
 }
 
 /**
@@ -111,8 +125,7 @@ export function dailyMoney(pin, count, headcount) {
  */
 export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travelers, shownIds }) {
   const shown = new Set(shownIds);
-  const sharers = travelers.map((t) => t.id);
-  const mine = sharers.filter((id) => shown.has(id));
+  const initials = new Map(travelers.map((t) => [t.id, t.initial]));
   const rows = [];
   const waiting = [];
 
@@ -125,14 +138,22 @@ export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travele
         if (pin.costCents > 0) waiting.push({ key: `daily-${pin.id}`, pinId: pin.id, title: pin.title, kind: pin.kind });
         return;
       }
+      const sharers = sharersOf(pin, travelers);
+      const mine = sharers.filter((id) => shown.has(id));
       const { eachCents, totalCents } = dailyMoney(pin, days.count, sharers.length);
       if (totalCents === 0) return;
-      const rate = pin.costPer === "day" ? `${daysWord(pin, days.count)} × ${formatCents(pin.costCents)}` : `${daysWord(pin, days.nights ?? days.count)} · paid once`;
+      const rate =
+        pin.costPer === "day"
+          ? `${daysWord(pin, days.count)} × ${formatCents(pin.costCents)}`
+          : pin.kind === "expense"
+          ? "paid once"
+          : `${daysWord(pin, days.nights ?? days.count)} · paid once`;
       rows.push({
         key: `daily-${pin.id}`,
         pinId: pin.id,
         title: pin.title,
         kind: pin.kind,
+        expenseType: pin.expenseType ?? null,
         costPer: pin.costPer ?? "once",
         first: days.first,
         on: days.on,
@@ -145,7 +166,8 @@ export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travele
         totalCents,
         headcount: sharers.length,
         sharers,
-        sharersLabel: "",
+        // Spelled out only when it isn't everyone, as for a plan's stops.
+        sharersLabel: sharers.length < travelers.length ? sharers.map((id) => initials.get(id)).filter(Boolean).join(", ") : "",
         shownCount: mine.length,
         shownCents: eachCents * mine.length,
       });

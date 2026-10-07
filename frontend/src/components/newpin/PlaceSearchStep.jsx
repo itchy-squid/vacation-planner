@@ -7,6 +7,7 @@ import { NewPinHeader } from "./NewPinChrome";
 import { MIN_QUERY_LENGTH } from "./usePlaceSearch";
 import { areaLine, distanceKm, formatDistance, googleMapsPlaceUrl, otherTripRegion } from "../../lib/places";
 import { areaQueriesForTrip } from "../../lib/mapArea";
+import { looksLikeCost } from "../../lib/expenseTypes";
 
 const LETTERS = "ABCDEFGHIJ";
 // A search for one of these is probably for something bookable, which
@@ -36,8 +37,13 @@ const FIT_PADDING = { top: 30, right: 30, bottom: 30, left: 30 };
  *   onPick(result)     "Add this place" / "Link to this place"
  *   onOpenIdea(pin)    "Open idea", for a place that's already one
  *   onManual()         "Add it by hand" / "Tap the map instead"
+ *   onAddCost(query)   "Add as a cost": a ticket, pass or rental isn't a
+ *                      place, so it goes to Expenses rather than the board
+ *                      (components/expenses/CostSheet.jsx). Offered first
+ *                      when the search reads like one, and always last.
+ *                      Left out where costs can't be added.
  */
-export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCancel, onPick, onOpenIdea, onManual, link = null }) {
+export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCancel, onPick, onOpenIdea, onManual, onAddCost = null, link = null }) {
   const { query, setQuery, results, origin, status, selectedId, setSelectedId, viewRef } = search;
   const [typing, setTyping] = useState(false);
   const inputRef = useRef(null);
@@ -112,6 +118,7 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
         // put the keyboard away so the map grows back.
         onScroll={() => inputRef.current?.blur()}
       >
+        {onAddCost && !link && looksLikeCost(query) ? <AddAsCost query={query} onAddCost={onAddCost} /> : null}
         <Results
           query={query}
           status={status}
@@ -142,8 +149,54 @@ export default function PlaceSearchStep({ trip, search, existingByPlaceId, onCan
               : "For a link, a tour, or anywhere Google doesn’t list. It still shows on the map in its region."}
           </span>
         </button>
+        {onAddCost && !link ? (
+          <button
+            type="button"
+            onClick={() => onAddCost(query)}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: "0 16px 13px", font: "500 12.5px/1.45 var(--font-sans)", color: "var(--accent)", background: "var(--surface-inset)" }}
+          >
+            A ticket, pass or rental? Add it as a cost ›
+            <span style={{ display: "block", font: "400 11.5px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
+              Costs that aren’t places go in Expenses, not on the board.
+            </span>
+          </button>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+// First in the results when the search reads like a cost ("rental car",
+// "5-day ticket"): those belong in Expenses. Google's results stay below
+// it, since a rental counter is a real place.
+function AddAsCost({ query, onAddCost }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onAddCost(query)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "calc(100% - 32px)",
+        margin: "12px 16px 4px",
+        padding: "10px 12px",
+        textAlign: "left",
+        borderRadius: "var(--radius-lg)",
+        border: "1px solid var(--border)",
+        background: "var(--accent-quiet)",
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>Add “{query.trim()}” as a cost</span>
+        <span style={{ display: "block", font: "400 11.5px/1.4 var(--font-sans)", color: "var(--text-secondary)", marginTop: 1 }}>
+          Tickets, passes and rentals go in Expenses, not on the board.
+        </span>
+      </span>
+      <span aria-hidden="true" style={{ color: "var(--accent)", font: "600 14px var(--font-sans)" }}>
+        ›
+      </span>
+    </button>
   );
 }
 

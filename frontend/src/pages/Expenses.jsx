@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faPlus } from "@fortawesome/free-solid-svg-icons";
 import TripHeader from "../components/core/TripHeader";
-import { usePlannerState, useMyTraveler } from "../state/PlannerContext";
+import CostSheet from "../components/expenses/CostSheet";
+import { expenseIcon } from "../lib/expenseTypes";
+import { usePlannerState, useMyTraveler, useIdeaAccess } from "../state/PlannerContext";
 import { GROUPINGS, buildExpenses, formatMoney, payerOf, travelersFor } from "../data/expenses";
 import { getTripDays } from "../data/trip";
 import { buildDailyCosts } from "../lib/dailyCosts";
@@ -26,6 +30,12 @@ import { clockLabel } from "../lib/planTime";
 //
 // Costs are listed by day or by category — the viewer picks, and it's one
 // or the other, never a mix (data/expenses.js buildExpenses).
+//
+// Costs that aren't places — a park ticket, a rental car — are added and
+// changed here (components/expenses/CostSheet.jsx), and nowhere else:
+// they're never on the Ideas board. ?add=1 opens the sheet straight away
+// (New idea's "Add as a cost"), with ?title= as its starting name, and
+// ?cost=<id> opens that cost (Edit idea's ticket note).
 const CURRENCY = "USD";
 
 // Whose costs the screen shows, remembered per device (it's a view, not
@@ -68,9 +78,23 @@ function writeGrouping(v) {
 
 export default function Expenses() {
   const state = usePlannerState();
-  const { trip, plans, travelers, pins, dayPlaces } = state;
+  const { trip, plans, travelers, pins, costs, dayPlaces } = state;
   const me = useMyTraveler();
   const myId = me?.id ?? null;
+  const { canAddIdeas, canSetCost } = useIdeaAccess();
+  const canAddCost = canAddIdeas && canSetCost(null);
+
+  // The cost sheet: { cost } to change one, { title } to add one.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [sheet, setSheet] = useState(() => {
+    const opened = costs[Number(searchParams.get("cost"))];
+    if (opened) return { cost: opened };
+    return searchParams.get("add") && canAddCost ? { cost: null, title: searchParams.get("title") ?? "" } : null;
+  });
+  function closeSheet() {
+    setSheet(null);
+    if (searchParams.has("add") || searchParams.has("cost")) setSearchParams({}, { replace: true });
+  }
 
   const [showFree, setShowFree] = useState(false);
   const [grouping, setGrouping] = useState(readGrouping);
@@ -96,14 +120,14 @@ export default function Expenses() {
   // through the plans (lib/dailyCosts.js).
   const dailyCosts = useMemo(
     () =>
-      buildDailyCosts(pins, {
+      buildDailyCosts({ ...pins, ...costs }, {
         dayPlaces,
         days: tripDayNumbers(trip),
         trip,
         travelers,
         shownIds: shown.map((t) => t.id),
       }),
-    [pins, dayPlaces, trip, travelers, shown]
+    [pins, costs, dayPlaces, trip, travelers, shown]
   );
   const expenses = useMemo(
     () => buildExpenses(plans, { trip, travelers, shownIds: shown.map((t) => t.id), daily: dailyCosts.rows }),
@@ -176,10 +200,39 @@ export default function Expenses() {
 
           <GroupingSwitch value={grouping} onChange={chooseGrouping} />
 
-          {dailyCosts.waiting.length > 0 && <WaitingForDays items={dailyCosts.waiting} tripId={trip.id} />}
+          {canAddCost && (
+            <button
+              type="button"
+              onClick={() => setSheet({ cost: null, title: "" })}
+              style={{
+                height: 40,
+                borderRadius: "var(--radius-lg)",
+                border: "1.5px dashed var(--border-strong)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                font: "600 12.5px var(--font-sans)",
+                color: "var(--accent)",
+              }}
+            >
+              <FontAwesomeIcon icon={faPlus} style={{ width: 11, height: 11 }} />
+              Add a ticket, pass or rental
+            </button>
+          )}
+
+          {dailyCosts.waiting.length > 0 && (
+            <WaitingForDays items={dailyCosts.waiting} tripId={trip.id} onOpenCost={(pinId) => costs[pinId] && setSheet({ cost: costs[pinId] })} />
+          )}
 
           {groups.map((g) => (
-            <GroupCard key={g.key} label={g.label} subtotalCents={g.shownCents} rows={g.rows} />
+            <GroupCard
+              key={g.key}
+              label={g.label}
+              subtotalCents={g.shownCents}
+              rows={g.rows}
+              onOpenCost={(pinId) => costs[pinId] && setSheet({ cost: costs[pinId] })}
+            />
           ))}
 
           {groups.length === 0 && (
@@ -192,7 +245,7 @@ export default function Expenses() {
                 color: "var(--text-secondary)",
               }}
             >
-              Nothing on the calendar costs anything yet. Add a cost to a visit and it shows up here.
+              Nothing on the calendar costs anything yet. Add a cost to a visit, or a ticket or rental above, and it shows up here.
             </div>
           )}
 
@@ -201,6 +254,7 @@ export default function Expenses() {
           )}
         </div>
       </div>
+      {sheet && <CostSheet key={sheet.cost?.id ?? "new"} cost={sheet.cost} title={sheet.title} onClose={closeSheet} />}
     </div>
   );
 }
@@ -288,7 +342,7 @@ function GroupingSwitch({ value, onChange }) {
 }
 
 // A day or a category, with what its costs come to for the people shown.
-function GroupCard({ label, subtotalCents, rows }) {
+function GroupCard({ label, subtotalCents, rows, onOpenCost }) {
   return (
     <div
       style={{
@@ -310,13 +364,13 @@ function GroupCard({ label, subtotalCents, rows }) {
         </div>
       </div>
       {rows.map((row) => (
-        <ExpenseRow key={row.key} row={row} />
+        <ExpenseRow key={row.key} row={row} onOpen={row.kind === "expense" ? () => onOpenCost(row.pinId) : null} />
       ))}
     </div>
   );
 }
 
-function ExpenseRow({ row }) {
+function ExpenseRow({ row, onOpen }) {
   // Per person first — that's how prices are entered and compared. A
   // group price says so, with what it comes to each.
   const price =
@@ -348,7 +402,15 @@ function ExpenseRow({ row }) {
         style={{ width: 3, borderRadius: 2, flex: "none", background: involved ? "var(--accent)" : "var(--geo)" }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ font: "600 14px var(--font-sans)", color: "var(--text-primary)" }}>{row.title}</div>
+        {onOpen ? (
+          // A ticket or rental: changed here, so its name opens it.
+          <button type="button" onClick={onOpen} style={{ font: "600 14px var(--font-sans)", color: "var(--text-primary)", textAlign: "left", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <FontAwesomeIcon icon={expenseIcon(row.expenseType)} style={{ width: 11, height: 11, color: "var(--text-secondary)" }} />
+            {row.title}
+          </button>
+        ) : (
+          <div style={{ font: "600 14px var(--font-sans)", color: "var(--text-primary)" }}>{row.title}</div>
+        )}
         <div className="mono-data-sm" style={{ color: "var(--text-muted)", marginTop: 2 }}>
           {meta}
         </div>
@@ -370,16 +432,26 @@ function ExpenseRow({ row }) {
 
 // Priced by the day but with no days to count yet: a stay nobody's picked
 // as where they're staying, or a per-day price with no first and last day.
-function WaitingForDays({ items, tripId }) {
+function WaitingForDays({ items, tripId, onOpenCost }) {
   return (
     <div style={{ borderRadius: "var(--radius-lg)", border: "1.5px dashed var(--border-strong)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
       <div className="mono-caption">Not counted yet</div>
       {items.map((item) => (
         <div key={item.key} style={{ font: "400 12.5px/1.45 var(--font-sans)", color: "var(--text-secondary)" }}>
-          <Link to={`/trips/${tripId}/edit/${item.pinId}?from=board`} style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-primary)" }}>
-            {item.title}
-          </Link>{" "}
-          {item.kind === "stay" ? "isn’t picked as where you’re staying on any night." : "is paid by the day but has no days picked."}
+          {item.kind === "expense" ? (
+            <button type="button" onClick={() => onOpenCost(item.pinId)} style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-primary)", textDecoration: "underline" }}>
+              {item.title}
+            </button>
+          ) : (
+            <Link to={`/trips/${tripId}/edit/${item.pinId}?from=board`} style={{ font: "600 12.5px var(--font-sans)", color: "var(--text-primary)" }}>
+              {item.title}
+            </Link>
+          )}{" "}
+          {item.kind === "stay"
+            ? "isn’t picked as where you’re staying on any night."
+            : item.kind === "expense"
+            ? "has no days picked."
+            : "is paid by the day but has no days picked."}
         </div>
       ))}
     </div>

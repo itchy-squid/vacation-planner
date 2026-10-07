@@ -147,6 +147,17 @@ Engineering additions, not design-reviewed screens:
   so a plan stop for a per-day idea costs nothing of its own
   (`derive.py item_money`). Design: 1a in
   `Claude outputs/stays-costs-types-mockups.html`.
+- **Tickets, passes and rentals** (`Pin.kind = "expense"`;
+  `frontend/src/components/expenses/CostSheet.jsx`) — a cost that isn't a
+  place is added on Expenses ("Add a ticket, pass or rental", or "Add as
+  a cost" from New idea's search) and never appears on the Ideas board,
+  the map or the calendar: the frontend keeps these in `state.costs`, apart
+  from `state.pins`. It's paid once (falling on its first day) or per day,
+  for everyone or only some travelers (`Pin.traveler_ids`). A pass can
+  cover ideas (`Pin.covers_pin_ids`): those places get a ticket badge on
+  the board, and on their plans the pass holders don't pay the place's
+  own price on the pass's days (`derive.py pass_holders`). Design:
+  `Claude outputs/daily-expenses-mockups.html`.
 - **Planning by day of the trip** (`backend/app/tripdays.py`,
   `frontend/src/lib/tripWhen.js`) — a new trip can be "Not sure yet": a
   length (`Trip.length_days`) and an optional rough month instead of dates.

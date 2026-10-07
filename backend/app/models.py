@@ -304,7 +304,24 @@ class Pin(Base):
     # "stay" (somewhere to sleep). A stay is never put on the calendar, so
     # it never uses up a day's hours; it's picked as where the group is
     # staying in "Where we'll be" instead (TripDayPlace.pin_id).
+    # Or "expense": a cost that isn't a place at all — a park ticket, a
+    # rental car, parking. It's added and kept in Expenses, never on the
+    # Ideas board, the map or the calendar, and a pin never turns into or
+    # out of one (routers/pins.py). Its days are cost_start_day/
+    # cost_end_day, as for anything else paid by the day.
     kind: Mapped[str] = mapped_column(String(16), default="activity", server_default="activity")
+    # What an expense is, for its label and icon: "rental", "pass" or
+    # "other". None on anything that isn't an expense.
+    expense_type: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Who an expense is for: traveler ids, or None for everyone on the
+    # trip (a ticket only some of the group are buying). Only expenses
+    # have it; anyone no longer on the roster just stops counting.
+    traveler_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    # The ideas a pass gets its holders into (a 5-day ticket covers the
+    # Universal parks): on a covered idea's plan, its holders don't pay
+    # its own price, on the pass's days if it has them. See app/derive.py
+    # pass_holders. Only a pass (expense_type "pass") has it.
+    covers_pin_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
     # The whole cost of visiting this pin, for everyone it's shared
     # between — never a per-person price. Per-head is a display division

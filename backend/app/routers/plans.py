@@ -269,6 +269,9 @@ def validate_placement(db: Session, trip_id: int, start_min, end_min, items: lis
                 status_code=422,
                 detail=f"{source.title} is a place to stay. Pick it in Where we'll be instead of putting it on the plan.",
             )
+        # Nor is a ticket or a rental: it's a cost, counted in Expenses.
+        if isinstance(source, Pin) and source.kind == "expense":
+            raise HTTPException(status_code=422, detail=f"{source.title} is an expense, not something to put on the plan.")
 
 
 def validate_block(db: Session, trip_id: int, start_min, end_min, items: list[PlanItemCreate]) -> None:

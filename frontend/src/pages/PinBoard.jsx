@@ -9,6 +9,7 @@ import EmptyBoard from "../components/planner/EmptyBoard";
 import InviteSheet from "../components/sharing/InviteSheet";
 import RegionFilter, { ALL_REGIONS } from "../components/planner/RegionFilter";
 import { regionKey } from "../lib/regions";
+import { coversEveryone, passesByPin } from "../lib/expenseTypes";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
 // Board/Map segment switch is gone: the map is its own tab now
@@ -22,7 +23,10 @@ import { regionKey } from "../lib/regions";
 // twice.
 export default function PinBoard() {
   const navigate = useNavigate();
-  const { trip: TRIP, pins, contributors: CONTRIBUTORS, regions: REGION_LOCATIONS } = usePlannerState();
+  const { trip: TRIP, pins, costs, travelers, contributors: CONTRIBUTORS, regions: REGION_LOCATIONS } = usePlannerState();
+  // Tickets and rentals aren't on the board (they're kept in Expenses,
+  // state.costs); a ticket shows only as a badge on the places it covers.
+  const passes = useMemo(() => passesByPin(costs), [costs]);
   // Companions and planners both add pins (ideas:add); what each may do
   // to an existing one is decided on its own screen (pages/EditVisit.jsx).
   const can = useCan();
@@ -157,6 +161,8 @@ export default function PinBoard() {
                   contributorInitial={initialFor(pin)}
                   highlighted={pin.id === justAddedId}
                   locationLabel={locationLabelFor(pin)}
+                  pass={passes.get(pin.id)?.[0] ?? null}
+                  passCoversAll={passes.has(pin.id) && coversEveryone(passes.get(pin.id), travelers)}
                   onOpen={() => navigate(`/trips/${TRIP.id}/edit/${pin.id}?from=board`)}
                 />
               ))}

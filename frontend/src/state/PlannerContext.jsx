@@ -162,8 +162,16 @@ function normalizePin(p, contributorsById) {
     cx,
     cy,
     // "activity" (takes time on the Plan tab) or "stay" (somewhere to
-    // sleep, picked in Where we'll be and never on the calendar).
+    // sleep, picked in Where we'll be and never on the calendar). Or
+    // "expense" — a ticket or a rental, not a place — which is kept in
+    // state.costs instead of state.pins (see splitPins).
     kind: p.kind ?? "activity",
+    // An expense's own: "rental" | "pass" | "other", who it's for
+    // (traveler ids, or null for everyone, which is also what a viewer who
+    // can't see costs gets), and the ideas a pass covers.
+    expenseType: p.expense_type ?? null,
+    travelerIds: p.traveler_ids ?? null,
+    coversPinIds: p.covers_pin_ids ?? [],
     dur: p.duration_minutes,
     cost: dollarsOrNull(p.cost_cents),
     costCents: p.cost_cents ?? null,
@@ -198,6 +206,19 @@ function normalizePin(p, contributorsById) {
     // Its length is the pin's popularity — see lib/popularity.js.
     heartedBy: p.hearted_by ?? [],
   };
+}
+
+// Expenses (a park ticket, a rental car) are pins to the API, but not
+// places: they never belong on the Ideas board, the map, the Plan tray or
+// anywhere else that lists state.pins. So they're kept apart, in
+// state.costs, and only Expenses (and what a pass covers) reads them.
+function splitPins(list) {
+  const pins = {};
+  const costs = {};
+  list.forEach((p) => {
+    (p.kind === "expense" ? costs : pins)[p.id] = p;
+  });
+  return { pins, costs };
 }
 
 function normalizeTravelItem(t, contributorsById) {
@@ -375,6 +396,7 @@ function emptyTripView() {
     contributors: [],
     contributorOverflowCount: 0,
     pins: {},
+    costs: {},
     overrides: {},
     plans: [],
     splits: [],
@@ -409,8 +431,8 @@ async function loadTripView(tripId, trips) {
 
   const contributors = contributorsRaw.map(normalizeContributor);
   const contributorsById = Object.fromEntries(contributors.map((c) => [c.id, c]));
-  const pinsList = pinsRaw.map((p) => normalizePin(p, contributorsById));
-  const pins = Object.fromEntries(pinsList.map((p) => [p.id, p]));
+  const { pins, costs } = splitPins(pinsRaw.map((p) => normalizePin(p, contributorsById)));
+  const pinsList = Object.values(pins);
   const plans = plansRaw.map(normalizePlan);
   const travelItemsList = travelItemsRaw.map((t) => normalizeTravelItem(t, contributorsById));
   const travelItems = Object.fromEntries(travelItemsList.map((t) => [t.id, t]));
@@ -509,6 +531,7 @@ async function loadTripView(tripId, trips) {
     contributors,
     contributorOverflowCount: Math.max(0, contributors.length - 4),
     pins,
+    costs,
     overrides,
     plans,
     splits: splitsRaw.map(normalizeSplit),
@@ -528,6 +551,7 @@ const initialState = {
   contributors: [],
   contributorOverflowCount: 0,
   pins: {},
+  costs: {}, // pinId -> an expense (a ticket, a rental): a pin that isn't a place (see splitPins)
   overrides: {}, // "<pinId>|<day>-<band>": boolean
   plans: [], // Plan[], each carrying contestId (null unless contested/locked-from-a-contest)
   splits: [], // Split[] — where the group has split up (lib/splits.js)
@@ -581,6 +605,7 @@ function reducer(state, action) {
       return { ...state, trip: { ...state.trip, ...action.trip } };
 
     case "APPLY_PIN":
+      if (action.pin.kind === "expense") return { ...state, costs: { ...state.costs, [action.pin.id]: action.pin } };
       return { ...state, pins: { ...state.pins, [action.pin.id]: action.pin } };
 
     case "APPLY_REGION":
@@ -610,7 +635,13 @@ function reducer(state, action) {
     case "REMOVE_PIN": {
       const next = { ...state.pins };
       delete next[action.id];
-      return { ...state, pins: next };
+      const costs = { ...state.costs };
+      delete costs[action.id];
+      // A pass no longer covers an idea that's gone (the server drops it too).
+      Object.values(costs).forEach((cost) => {
+        if (cost.coversPinIds.includes(action.id)) costs[cost.id] = { ...cost, coversPinIds: cost.coversPinIds.filter((id) => id !== action.id) };
+      });
+      return { ...state, pins: next, costs };
     }
 
     case "SET_OVERRIDE": {
@@ -1490,6 +1521,10 @@ export function PlannerProvider({ children }) {
             backendFields.google_place_id = f.location?.placeId ?? null;
           }
           if ("googleReviewDismissed" in f) backendFields.google_review_dismissed = f.googleReviewDismissed;
+          // An expense's own (components/expenses/CostSheet.jsx).
+          if ("expenseType" in f) backendFields.expense_type = f.expenseType;
+          if ("travelerIds" in f) backendFields.traveler_ids = f.travelerIds;
+          if ("coversPinIds" in f) backendFields.covers_pin_ids = f.coversPinIds;
           // Returns a result rather than swallowing the failure: an
           // explicit Save (pages/EditVisit.jsx) has to be able to keep the
           // user on the form and say so when the write didn't land, instead

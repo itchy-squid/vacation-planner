@@ -7,9 +7,11 @@ import { tripDayLabel } from "../../data/trip";
 // days it covers, and what it comes to. A stay's days are its nights in
 // Where we'll be, so they're shown, not picked; anything else picks its
 // first and last day from the trip's days. n days from first to last is
-// n - 1 days' worth (lib/dailyCosts.js).
+// n - 1 days' worth (lib/dailyCosts.js). An expense (components/expenses/
+// CostSheet.jsx) picks its days even when it's paid once: a ticket's days
+// are when it's used, and it falls on the first of them.
 //
-//   pin        the idea as drafted: { id, kind, costPer, costCents, costBasis, costStartDay, costEndDay }
+//   pin        the idea as drafted: { id, kind, expenseType, costPer, costCents, costBasis, costStartDay, costEndDay }
 //   trip       the trip: its days, and the dates they fall on if it has them
 //   dayPlaces  day -> { lodgingPinId, ... }
 //   headcount  how many travelers share it
@@ -19,7 +21,14 @@ export default function CostDays({ pin, trip, dayPlaces, headcount, onDays, onPl
   const tripDays = tripDayNumbers(trip);
   const days = chargedDays(pin, { dayPlaces, days: tripDays, trip });
   const stay = pin.kind === "stay";
+  const expense = pin.kind === "expense";
   const daily = pin.costPer === "day";
+  const [firstLabel, lastLabel] =
+    expense && pin.expenseType === "rental"
+      ? ["Pick up", "Drop off"]
+      : expense && pin.expenseType === "pass"
+      ? ["First day used", "Last day used"]
+      : ["First day", "Last day"];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -34,12 +43,12 @@ export default function CostDays({ pin, trip, dayPlaces, headcount, onDays, onPl
             </button>
           ) : null}
         </div>
-      ) : daily ? (
+      ) : daily || expense ? (
         tripDays.length ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <DaySelect
               id="cost-first-day"
-              label="First day"
+              label={firstLabel}
               value={pin.costStartDay}
               days={tripDays}
               trip={trip}
@@ -48,7 +57,7 @@ export default function CostDays({ pin, trip, dayPlaces, headcount, onDays, onPl
             />
             <DaySelect
               id="cost-last-day"
-              label="Last day"
+              label={lastLabel}
               value={pin.costEndDay}
               days={tripDays.filter((d) => pin.costStartDay == null || d >= pin.costStartDay)}
               trip={trip}
@@ -62,7 +71,7 @@ export default function CostDays({ pin, trip, dayPlaces, headcount, onDays, onPl
           </div>
         )
       ) : null}
-      {daily || stay ? <Receipt pin={pin} days={days} headcount={headcount} /> : null}
+      {daily || stay || expense ? <Receipt pin={pin} days={days} headcount={headcount} /> : null}
     </div>
   );
 }
@@ -79,7 +88,8 @@ function Receipt({ pin, days, headcount }) {
     lines.push([`${daysWord(pin, days.count)} × ${formatMoney(rate)}`, `${formatMoney(group ? totalCents : eachCents)} ${group ? "group" : "each"}`]);
     lines.push(group ? [`÷ ${headcount} going`, `${formatMoney(eachCents)} each`] : [`× ${headcount} going`, `${formatMoney(totalCents)} group`]);
   } else {
-    lines.push(["Paid once for the stay", `${formatMoney(group ? totalCents : eachCents)} ${group ? "group" : "each"}`]);
+    lines.push([pin.kind === "stay" ? "Paid once for the stay" : "Paid once", `${formatMoney(group ? totalCents : eachCents)} ${group ? "group" : "each"}`]);
+    if (pin.kind === "expense") lines.push(group ? [`÷ ${headcount} going`, `${formatMoney(eachCents)} each`] : [`× ${headcount} going`, `${formatMoney(totalCents)} group`]);
   }
   return (
     <div

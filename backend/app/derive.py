@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from .models import Plan, PlanItem
 from .splits import audience
+from .tripdays import MINUTES_PER_DAY
 
 
 def item_duration_minutes(item: PlanItem) -> int:
@@ -62,12 +63,30 @@ def trip_roster(plan: Plan) -> set[int]:
     return {t.id for t in plan.trip.travelers}
 
 
+def pass_holders(plan: Plan, item: PlanItem, roster: set[int]) -> set[int]:
+    """The travelers a pass gets into this stop: everyone each pass
+    covering its idea is for (models.py Pin.covers_pin_ids), if the plan
+    falls on one of the pass's days — any day, when it has none."""
+    if item.pin_id is None:
+        return set()
+    day = plan.start_min // MINUTES_PER_DAY + 1
+    holders: set[int] = set()
+    for pass_ in plan.trip.pins:
+        if pass_.kind != "expense" or item.pin_id not in (pass_.covers_pin_ids or ()):
+            continue
+        if pass_.cost_start_day is not None and not pass_.cost_start_day <= day <= pass_.cost_end_day:
+            continue
+        holders |= roster if pass_.traveler_ids is None else set(pass_.traveler_ids) & roster
+    return holders
+
+
 def item_money(plan: Plan, item: PlanItem, roster: set[int] | None = None) -> tuple[list[int], int, int]:
     """(sharers, each_cents, total_cents) for one stop.
 
     Sharers are whoever the plan is for: everyone, or its group on a split
-    day (app/splits.py). A cost follows the people going, so it is never
-    narrowed per item — who *pays* each share is the payer rule on
+    day (app/splits.py), less anyone a pass gets in (pass_holders). A cost
+    follows the people going, so it is never otherwise narrowed per item —
+    who *pays* each share is the payer rule on
     Traveler.paid_by_id, applied where costs are shown. A "per_head" price
     is what each of them pays and the total is that many times it; a
     "group" price is the total, and each person's share is a display
@@ -76,7 +95,13 @@ def item_money(plan: Plan, item: PlanItem, roster: set[int] | None = None) -> tu
     below)."""
     roster = trip_roster(plan) if roster is None else roster
     source = item_source(item)
-    sharers = sorted(audience(plan.branch, roster))
+    going = audience(plan.branch, roster)
+    # Anyone a pass gets in doesn't pay the stop's own price (the park on
+    # a 5-day ticket); the pass's price is counted in Expenses instead.
+    holders = pass_holders(plan, item, roster)
+    sharers = sorted(going - holders)
+    if going and not sharers:
+        return [], 0, 0
     count = max(1, len(sharers))
     # A price paid by the day is counted over the days it covers, not per
     # placement (frontend/src/lib/dailyCosts.js), so a stop for it — a

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import photo_storage
 from ..db import SessionLocal, get_db
 from ..events import bus
-from ..models import AvailabilityOverride, AvailabilityRule, Pin, PinHeart, PlanItem, TripDayPlace
+from ..models import AvailabilityOverride, AvailabilityRule, Pin, PinHeart, PlanItem, Traveler, TripDayPlace
 from ..permissions import IDEAS_ADD, IDEAS_READ, VOTES_WRITE, Access, require
 from ..scheduling_conflicts import scheduled_conflict_detail
 from ..schemas import (
@@ -23,7 +23,8 @@ router = APIRouter(tags=["pins"])
 logger = logging.getLogger(__name__)
 
 
-_COST_FIELDS = ("cost_cents", "cost_basis", "cost_per", "cost_start_day", "cost_end_day")
+_COST_FIELDS = ("cost_cents", "cost_basis", "cost_per", "cost_start_day", "cost_end_day", "traveler_ids", "covers_pin_ids")
+_EXPENSE_FIELDS = ("expense_type", "traveler_ids", "covers_pin_ids")
 
 
 def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) -> None:
@@ -32,6 +33,26 @@ def ensure_may_set_costs(access: Access, fields: dict, added_by_id: int | None) 
     Shared with routers/travel_items.py."""
     if any(f in fields for f in _COST_FIELDS):
         access.ensure_may_set_costs(added_by_id)
+
+
+def _check_expense_refs(db: Session, trip_id: int, pin_id: int | None, fields: dict) -> None:
+    """An expense is for travelers on this trip, and a pass covers ideas on
+    it — places to go, not stays or other expenses, and not itself."""
+    traveler_ids = fields.get("traveler_ids")
+    if traveler_ids is not None:
+        if not traveler_ids:
+            raise HTTPException(status_code=422, detail="An expense is for at least one traveler (or leave it for everyone)")
+        known = set(db.scalars(select(Traveler.id).where(Traveler.trip_id == trip_id, Traveler.id.in_(traveler_ids))))
+        if known != set(traveler_ids):
+            raise HTTPException(status_code=422, detail="Every traveler an expense is for has to be on this trip")
+    covers = fields.get("covers_pin_ids")
+    if covers:
+        if pin_id is not None and pin_id in covers:
+            raise HTTPException(status_code=422, detail="A pass can't cover itself")
+        ideas = set(db.scalars(select(Pin.id).where(Pin.trip_id == trip_id, Pin.kind == "activity", Pin.id.in_(covers))))
+        if ideas != set(covers):
+            raise HTTPException(status_code=422, detail="A pass covers ideas on this trip that are places to go")
+        fields["covers_pin_ids"] = sorted(ideas)
 
 
 def _mirror_pin_photo(pin_id: int, trip_id: int, source_url: str) -> None:
@@ -76,7 +97,9 @@ def create_pin(
     db: Session = Depends(get_db),
 ):
     ensure_may_set_costs(access, payload.model_dump(exclude_defaults=True), access.member.id)
-    pin = Pin(trip_id=trip_id, added_by_id=access.member.id, **payload.model_dump())
+    values = payload.model_dump()
+    _check_expense_refs(db, trip_id, None, values)
+    pin = Pin(trip_id=trip_id, added_by_id=access.member.id, **values)
     db.add(pin)
     db.commit()
     db.refresh(pin)
@@ -115,6 +138,20 @@ def update_pin(
     access.ensure_may_edit_idea(pin.added_by_id)
     fields = payload.model_dump(exclude_unset=True)
     ensure_may_set_costs(access, fields, pin.added_by_id)
+    # An expense is added and kept in Expenses, and never was a place, so
+    # an idea doesn't turn into one or back (models.py Pin.kind).
+    if "kind" in fields and (fields["kind"] == "expense") != (pin.kind == "expense"):
+        raise HTTPException(status_code=422, detail="An idea can't become an expense, or an expense an idea")
+    if pin.kind != "expense" and any(fields.get(f) is not None for f in _EXPENSE_FIELDS):
+        raise HTTPException(status_code=422, detail="Only an expense has expense_type, traveler_ids or covers_pin_ids")
+    if pin.kind == "expense":
+        expense_type = fields.get("expense_type", pin.expense_type)
+        if fields.get("covers_pin_ids") and expense_type != "pass":
+            raise HTTPException(status_code=422, detail="Only a pass covers ideas")
+        # No longer a pass: it no longer covers anything.
+        if expense_type != "pass":
+            fields["covers_pin_ids"] = None
+        _check_expense_refs(db, pin.trip_id, pin.id, fields)
     # A stay is never on the calendar (routers/plans.py validate_placement),
     # so an idea that's on it has to come off before it can become one.
     if fields.get("kind") == "stay" and pin.kind != "stay":
@@ -179,11 +216,17 @@ def delete_pin(pin_id: int, access: Access = Depends(require(IDEAS_ADD)), db: Se
     lodging_days = db.scalars(select(TripDayPlace).where(TripDayPlace.pin_id == pin_id)).all()
     for stay in lodging_days:
         stay.pin_id = None
+    # Nor does a pass cover an idea that's gone.
+    passes = [p for p in db.scalars(select(Pin).where(Pin.trip_id == trip_id, Pin.kind == "expense")) if pin_id in (p.covers_pin_ids or ())]
+    for covering in passes:
+        covering.covers_pin_ids = [i for i in covering.covers_pin_ids if i != pin_id] or None
     db.delete(pin)
     db.commit()
     bus.publish(trip_id, "pin.removed", {"pin_id": pin_id})
     if lodging_days:
         bus.publish(trip_id, "day_places.updated", {"days": sorted({d.day for d in lodging_days})})
+    for covering in passes:
+        bus.publish(trip_id, "pin.updated", {"pin_id": covering.id})
     return None
 
 

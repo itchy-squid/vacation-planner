@@ -59,7 +59,7 @@ def cover_photo_url(db: Session, trip_id: int) -> str | None:
     ).all()
     if not rows:
         return None
-    featured = [r for r in rows if r.kind == "stay" or r.duration_minutes >= COVER_MIN_ACTIVITY_MINUTES]
+    featured = [r for r in rows if r.kind == "stay" or (r.kind == "activity" and r.duration_minutes >= COVER_MIN_ACTIVITY_MINUTES)]
     return random.Random(trip_id).choice(featured or rows).photo_url
 
 

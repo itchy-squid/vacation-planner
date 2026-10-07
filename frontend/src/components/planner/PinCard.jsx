@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faTicket } from "@fortawesome/free-solid-svg-icons";
 import PhotoPlaceholder from "../core/PhotoPlaceholder";
 import HeartButton from "../core/HeartButton";
 import { usePinHeart } from "../../state/PlannerContext";
@@ -24,7 +26,11 @@ export const BOARD_PHOTO_HEIGHT_SECONDARY = 150;
 // `highlighted` outlines the card in plum: the pin that was just added
 // (pages/PinBoard.jsx). `locationLabel` says where it is on the Map tab
 // ("On the map" or "Shown in Cozumel"), teal for an exact spot.
-export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false, locationLabel = null }) {
+// `pass` is a ticket that gets people into this place (a 5-day ticket on a
+// Universal park — components/expenses/CostSheet.jsx): a teal badge says
+// so, and when it covers everyone the price reads "With ticket" rather
+// than a price nobody pays.
+export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false, locationLabel = null, pass = null, passCoversAll = false }) {
   const heart = usePinHeart(pin);
   const photo = usePinPhoto(pin);
   const photoHeight = column === 0 ? BOARD_PHOTO_HEIGHT_PRIMARY : BOARD_PHOTO_HEIGHT_SECONDARY;
@@ -43,6 +49,29 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
       }}
     >
       <PhotoPlaceholder height={photoHeight} label="photo" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} alt={pin.title}>
+        {pass ? (
+          <div
+            title={`Covered by ${pass.title}`}
+            style={{
+              position: "absolute",
+              top: 8,
+              left: 8,
+              maxWidth: "calc(100% - 64px)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              borderRadius: "var(--radius-pill)",
+              background: "var(--geo)",
+              color: "#fff",
+              font: "600 9.5px var(--font-sans)",
+              boxShadow: "var(--shadow-raised)",
+            }}
+          >
+            <FontAwesomeIcon icon={faTicket} style={{ width: 9, height: 9, flex: "none" }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pass.title}</span>
+          </div>
+        ) : null}
         <div style={{ position: "absolute", top: 8, right: 8 }}>
           <HeartButton
             overlay
@@ -67,7 +96,13 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
           <span className="mono-data-sm" style={{ letterSpacing: 0 }}>
             {/* A stay takes no time on the plan, so it says what it is
                 instead of how long it lasts. */}
-            {pin.cost ? `$${pin.cost}${pin.costPer === "day" ? "/day" : ""}${pin.costBasis === "group" ? "" : " each"} · ` : ""}
+            {pass && passCoversAll ? (
+              <span style={{ color: "var(--geo)" }}>With ticket · </span>
+            ) : pin.cost ? (
+              `$${pin.cost}${pin.costPer === "day" ? "/day" : ""}${pin.costBasis === "group" ? "" : " each"} · `
+            ) : (
+              ""
+            )}
             {pin.kind === "stay" ? "Stay" : fmtDur(pin.dur)}
           </span>
           <span
