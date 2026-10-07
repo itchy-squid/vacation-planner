@@ -98,37 +98,73 @@ export function formatMinutes(minutes) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-// Where a block's first or last stop is, for the gap between two blocks:
-// an idea's place, or a custom event's title.
-function endpoint(item, pins) {
+// Where a block's first or last stop is, for travel before or after it:
+// an idea's place, a custom event's title, or where travel lands (`side`
+// "end", the last stop's far end) or leaves from ("start").
+function endpoint(item, pins, side) {
   if (!item) return null;
   if (item.pinId != null) {
     const pin = pins[item.pinId];
     const point = pin && pin.lat != null && pin.lng != null ? { lat: pin.lat, lng: pin.lng } : null;
     // Where it is ("Hotel Alma"), not what you do there ("Check in").
-    return { label: pin?.place?.trim() || item.title, point };
+    return { label: pin?.place?.trim() || item.title, point, pinId: item.pinId };
   }
-  if (isTravelItem(item)) return null;
+  if (isTravelItem(item)) {
+    const label = (side === "end" ? item.toLabel : item.fromLabel)?.trim();
+    return label ? { label, point: null } : null;
+  }
   return { label: item.title, point: null };
+}
+
+/** A stay (a "stay" pin, lib/dayPlaces.js lodgingFor) as one end of travel. */
+export function stayEnd(pin) {
+  if (!pin) return null;
+  const point = pin.lat != null && pin.lng != null ? { lat: pin.lat, lng: pin.lng } : null;
+  return { label: pin.title?.trim() || pin.place?.trim() || "where you're staying", point, pinId: pin.id };
 }
 
 function onlyTravel(plan) {
   return plan.items.length > 0 && plan.items.every(isTravelItem);
 }
 
+// Is this end already the stay: the stay's own idea, or travel to or from it by name?
+function atStay(end, stay) {
+  if (!end) return true;
+  if (end.pinId != null) return end.pinId === stay.pinId;
+  return end.label.toLowerCase() === stay.label.toLowerCase();
+}
+
 /**
- * The places on a day where travel could go: between two blocks for
- * everyone that follow one another, however close (back to back is a
- * gap of nothing: the travel pushes what's after it later, pushesFor),
- * where neither side is already travel. Each says where it starts and ends
- * (minutes of the day) and where from and to — the last stop before and
- * the first after, with a point when it's an idea on the map.
+ * The places on a day where travel could go. Each says where it starts
+ * and ends (minutes of the day) and where from and to, with a point when
+ * it's an idea on the map; travel's ends are its typed from and to.
+ *
+ * - Between two blocks for everyone that follow one another, however
+ *   close (back to back is a gap of nothing: the travel pushes what's
+ *   after it later, pushesFor), unless both are already travel. So a
+ *   flight gets one after it, from the airport it lands at.
+ * - With `stays` ({ lastNight, tonight }, each stayEnd()): from last
+ *   night's stay to the day's first block (`edge: "start"`, arriving as
+ *   it starts: the drive to the airport), and from the last block to
+ *   tonight's (`edge: "end"`: the drive from the airport), unless that
+ *   block is already there or travel to it.
  */
-export function travelGaps(entries, pins) {
+export function travelGaps(entries, pins, stays = {}) {
   const settled = entries.filter(
     ({ plan }) => plan.status !== "contested" && plan.status !== "draft" && plan.branchId == null && plan.forEveryone !== false
   );
+  const first = (plan) => plan.items[0];
+  const last = (plan) => plan.items[plan.items.length - 1];
   const gaps = [];
+
+  const opening = settled[0];
+  if (stays.lastNight && opening && opening.startMin > DAY_START_MIN) {
+    const to = endpoint(first(opening.plan), pins, "start");
+    if (!atStay(to, stays.lastNight)) {
+      gaps.push({ edge: "start", startMin: opening.startMin, endMin: opening.startMin, from: stays.lastNight, to });
+    }
+  }
+
   for (let i = 0; i + 1 < settled.length; i += 1) {
     const before = settled[i];
     const after = settled[i + 1];
@@ -137,13 +173,21 @@ export function travelGaps(entries, pins) {
     if (latestEnd !== before.endMin) continue;
     if (after.startMin < before.endMin) continue;
     if (before.endMin < DAY_START_MIN || after.startMin > DAY_END_MIN) continue;
-    if (onlyTravel(before.plan) || onlyTravel(after.plan)) continue;
+    if (onlyTravel(before.plan) && onlyTravel(after.plan)) continue;
     gaps.push({
       startMin: before.endMin,
       endMin: after.startMin,
-      from: endpoint(before.plan.items[before.plan.items.length - 1], pins),
-      to: endpoint(after.plan.items[0], pins),
+      from: endpoint(last(before.plan), pins, "end"),
+      to: endpoint(first(after.plan), pins, "start"),
     });
+  }
+
+  const closing = settled.length ? settled.reduce((a, b) => (b.endMin >= a.endMin ? b : a)) : null;
+  if (stays.tonight && closing && closing.endMin < DAY_END_MIN) {
+    const from = endpoint(last(closing.plan), pins, "end");
+    if (!atStay(from, stays.tonight)) {
+      gaps.push({ edge: "end", startMin: closing.endMin, endMin: DAY_END_MIN, from, to: stays.tonight });
+    }
   }
   return gaps;
 }
@@ -237,4 +281,16 @@ export function biasAround(points) {
     west: Math.max(-180, Math.min(...lngs) - BIAS_PAD_DEG),
     east: Math.min(180, Math.max(...lngs) + BIAS_PAD_DEG),
   };
+}
+
+// A flight's time from how far it goes: about 780 km/h at cruise, plus
+// 40 minutes for taxiing, climbing and landing. A guess to start from,
+// not a schedule; Google doesn't time flights.
+const CRUISE_KMH = 780;
+const FLIGHT_OVERHEAD_MIN = 40;
+
+/** Minutes in the air for a flight of `meters`, rounded up to the next 5. */
+export function flightMinutes(meters) {
+  const minutes = FLIGHT_OVERHEAD_MIN + (meters / 1000 / CRUISE_KMH) * 60;
+  return Math.max(5, Math.ceil(minutes / 5) * 5);
 }

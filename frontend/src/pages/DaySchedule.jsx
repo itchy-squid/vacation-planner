@@ -34,7 +34,7 @@ import {
   topForMinute,
 } from "../lib/dayGrid";
 import { dragKind } from "../lib/planDrag";
-import { dayTravelMinutes, formatMinutes, travelGaps } from "../lib/travel";
+import { biasAround, dayTravelMinutes, formatMinutes, stayEnd, travelGaps } from "../lib/travel";
 import TripHeader from "../components/core/TripHeader";
 import TripDaysNotice from "../components/trip/TripDaysNotice";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
@@ -624,10 +624,23 @@ export default function DaySchedule() {
   // gap, even between blocks back to back, opens the Travel form with the
   // from and to filled in (components/planner/TravelGapChip.jsx). Not on a
   // split day, where the gap may be one group's and not the other's.
-  const gaps = useMemo(
-    () => (canPlan && !placing && !dragPreview && !dayHasSplit ? travelGaps(dayEntries, pins) : []),
-    [canPlan, placing, dragPreview, dayHasSplit, dayEntries, pins]
+  // Where the group slept last night and sleeps tonight, so the day's
+  // first and last blocks get travel from and to them (the drive to the
+  // airport, and from it).
+  // Not lodgingFor: it starts the trip's first day at that night's hotel,
+  // and the first day starts at home, before the flight.
+  const lastNightId = dayIndex > 1 && dates.length ? (placesOn(dayPlaces, dates[dayIndex - 2]).lodgingPinId ?? null) : null;
+  const tonightId = today.lodgingPinId ?? null;
+  const stays = useMemo(
+    () => ({ lastNight: stayEnd(pins[lastNightId]), tonight: stayEnd(pins[tonightId]) }),
+    [pins, lastNightId, tonightId]
   );
+  const gaps = useMemo(
+    () => (canPlan && !placing && !dragPreview && !dayHasSplit ? travelGaps(dayEntries, pins, stays) : []),
+    [canPlan, placing, dragPreview, dayHasSplit, dayEntries, pins, stays]
+  );
+  // Where a typed "MCO" is looked for: around the trip's places.
+  const travelBias = useMemo(() => biasAround(Object.values(pins)), [pins]);
   const unplacedCount = unplacedPins.length + unplacedTravelItems.length;
 
   return (
@@ -931,8 +944,9 @@ export default function DaySchedule() {
             })}
             {gaps.map((gap) => (
               <TravelGapChip
-                key={`gap-${gap.startMin}`}
+                key={`gap-${gap.edge ?? "mid"}-${gap.startMin}`}
                 gap={gap}
+                bias={travelBias}
                 onOpen={(g) => {
                   setAddGap(g);
                   setAddOpen(true);
@@ -1068,7 +1082,7 @@ export default function DaySchedule() {
       {addOpen && canPropose && (
         <AddSheet
           // A new sheet per gap: the form fills itself in once, on open.
-          key={addGap ? `gap-${addGap.startMin}` : "add"}
+          key={addGap ? `gap-${addGap.edge ?? "mid"}-${addGap.startMin}` : "add"}
           dayIndex={dayIndex}
           canPlace={canPlan}
           gap={addGap}

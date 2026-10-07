@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { isMapsConfigured } from "../../lib/googleMaps";
 import { searchPlaces } from "../../lib/places";
 import { estimateLeg } from "../../lib/routeEstimates";
-import { MODES } from "../../lib/routes";
+import { MODES, formatDistance, straightLineMeters } from "../../lib/routes";
+import { flightMinutes } from "../../lib/travel";
 
 // How long to wait after the last keystroke in From or To before asking
 // Google where that is.
@@ -23,13 +24,16 @@ function findPlace(label, bias) {
 
 /**
  * Google's time for one leg of travel in the Travel form
- * (TravelForm.jsx), for the mode picked. Each end is { label, point }: a
- * point when it's an idea on the map, otherwise the typed label is
- * looked up as a place, preferring ones in `bias`. `departure` times bus
- * and train (lib/routes.js nextDeparture).
+ * (TravelForm.jsx) or a "+ travel" chip (TravelGapChip.jsx), for the mode
+ * picked. A flight has no Google time: its airports are found on Google
+ * and its time guessed from the distance (lib/travel.js flightMinutes),
+ * marked `guess`. Each end is { label, point }: a point when it's an idea
+ * on the map, otherwise the typed label is looked up as a place,
+ * preferring ones in `bias`. `departure` times bus and train
+ * (lib/routes.js nextDeparture).
  *
- *   { status: "off" }        nothing to ask: no Maps key, a mode Google
- *                            can't route (flight, other), or an end blank
+ *   { status: "off" }        nothing to ask: no Maps key, "other", or an
+ *                            end blank
  *   { status: "loading" }
  *   { status: "missing", end: "from" | "to" }   Google didn't know a place
  *   { status: "error" }      Google couldn't be reached
@@ -40,7 +44,8 @@ export function useTravelEstimate({ mode, from, to, departure, bias }) {
   const [answer, setAnswer] = useState({ status: "off" });
   const fromLabel = from.label.trim();
   const toLabel = to.label.trim();
-  const on = isMapsConfigured && MODES.includes(mode) && fromLabel && toLabel;
+  const flight = mode === "flight";
+  const on = isMapsConfigured && (flight || MODES.includes(mode)) && fromLabel && toLabel;
   const when = departure ? departure.getTime() : 0;
   const fromKey = from.point ? `${from.point.lat},${from.point.lng}` : fromLabel;
   const toKey = to.point ? `${to.point.lat},${to.point.lng}` : toLabel;
@@ -53,7 +58,9 @@ export function useTravelEstimate({ mode, from, to, departure, bias }) {
     }
     let live = true;
     setAnswer({ status: "loading" });
-    const where = (end) => (end.point ? Promise.resolve({ name: end.label.trim(), ...end.point }) : findPlace(end.label.trim(), bias));
+    // Airports can be anywhere: a flight's aren't looked for near the trip.
+    const near = flight ? null : bias;
+    const where = (end) => (end.point ? Promise.resolve({ name: end.label.trim(), ...end.point }) : findPlace(end.label.trim(), near));
     // Ideas on the map are asked straight away; typing waits for a pause.
     const wait = from.point && to.point ? 0 : TYPING_PAUSE_MS;
     const timer = setTimeout(async () => {
@@ -64,7 +71,10 @@ export function useTravelEstimate({ mode, from, to, departure, bias }) {
           setAnswer({ status: "missing", end: a ? "to" : "from" });
           return;
         }
-        const estimate = await estimateLeg(a, b, mode, { departure });
+        const meters = straightLineMeters(a, b);
+        const estimate = flight
+          ? { available: true, guess: true, minutes: flightMinutes(meters), distanceMeters: Math.round(meters), summary: formatDistance(meters) }
+          : await estimateLeg(a, b, mode, { departure });
         if (live) setAnswer({ status: "ready", estimate, from: a, to: b });
       } catch {
         if (live) setAnswer({ status: "error" });

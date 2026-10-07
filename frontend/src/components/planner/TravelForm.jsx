@@ -39,7 +39,10 @@ const TRANSIT_DEFAULT_MIN = 10 * 60;
 // Google's time (useTravelEstimate.js) is asked for whenever the mode is
 // one it can route and both ends are filled in: ideas on the map by
 // their spot, anything typed by searching for it near the trip's places.
-// It fills in the minutes until you type your own.
+// It fills in the minutes until you type your own. A flight's time is a
+// guess from the distance between its airports, filling in when it lands.
+// Before the day's first block (`edge: "start"`), it leaves in time to
+// arrive as that block starts.
 //
 // No time zones: every time is the day's own clock, like the rest of the
 // calendar.
@@ -51,7 +54,9 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
     from: gap?.from?.label ?? "",
     to: gap?.to?.label ?? "",
     minutes: "",
-    leaves: gap ? clockValue(gap.startMin) : "",
+    // Before the day's first block it arrives as that starts, so when it
+    // leaves waits on how long it takes.
+    leaves: gap && gap.edge !== "start" ? clockValue(gap.startMin) : "",
     lands: "",
     cost: 0,
     costBasis: "per_head",
@@ -59,6 +64,10 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
   const [busy, setBusy] = useState(false);
   // Typed minutes are yours; until then, Google's fill them in.
   const [minutesTyped, setMinutesTyped] = useState(false);
+  // The same for a flight's landing (guessed from the distance), and the
+  // leave time worked back from the first block (`edge: "start"`).
+  const [landsTyped, setLandsTyped] = useState(false);
+  const [leavesTyped, setLeavesTyped] = useState(false);
   const set = (fields) => setDraft((d) => ({ ...d, ...fields }));
 
   const flight = draft.mode === "flight";
@@ -74,12 +83,14 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
 
   // Google's time. A gap's end keeps its idea's spot until it's retyped.
   const spot = (end, label) => (end?.point && end.label === label ? end.point : null);
-  const bias = useMemo(
-    () => biasAround([gap?.from?.point, gap?.to?.point].some(Boolean) ? [gap?.from?.point, gap?.to?.point] : Object.values(pins)),
-    [gap, pins]
-  );
+  // Typed places are looked for around the trip's places, the same area
+  // the day's "+ travel" chips use, so their answers are reused.
+  const bias = useMemo(() => biasAround(Object.values(pins)), [pins]);
   const weekday = trip?.startDate ? getTripDays(trip)[dayIndex - 1]?.weekday : null;
-  const departMin = leavesMin ?? TRANSIT_DEFAULT_MIN;
+  // Before the first block, an hour ahead of it: the leave time there is
+  // worked back from Google's answer, so it can't also be the question.
+  const departMin =
+    gap?.edge === "start" && !leavesTyped ? Math.max(0, gap.startMin - 60) : (leavesMin ?? TRANSIT_DEFAULT_MIN);
   const departure = useMemo(() => (weekday == null ? undefined : nextDeparture(new Date(), weekday, departMin)), [weekday, departMin]);
   const ask = useTravelEstimate({
     mode: draft.mode,
@@ -97,6 +108,15 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
   useEffect(() => {
     if (!minutesTyped && settled) setDraft((d) => ({ ...d, minutes: usableMinutes != null ? String(usableMinutes) : "" }));
   }, [usableMinutes, minutesTyped, settled]);
+  const guessedLands = flight && usableMinutes != null && leavesMin != null ? clockValue(leavesMin + usableMinutes) : null;
+  useEffect(() => {
+    if (guessedLands && !landsTyped) setDraft((d) => ({ ...d, lands: guessedLands }));
+  }, [guessedLands, landsTyped]);
+  const minutesValue = Number(draft.minutes) > 0 ? Math.round(Number(draft.minutes)) : null;
+  const arriveBy = gap?.edge === "start" && !flight && minutesValue != null ? clockValue(gap.startMin - minutesValue) : null;
+  useEffect(() => {
+    if (arriveBy && !leavesTyped) setDraft((d) => ({ ...d, leaves: arriveBy }));
+  }, [arriveBy, leavesTyped]);
 
   // Between two blocks, what has to move for it to fit.
   const push = useMemo(
@@ -227,33 +247,29 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
             <input
               type="time"
               value={draft.leaves}
-              onChange={(e) => set({ leaves: e.target.value })}
+              onChange={(e) => {
+                setLeavesTyped(true);
+                set({ leaves: e.target.value });
+              }}
               aria-label={flight ? "Departs" : "Leaves at (optional)"}
               style={textFieldStyle({ mono: true })}
             />
           </Field>
           {flight ? (
-            <Field label="Lands">
+            <Field label={<Tagged on={guessedLands != null && !landsTyped && draft.lands === guessedLands} tag="Estimated">Lands</Tagged>}>
               <input
                 type="time"
                 value={draft.lands}
-                onChange={(e) => set({ lands: e.target.value })}
+                onChange={(e) => {
+                  setLandsTyped(e.target.value !== "");
+                  set({ lands: e.target.value });
+                }}
                 aria-label="Lands"
                 style={textFieldStyle({ mono: true })}
               />
             </Field>
           ) : (
-            <Field
-              label={
-                usable && !minutesTyped && Number(draft.minutes) === usable.minutes ? (
-                  <span style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-                    Minutes<span style={{ color: "var(--geo)" }}>From Google</span>
-                  </span>
-                ) : (
-                  "Minutes"
-                )
-              }
-            >
+            <Field label={<Tagged on={usable != null && !minutesTyped && minutesValue === usable.minutes} tag="From Google">Minutes</Tagged>}>
               <input
                 type="number"
                 min={5}
@@ -273,9 +289,13 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
         <div style={{ font: "400 11.5px/1.45 var(--font-sans)", color: "var(--text-secondary)", marginTop: -6 }}>
           {flight
             ? duration != null
-              ? `${formatMinutes(duration)}${leavesMin != null && landsMin != null && landsMin <= leavesMin ? ", landing the next day" : ""}. Use each airport's local time.`
-              : "Use each airport's local time."
-            : draft.leaves
+              ? `${formatMinutes(duration)}${leavesMin != null && landsMin != null && landsMin <= leavesMin ? ", landing the next day" : ""}. ${landsTyped ? "Use each airport's local time." : "Change Lands to your booking's time if you have it."}`
+              : usable
+                ? "Pick when it departs and the landing time is filled in."
+                : "Use each airport's local time."
+            : arriveBy && !leavesTyped && draft.leaves === arriveBy
+              ? `Leaves in time to arrive at ${clockLabel(gap.startMin)}.`
+              : draft.leaves
               ? "Goes on the calendar at that time."
               : "No time? You'll tap the calendar to place it."}
         </div>
@@ -302,6 +322,13 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
                 "Couldn’t reach Google for a time."
               ) : ask.status === "missing" ? (
                 `Google couldn’t find “${(ask.end === "from" ? draft.from : draft.to).trim()}”. Try a fuller name, or type the minutes.`
+              ) : usable?.guess ? (
+                <>
+                  About <b style={{ color: "var(--text-primary)" }}>{formatMinutes(usable.minutes)}</b> in the air · {usable.summary}
+                  <span style={{ display: "block", color: "var(--text-muted)", fontSize: 11 }}>
+                    A guess from the distance from {ask.from.name} to {ask.to.name}. Google doesn’t time flights.
+                  </span>
+                </>
               ) : usable ? (
                 <>
                   Google says <b style={{ color: "var(--text-primary)" }}>{formatMinutes(usable.minutes)}</b>
@@ -316,12 +343,17 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
                 estimate.reason
               )}
             </span>
-            {usable && Number(draft.minutes) !== usable.minutes && (
+            {usable && (flight ? guessedLands != null && draft.lands !== guessedLands : minutesValue !== usable.minutes) && (
               <button
                 type="button"
                 onClick={() => {
-                  setMinutesTyped(false);
-                  set({ minutes: String(usable.minutes) });
+                  if (flight) {
+                    setLandsTyped(false);
+                    set({ lands: guessedLands });
+                  } else {
+                    setMinutesTyped(false);
+                    set({ minutes: String(usable.minutes) });
+                  }
                 }}
                 style={{ font: "600 12px var(--font-sans)", color: "var(--geo)", flex: "none" }}
               >
@@ -369,6 +401,17 @@ export default function TravelForm({ dayIndex, gap = null, dayEntries = [], onDo
         </button>
       </form>
     </>
+  );
+}
+
+// A field's label with a note on the right while its value is ours, not typed.
+function Tagged({ on, tag, children }) {
+  if (!on) return children;
+  return (
+    <span style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+      {children}
+      <span style={{ color: "var(--geo)" }}>{tag}</span>
+    </span>
   );
 }
 
