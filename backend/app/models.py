@@ -333,11 +333,18 @@ class Pin(Base):
     link: Mapped[str] = mapped_column(String(500), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
 
-    # Photo picker flow is not designed yet (handoff README "Photography —
-    # planned behaviour"); these stay null and the frontend falls back to
-    # the striped placeholder.
+    # The pin's photo, picked in the frontend's PhotoPicker: an image link,
+    # mirrored into blob storage (routers/pins.py), and the page it came
+    # from. Null means no photo, or a Google one (photo_google_index).
     photo_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     photo_source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Set instead of photo_url when the photo is one of the pin's Google
+    # place's own photos: which one, by its position in what Google returns
+    # for google_place_id. Google's terms don't allow copying those photos
+    # (or keeping their names), so the frontend looks the image up fresh
+    # each time it's shown (components/photos/usePinPhoto.js). Cleared when
+    # the place changes or another photo is picked (routers/pins.py).
+    photo_google_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     added_by_id: Mapped[int | None] = mapped_column(ForeignKey("contributors.id"), nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

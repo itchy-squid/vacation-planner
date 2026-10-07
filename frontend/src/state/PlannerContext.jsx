@@ -188,6 +188,9 @@ function normalizePin(p, contributorsById) {
     // to the striped placeholder.
     photoUrl: p.photo_url,
     photoSourceUrl: p.photo_source_url,
+    // Or one of its Google place's photos, by position (lib/placePhotos.js);
+    // drawn through components/photos/usePinPhoto.js.
+    photoGoogleIndex: p.photo_google_index ?? null,
     availabilityRule: p.availability_rule
       ? { days: p.availability_rule.days, bands: p.availability_rule.bands, why: p.availability_rule.reasons }
       : { days: null, bands: null, why: [] },
@@ -1478,6 +1481,7 @@ export function PlannerProvider({ children }) {
           // lands a new external link. photoSourceUrl is the page it came from.
           if ("photoUrl" in f) backendFields.photo_url = f.photoUrl.trim() || null;
           if ("photoSourceUrl" in f) backendFields.photo_source_url = f.photoSourceUrl.trim() || null;
+          if ("photoGoogleIndex" in f) backendFields.photo_google_index = f.photoGoogleIndex;
           // An exact spot: { lat, lng, placeId } or null to remove it.
           // Always sent whole; the API refuses half a location.
           if ("location" in f) {

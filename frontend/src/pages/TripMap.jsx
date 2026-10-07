@@ -14,6 +14,8 @@ import { usePlannerState, usePlannerDispatch, useIdeaAccess, useCan } from "../s
 import { areaQueriesForTrip } from "../lib/mapArea";
 import { regionKey } from "../lib/regions";
 import { otherTripRegion } from "../lib/places";
+import { usePinPhoto } from "../components/photos/usePinPhoto";
+import PhotoCredit from "../components/photos/PhotoCredit";
 
 // Clearance for the floating header (16px inset + its 44px row + a margin),
 // so an area fitted to the screen doesn't start underneath it.
@@ -264,7 +266,7 @@ export default function TripMap() {
           ) : selectedPin ? (
             <>
               <SheetHeader onClear={clearSelection}>{selectedPin.title}</SheetHeader>
-              <SheetPhoto key={selectedPin.id} src={selectedPin.photoUrl} alt={selectedPin.title} />
+              <SheetPhoto key={selectedPin.id} pin={selectedPin} />
               <SheetText>
                 {notice || (selectedPin.region ? `${selectedPin.region} · exact spot` : "Exact spot")}
               </SheetText>
@@ -395,16 +397,21 @@ function SheetHeader({ onClear, children }) {
 // The idea's own photo, the one its board card shows. No photo, or one that
 // won't load (it can be hotlinked), and the band is left out rather than
 // shown as a placeholder, so the map keeps the room.
-function SheetPhoto({ src, alt }) {
+function SheetPhoto({ pin }) {
+  const { src, credit, referrerPolicy } = usePinPhoto(pin);
   const [failed, setFailed] = useState(false);
   if (!src || failed) return null;
   return (
-    <img
-      src={src}
-      alt={alt}
-      onError={() => setFailed(true)}
-      style={{ display: "block", width: "100%", height: 116, objectFit: "cover", borderRadius: "var(--radius-lg)", background: "var(--pattern-photo)" }}
-    />
+    <div style={{ position: "relative" }}>
+      <img
+        src={src}
+        alt={pin.title}
+        referrerPolicy={referrerPolicy}
+        onError={() => setFailed(true)}
+        style={{ display: "block", width: "100%", height: 116, objectFit: "cover", borderRadius: "var(--radius-lg)", background: "var(--pattern-photo)" }}
+      />
+      <PhotoCredit credit={credit} overlay />
+    </div>
   );
 }
 

@@ -97,23 +97,32 @@ or hide **Upload** there.
 The picker also keeps **Paste an image link** as a fallback, which is
 today's behaviour.
 
-### 3. From Google Maps (phase 3)
+### 3. From Google Maps (phase 3, built)
 
-Requested through the Maps JS `places` library for the pin's
-`googlePlaceId`, only when the picker opens (the `photos` field is billed
-at a higher tier, which is why place search leaves it out today).
+For ideas that are a Google place (`google_place_id`: added by search, or
+matched on the map or in the "On Google Maps?" review), the picker's first
+row is the place's own photos, looked up in the browser through the Maps JS
+`places` library (`lib/placePhotos.js`) when the picker opens, in **Replace**
+and in **Add from search**. A Google Maps link isn't read by the link row
+any more: its page's only image is a picture of the map.
 
-Google's terms don't allow copying their photos into our own storage, and
-each photo must show its author attribution. So a Google photo:
+Google's terms don't allow copying their photos into our own storage, or
+keeping their names, and each photo must show its author attribution. So a
+Google photo:
 
-- is stored by reference (the photo's resource name) plus its attribution,
-  never as a mirrored blob: the background mirror must skip it
-- is resolved to a fresh image URL when shown, which is billed per request,
-  so resolved URLs are cached briefly
-- shows its attribution wherever it's drawn
-
-Open question: whether that's worth it on the board, or only on the idea's
-own page.
+- is stored as `photo_google_index` only: which of the place's photos it is
+  (0–9, Google's order). `photo_url` stays null, so the background mirror
+  never sees it. Picking a link photo clears it and vice versa, and it goes
+  when the idea's place changes (`routers/pins.py _settle_photo`)
+- is looked up fresh when shown (`components/photos/usePinPhoto.js`). Both
+  the place lookup and each photo shown are billed, so a place's photos are
+  kept in memory for 30 minutes
+- shows "Google Maps · <photographer>" wherever it's drawn
+  (`components/photos/PhotoCredit.jsx`): on the board card, the idea's page
+  and the Map tab's sheet. The small thumbnails with no room for that (map
+  markers, the add sheet's rows) and the trip's cover show the placeholder
+- loads with the page's origin as referrer (not `no-referrer` like link
+  photos), since the Maps key is restricted by referrer
 
 ### 4. No photo
 
@@ -122,9 +131,10 @@ Already works.
 
 ## Data model (phases 2–3)
 
-- `photo_origin`: `link` | `upload` | `google` | `pasted`. Decides whether
-  the photo is mirrored, signed, or resolved through Google.
-- `photo_attribution`: JSON, Google's author attributions.
+- `photo_origin`: `link` | `upload` | `pasted`. Decides whether the photo
+  is mirrored or signed.
+- Google photos need only `photo_google_index` (built); their attribution
+  comes with each lookup, so it isn't stored.
 
 Phase 1 needs neither.
 
