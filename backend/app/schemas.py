@@ -423,9 +423,23 @@ CostBasis = Literal["per_head", "group"]
 # is (n - 1) days' worth (models.py Pin.cost_per).
 CostPer = Literal["once", "day"]
 
-# Something to do (takes time on the Plan tab), or somewhere to sleep
-# (models.py Pin.kind).
-PinKind = Literal["activity", "stay"]
+# Something to do (takes time on the Plan tab), somewhere to sleep, or a
+# cost that isn't a place (models.py Pin.kind).
+PinKind = Literal["activity", "stay", "expense"]
+
+# What an expense is (models.py Pin.expense_type).
+ExpenseType = Literal["rental", "pass", "other"]
+
+
+def _check_expense(pin: BaseModel, kind: str | None) -> None:
+    """Only an expense says what kind of expense it is or who it's for,
+    and only a pass covers ideas. `kind` is None on an update that
+    doesn't send one; the router checks those against the stored pin."""
+    if kind is not None and kind != "expense":
+        if pin.expense_type is not None or pin.traveler_ids is not None or pin.covers_pin_ids:
+            raise ValueError("Only an expense has expense_type, traveler_ids or covers_pin_ids")
+    if pin.covers_pin_ids and pin.expense_type not in (None, "pass"):
+        raise ValueError("Only a pass covers ideas")
 
 
 def _check_cost_days(pin: BaseModel, fields_set: set[str] | None = None) -> None:
@@ -495,6 +509,11 @@ class PinCreate(BaseModel):
     notes: str = ""
     link: WebLink = ""
     tags: list[str] = Field(default_factory=list)
+    # For an expense only (models.py Pin): what it is, who it's for (None
+    # for everyone) and, for a pass, the ideas it covers.
+    expense_type: ExpenseType | None = None
+    traveler_ids: list[int] | None = None
+    covers_pin_ids: list[int] | None = None
     # Pasted directly by the person adding the pin (see pages/NewPin.jsx)
     # rather than scraped from the link's page — a plain server-side
     # fetch can't see photos a site injects client-side after load, and
@@ -510,6 +529,9 @@ class PinCreate(BaseModel):
     def _location_is_all_or_nothing(self) -> "PinCreate":
         _check_location(self)
         _check_cost_days(self)
+        _check_expense(self, self.kind)
+        if self.kind == "expense" and self.expense_type is None:
+            raise ValueError("An expense needs an expense_type")
         if self.photo_google_index is not None:
             if self.google_place_id is None:
                 raise ValueError("photo_google_index needs a google_place_id")
@@ -545,11 +567,18 @@ class PinUpdate(BaseModel):
     google_place_id: GooglePlaceId | None = None
     # "None of these" in the "On Google Maps?" review: don't offer it again.
     google_review_dismissed: bool | None = None
+    # An expense's own fields (PinCreate); traveler_ids null is everyone.
+    expense_type: ExpenseType | None = None
+    traveler_ids: list[int] | None = None
+    covers_pin_ids: list[int] | None = None
 
     @model_validator(mode="after")
     def _location_is_all_or_nothing(self) -> "PinUpdate":
         _check_location(self, self.model_fields_set)
         _check_cost_days(self, self.model_fields_set)
+        _check_expense(self, self.kind)
+        if "expense_type" in self.model_fields_set and self.expense_type is None:
+            raise ValueError("expense_type can't be cleared")
         return self
 
 
@@ -655,6 +684,11 @@ class PinOut(BaseModel):
     cost_per: str = "once"
     cost_start_day: int | None = None
     cost_end_day: int | None = None
+    expense_type: str | None = None
+    # None for everyone — and when the caller can't see costs, since who
+    # shares a cost is costs:read (app/permissions.py).
+    traveler_ids: list[int] | None = None
+    covers_pin_ids: list[int] | None = None
     notes: str
     link: str
     tags: list[str]
@@ -693,7 +727,7 @@ class PinOut(BaseModel):
 
     @model_validator(mode="after")
     def _hide_costs(self) -> "PinOut":
-        _redact_costs(self, "cost_cents", added_by_id=self.added_by_id)
+        _redact_costs(self, "cost_cents", "traveler_ids", added_by_id=self.added_by_id)
         return self
 
 

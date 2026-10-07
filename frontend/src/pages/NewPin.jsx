@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { usePlannerState, usePlannerDispatch, useIdeaAccess } from "../state/PlannerContext";
+import { usePlannerState, usePlannerDispatch, useIdeaAccess, useCan } from "../state/PlannerContext";
 import { isMapsConfigured } from "../lib/googleMaps";
 import PlaceSearchStep from "../components/newpin/PlaceSearchStep";
 import PlaceDetailsForm from "../components/newpin/PlaceDetailsForm";
@@ -33,6 +33,7 @@ export default function NewPin() {
   const dispatch = usePlannerDispatch();
   const { pins, trip } = usePlannerState();
   const ideaAccess = useIdeaAccess();
+  const can = useCan();
   const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState(() => (isMapsConfigured && searchParams.get("mode") !== "link" ? "search" : "link"));
@@ -51,6 +52,15 @@ export default function NewPin() {
   );
 
   const board = `/trips/${trip.id}/board`;
+  // A ticket, pass or rental isn't a place: it's added in Expenses
+  // (components/expenses/CostSheet.jsx), named after what was searched.
+  // Only for someone who can see Expenses and set costs.
+  const canAddCost = can("costs:read") && ideaAccess.canSetCost(null);
+  const addAsCost = (query) => {
+    const name = query.trim();
+    const title = name ? name[0].toUpperCase() + name.slice(1) : "";
+    navigate(`/trips/${trip.id}/expenses?add=1${title ? `&title=${encodeURIComponent(title)}` : ""}`);
+  };
   const goTo = (next) => {
     setError(null);
     setStep(next);
@@ -82,6 +92,7 @@ export default function NewPin() {
         }}
         onOpenIdea={(pin) => navigate(`/trips/${trip.id}/edit/${pin.id}?from=board`)}
         onManual={() => goTo("link")}
+        onAddCost={canAddCost ? addAsCost : null}
       />
     );
   }

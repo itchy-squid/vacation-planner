@@ -26,6 +26,7 @@ import { googleMapsPlaceUrl, otherTripRegion } from "../lib/places";
 import { usePinPhoto } from "../components/photos/usePinPhoto";
 import HomeButton from "../components/core/HomeButton";
 import Button from "../components/core/Button";
+import CoveredByPasses from "../components/expenses/CoveredByPasses";
 
 // Screen 6 — "change one stop's details."
 // Handoff README screen 6. "Where this pin is currently placed" is a plain
@@ -670,6 +671,7 @@ export default function EditVisit() {
               (backend/app/derive.py item_money). Paid once, or by the day:
               n days from first to last is n - 1 days of it
               (lib/dailyCosts.js). */}
+          {canSeeCosts && form.kind === "activity" ? <CoveredByPasses pinId={pinId} /> : null}
           {canSeeCosts ? (
             <CostField
               id="visit-cost"

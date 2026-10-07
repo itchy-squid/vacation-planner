@@ -65,9 +65,9 @@ export const GROUPINGS = ["day", "category"];
 // What a cost is, from fields the trip already has — not from pins'
 // free-form tags (feature spec decision 8). In this order on the screen.
 export const CATEGORIES = [
+  { key: "daily", label: "Passes & rentals" },
   { key: "lodging", label: "Lodging" },
   { key: "travel", label: "Travel" },
-  { key: "daily", label: "Rentals & daily" },
   { key: "activities", label: "Activities" },
 ];
 

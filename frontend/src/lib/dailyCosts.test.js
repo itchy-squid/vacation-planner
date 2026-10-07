@@ -98,3 +98,33 @@ test("by day, a stay paid once is one row on its first night", () => {
   assert.equal(parts[0].totalCents, 90000);
   assert.equal(parts[0].howLabel, "3 nights · paid once");
 });
+
+const TICKET = {
+  id: 9, title: "Universal 5-day ticket", kind: "expense", expenseType: "pass", costPer: "once", costCents: 45000,
+  costBasis: "per_head", costStartDay: 2, costEndDay: 6, travelerIds: [1, 2, 3], coversPinIds: [],
+};
+
+test("an expense paid once counts once, on its first day, without being on the calendar", () => {
+  const { rows } = buildDailyCosts({ 9: TICKET }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1, 2, 3, 4] });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].totalCents, 135000);
+  assert.equal(rows[0].eachCents, 45000);
+  assert.equal(rows[0].howLabel, "Mar 13 – 17 · paid once");
+  assert.deepEqual(rowsByDay(rows[0]).map((r) => r.day), [2]);
+});
+
+test("an expense is shared by its own travelers, and only those still on the trip", () => {
+  const travelers = TRAVELERS.map((t, i) => ({ ...t, initial: "ABCD"[i] }));
+  const ticket = { ...TICKET, travelerIds: [1, 3, 99] };
+  const { rows } = buildDailyCosts({ 9: ticket }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers, shownIds: [2, 3] });
+  assert.deepEqual(rows[0].sharers, [1, 3]);
+  assert.equal(rows[0].sharersLabel, "A, C");
+  assert.equal(rows[0].shownCents, 45000); // only traveler 3 of the shown two holds one
+});
+
+test("an expense for everyone is everyone's, said without initials", () => {
+  const car = { ...CAR, kind: "expense", expenseType: "rental", travelerIds: null };
+  const { rows } = buildDailyCosts({ 8: car }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
+  assert.equal(rows[0].totalCents, 19500);
+  assert.equal(rows[0].sharersLabel, "");
+});
