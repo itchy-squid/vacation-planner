@@ -1,0 +1,660 @@
+<title>Tickets, Passes and Rentals</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/solid.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/fontawesome.min.js"></script>
+<style>
+  /* Layout: a review sheet. Each feature is a band of phone screens drawn in the
+     app's own tokens, followed by the decisions it needs. Page chrome follows the
+     viewer's theme; the phones stay in the app's light palette, as the app does. */
+  :root {
+    /* page chrome */
+    --pg-bg: #e9e7ec; --pg-fg: #1b1a1f; --pg-muted: #5d5b66; --pg-line: rgba(27,26,31,.14);
+    --pg-panel: #f6f5f7; --pg-accent: #8f4478; --pg-tag: rgba(143,68,120,.10);
+    /* app tokens (frontend/src/styles/tokens) — light only, like the app */
+    --surface-page: #f4f3f5; --surface-card: #ffffff; --surface-inset: #f9f8fa; --surface-sunken: #eceaee;
+    --surface-inverse: #1b1a1f; --text-primary: #1b1a1f; --text-secondary: #6f6d78; --text-muted: #8c8a95;
+    --text-faint: #a3a1ab; --accent: #8f4478; --accent-quiet: rgba(143,68,120,.06); --accent-quiet-strong: rgba(143,68,120,.13);
+    --geo: #3d8a9c; --geo-quiet: #eef2f3; --warn: #b4553f; --stone-250: #dcdae0; --stone-700: #4a4852;
+    --hairline: rgba(27,26,31,.09); --border: rgba(27,26,31,.12); --border-strong: rgba(27,26,31,.14);
+    --on-ink: #ffffff; --on-ink-muted: rgba(255,255,255,.6); --scrim: rgba(27,26,31,.42);
+    --map-land: #eceef0; --map-water: #aecfd8; --map-road: #ffffff;
+    --font-serif: Newsreader, "Iowan Old Style", Georgia, serif;
+    --font-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(27,26,31,.06), 0 2px 8px rgba(27,26,31,.05);
+    --shadow-raised: 0 1px 3px rgba(27,26,31,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+      --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pg-bg: #17161b; --pg-fg: #ecebef; --pg-muted: #a6a4ae; --pg-line: rgba(255,255,255,.12);
+    --pg-panel: #222128; --pg-accent: #dca6ca; --pg-tag: rgba(220,166,202,.14); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--pg-bg); color: var(--pg-fg); font: 400 14px/1.55 var(--font-sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; }
+  h1 { font: 400 34px/1.15 var(--font-serif); margin: 0 0 10px; text-wrap: balance; }
+  .lede { max-width: 68ch; color: var(--pg-muted); margin: 0; }
+  .eyebrow { font: 500 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pg-accent); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { font: 600 12.5px var(--font-sans); color: var(--pg-fg); text-decoration: none; padding: 6px 12px; border: 1px solid var(--pg-line); border-radius: 999px; }
+  .toc a:hover, .toc a:focus-visible { border-color: var(--pg-accent); outline: none; }
+
+  section.feature { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--pg-line); }
+  section.feature > h2 { font: 400 27px/1.2 var(--font-serif); margin: 6px 0 8px; text-wrap: balance; }
+  .ask { max-width: 70ch; color: var(--pg-muted); margin: 0 0 14px; }
+  .today { max-width: 76ch; background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 24px; }
+  .today b { font-weight: 600; }
+  .today code, .decide code { font: 400 12px var(--font-mono); background: var(--pg-tag); padding: 1px 5px; border-radius: 4px; }
+
+  .screens { display: flex; flex-wrap: wrap; gap: 28px 24px; align-items: flex-start; }
+  .screen-col { width: 340px; max-width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .screen-col h3 { font: 600 13.5px/1.3 var(--font-sans); margin: 0; }
+  .screen-col .note { font-size: 12.5px; color: var(--pg-muted); margin: 0; line-height: 1.5; }
+
+  .decide { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .decide > div { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .decide h4 { font: 600 13px var(--font-sans); margin: 0 0 8px; }
+  .decide ol, .decide ul { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 6px; }
+  .rec { display: inline-block; font: 600 10px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--pg-accent); background: var(--pg-tag); padding: 1px 6px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
+
+  /* ---------- phone (app palette only below here) ---------- */
+  .phone { background: var(--surface-page); color: var(--text-primary); border-radius: 30px; border: 1px solid var(--pg-line); box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; position: relative; font-size: 13px; }
+  .phone .bar { height: 26px; }
+  .app-head { padding: 0 16px 10px; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+  .app-head .t { font: 400 22px/1.15 var(--font-serif); }
+  .app-head .s { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .cap { font: 500 10px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .hint { font: 400 11.5px/1.45 var(--font-sans); color: var(--text-secondary); }
+  .body { padding: 0 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-xl); box-shadow: var(--shadow-card); }
+  .navstrip { display: flex; justify-content: space-around; border-top: 1px solid var(--hairline); background: var(--surface-card); padding: 9px 4px 12px; font: 600 10.5px var(--font-sans); color: var(--text-muted); }
+  .navstrip .on { color: var(--accent); }
+
+  .seg { display: flex; background: var(--surface-sunken); border-radius: var(--radius-md); padding: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: 600 11.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+  .seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-primary); box-shadow: var(--shadow-raised); }
+  .seg button:focus-visible, .chip:focus-visible, .tchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .input { height: 44px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-page); display: flex; align-items: center; padding: 0 12px; font: 600 14px var(--font-sans); gap: 8px; }
+  .input input { border: 0; background: transparent; font: inherit; color: inherit; width: 100%; min-width: 0; outline: none; }
+  .input .unit { font: 500 10.5px var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 12px; border-radius: var(--radius-pill); font: 500 12px var(--font-sans); background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip[aria-pressed="true"], .chip.on { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .chip .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .chip[aria-pressed="true"] .n, .chip.on .n { color: var(--on-ink-muted); }
+  .chip.dashed { border-style: dashed; color: var(--text-secondary); }
+  .chip svg { width: 11px !important; height: 11px; }
+
+  /* type picker tiles */
+  .types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tchip { border: 1px solid var(--border); background: var(--surface-card); border-radius: var(--radius-lg); padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 10.5px/1.15 var(--font-sans); color: var(--text-primary); cursor: pointer; text-align: center; }
+  .tchip svg { width: 15px !important; height: 15px; color: var(--text-secondary); }
+  .tchip[aria-pressed="true"] { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .tchip[aria-pressed="true"] svg { color: var(--on-ink); }
+  .tchip .flag { font: 500 8.5px var(--font-mono); letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; }
+  .tchip[aria-pressed="true"] .flag { color: var(--on-ink-muted); }
+
+  .receipt { background: var(--surface-inset); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 10px 12px; font: 400 11.5px/1.6 var(--font-mono); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .receipt b { color: var(--text-primary); font-weight: 500; }
+  .receipt .row { display: flex; justify-content: space-between; gap: 8px; }
+
+  .muted-box { border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 9px 12px; color: var(--text-muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .muted-box svg { width: 12px !important; }
+
+  /* board */
+  .filterbar { display: flex; flex-direction: column; gap: 8px; }
+  .scrollrow { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .scrollrow::-webkit-scrollbar { display: none; }
+  .scrollrow .chip { flex: none; }
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pcard { background: var(--surface-card); border-radius: var(--radius-xl); border: 1px solid var(--hairline); box-shadow: var(--shadow-card); overflow: hidden; }
+  .pcard[hidden] { display: none !important; }
+  .photo { height: 70px; background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 6px, var(--surface-inset) 6px 12px); position: relative; }
+  .photo .badge { position: absolute; left: 7px; top: 7px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 3px 7px; font: 600 9.5px var(--font-sans); display: inline-flex; gap: 4px; align-items: center; box-shadow: var(--shadow-raised); }
+  .photo .badge.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .photo .badge svg { width: 9px !important; }
+  .pcard .in { padding: 8px 10px 10px; }
+  .pcard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .pcard .pl { font: 400 10.5px var(--font-sans); color: var(--text-secondary); margin-top: 3px; display: flex; gap: 5px; align-items: center; }
+  .pcard .pl i { width: 5px; height: 5px; border-radius: 50%; background: var(--geo); display: inline-block; }
+  .pcard .meta { margin-top: 6px; font: 500 10.5px var(--font-mono); color: var(--text-primary); display: flex; justify-content: space-between; gap: 4px; }
+  .pcard .meta span:last-child { color: var(--text-muted); }
+  .stays-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .stays-strip::-webkit-scrollbar { display: none; }
+  .staycard { flex: none; width: 190px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .staycard .nm { font: 400 15px/1.2 var(--font-serif); }
+  .staycard .px { font: 500 11px var(--font-mono); }
+  .staycard .px small { color: var(--text-muted); font-size: 10px; }
+  .staycard .nights { font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line { display: flex; justify-content: space-between; align-items: center; font: 400 11.5px var(--font-sans); color: var(--text-secondary); }
+  .result-line button { border: 0; background: none; color: var(--accent); font: 600 11.5px var(--font-sans); cursor: pointer; padding: 0; }
+
+  /* nights grid */
+  .nights-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .nightcell { border-radius: 8px; background: var(--surface-card); border: 1px solid var(--border); padding: 6px 0 5px; text-align: center; }
+  .nightcell .d { font: 400 9.5px var(--font-mono); color: var(--text-faint); }
+  .nightcell .n { font: 600 12px var(--font-sans); }
+  .nightcell.on { background: var(--surface-inverse); border-color: var(--surface-inverse); }
+  .nightcell.on .d { color: var(--on-ink-muted); } .nightcell.on .n { color: var(--on-ink); }
+  .nightcell.other { background: var(--surface-sunken); border-color: transparent; }
+  .nightcell.other .n { color: var(--text-muted); }
+  .nightcell.off { border-style: dashed; }
+
+  /* plan day */
+  .band { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-lg); }
+  .band.ink { background: var(--surface-inverse); color: var(--on-ink); }
+  .band.line { background: var(--surface-card); border: 1px solid var(--border); }
+  .band .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(255,255,255,.12); }
+  .band.line .ic { background: var(--geo-quiet); color: var(--geo); }
+  .band .ic svg { width: 11px !important; }
+  .band .k { font: 500 9.5px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; opacity: .7; }
+  .band .v { font: 600 13px var(--font-sans); }
+  .band .r { margin-left: auto; font: 500 10.5px var(--font-mono); opacity: .75; text-align: right; }
+  .timeline { position: relative; padding-left: 40px; display: flex; flex-direction: column; gap: 6px; }
+  .timeline::before { content: ""; position: absolute; left: 30px; top: 2px; bottom: 2px; width: 1px; background: var(--border-strong); }
+  .tl-time { position: absolute; left: 0; font: 400 9.5px var(--font-mono); color: var(--text-muted); }
+  .block { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 8px 10px; box-shadow: var(--shadow-card); position: relative; }
+  .block .nm { font: 600 12.5px var(--font-sans); }
+  .block .sub { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .block.ride { background: transparent; box-shadow: none; border: 1px dashed var(--border-strong); padding: 5px 10px; }
+  .block.ride .nm { font: 500 11px var(--font-sans); color: var(--text-secondary); }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .metric { background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 7px 9px; }
+  .metric .v { font: 400 18px/1.1 var(--font-serif); font-variant-numeric: tabular-nums; }
+  .metric .k { font: 500 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 3px; }
+  .metric.strike .v { color: var(--text-muted); }
+
+  /* expenses */
+  .exp-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--hairline); align-items: baseline; }
+  .exp-row:first-of-type { border-top: 0; }
+  .exp-row .l { min-width: 0; }
+  .exp-row .nm { font: 600 12.5px var(--font-sans); }
+  .exp-row .how { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .exp-row .amt { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .exp-row .amt small { display: block; font-size: 10px; color: var(--text-muted); }
+  .daybars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; height: 92px; }
+  .daybar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 0; }
+  .daybar i { display: block; width: 100%; }
+  .daybar .stay { background: var(--surface-inverse); border-radius: 0 0 3px 3px; }
+  .daybar .daily { background: var(--geo); }
+  .daybar .once { background: var(--accent); border-radius: 3px 3px 0 0; }
+  .daylabels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font: 400 9.5px var(--font-mono); color: var(--text-muted); text-align: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 400 10.5px var(--font-sans); color: var(--text-secondary); }
+  .legend span { display: inline-flex; gap: 5px; align-items: center; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  /* sheet */
+  .scrim { background: var(--scrim); padding-top: 120px; }
+  .sheet { background: var(--surface-card); border-radius: 20px 20px 0 0; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .grab { width: 38px; height: 4px; border-radius: 99px; background: var(--stone-250); margin: 0 auto 2px; }
+  .sheet .t { font: 400 19px var(--font-serif); }
+  .sheet-actions { display: flex; gap: 8px; }
+  .btn { flex: 1; height: 42px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--surface-card); font: 600 13px var(--font-sans); color: var(--text-primary); }
+  .btn.primary { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+
+  /* map */
+  .map { height: 330px; position: relative; background: var(--map-land); overflow: hidden; }
+  .map .water { position: absolute; right: -40px; top: -20px; width: 160px; height: 420px; background: var(--map-water); border-radius: 50% 0 0 50%; transform: rotate(8deg); }
+  .map .road { position: absolute; background: var(--map-road); height: 5px; border-radius: 3px; transform-origin: left center; }
+  .mk { position: absolute; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-card); border: 1.5px solid var(--surface-inverse); color: var(--text-primary); box-shadow: var(--shadow-raised); transform: translate(-50%, -50%); }
+  .mk svg { width: 11px !important; }
+  .mk.stay { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-card); width: 30px; height: 30px; }
+  .mk.start { background: var(--geo); color: var(--on-ink); border-color: var(--surface-card); }
+  .mk.faded { opacity: .25; }
+  .map-filter { position: absolute; left: 10px; right: 10px; top: 10px; }
+  .map-filter .chip { box-shadow: var(--shadow-raised); }
+  .map-count { position: absolute; left: 10px; bottom: 10px; background: var(--surface-card); border-radius: var(--radius-pill); padding: 5px 10px; font: 500 10.5px var(--font-sans); box-shadow: var(--shadow-raised); }
+
+  .toggle { width: 34px; height: 20px; border-radius: 99px; background: var(--surface-inverse); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-card); }
+  .toggle.off { background: var(--stone-250); }
+  .toggle.off::after { right: auto; left: 2px; }
+  .list-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--hairline); }
+  .list-row:first-child { border-top: 0; }
+  .list-row .nm { font: 500 12.5px var(--font-sans); flex: 1; min-width: 0; }
+  .list-row .n { font: 500 10.5px var(--font-mono); color: var(--text-muted); }
+  .check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border-strong); flex: none; display: grid; place-items: center; }
+  .check.on { background: var(--surface-inverse); border-color: var(--surface-inverse); color: var(--on-ink); }
+  .check svg { width: 9px !important; }
+
+  @media (max-width: 420px) {
+    .wrap { padding-inline: 16px; }
+    h1 { font-size: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  /* ---------- added for this sheet ---------- */
+  .no { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--warn); color: #fff; font: 600 9.5px var(--font-sans); flex: none; }
+  .phone .no { position: absolute; z-index: 2; box-shadow: 0 0 0 2px var(--surface-page); }
+  .issues { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 12.5px; color: var(--pg-muted); }
+  .issues li { display: flex; gap: 8px; align-items: flex-start; line-height: 1.45; }
+  .pcard { position: relative; }
+  .pcard.wrong { outline: 2px dashed var(--warn); outline-offset: 2px; }
+  .photo.blank { background: var(--surface-sunken); display: grid; place-items: center; color: var(--text-faint); }
+  .photo.blank svg { width: 18px !important; height: 18px; }
+  .badge.pass { background: var(--geo); color: var(--on-ink); }
+  .pcard .meta .cov { color: var(--geo); }
+  .head-btn { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-inverse); color: var(--on-ink); display: grid; place-items: center; flex: none; }
+  .head-btn svg { width: 13px !important; }
+  .search { height: 42px; border-radius: var(--radius-lg); background: var(--surface-card); border: 1px solid var(--border-strong); display: flex; align-items: center; gap: 8px; padding: 0 12px; font: 600 13.5px var(--font-sans); }
+  .search svg { width: 12px !important; color: var(--text-muted); }
+  .search .caret { width: 1.5px; height: 16px; background: var(--accent); margin-left: -6px; }
+  .srow { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--hairline); }
+  .srow:first-child { border-top: 0; }
+  .srow .ic { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-sunken); display: grid; place-items: center; flex: none; color: var(--text-secondary); }
+  .srow .ic svg { width: 11px !important; }
+  .srow .nm { font: 600 12.5px var(--font-sans); }
+  .srow .sub { font: 400 10.5px var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .escape { border: 1px solid var(--accent-quiet-strong); background: var(--accent-quiet); border-radius: var(--radius-lg); padding: 10px 12px; display: flex; gap: 10px; align-items: center; }
+  .escape .ic { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--on-ink); display: grid; place-items: center; flex: none; }
+  .escape .ic svg { width: 12px !important; }
+  .escape .nm { font: 600 12.5px var(--font-sans); }
+  .escape .sub { font: 400 11px/1.4 var(--font-sans); color: var(--text-secondary); margin-top: 1px; }
+  .escape .go { margin-left: auto; color: var(--accent); flex: none; }
+  .escape .go svg { width: 11px !important; }
+  .covered { display: flex; gap: 10px; align-items: center; border: 1px solid var(--border); background: var(--geo-quiet); border-radius: var(--radius-lg); padding: 10px 12px; }
+  .covered .ic { color: var(--geo); flex: none; }
+  .covered .ic svg { width: 14px !important; }
+  .covered .nm { font: 600 12.5px var(--font-sans); }
+  .covered .sub { font: 400 10.5px var(--font-mono); color: var(--text-secondary); margin-top: 2px; }
+  .covered a { margin-left: auto; font: 600 11.5px var(--font-sans); color: var(--accent); text-decoration: none; flex: none; }
+  .gcard { padding: 4px 14px 6px; }
+  .gcard .gh { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 0 4px; }
+  .gcard .gh .cap { color: var(--text-primary); }
+  .gcard .gh .sum { font: 500 11.5px var(--font-mono); }
+  .exp-row .nm svg { width: 10px !important; color: var(--text-secondary); margin-right: 4px; }
+  .add-cost { height: 40px; border-radius: var(--radius-lg); border: 1.5px dashed var(--border-strong); background: transparent; font: 600 12.5px var(--font-sans); color: var(--accent); display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; cursor: pointer; }
+  .add-cost svg { width: 11px !important; }
+  .summary { padding: 14px 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .summary .big { font: 400 30px/1 var(--font-serif); margin-top: 5px; }
+  .summary .small { font: 400 19px/1 var(--font-serif); color: var(--stone-700); margin-top: 5px; text-align: right; }
+  .people { display: flex; flex-wrap: wrap; gap: 6px; }
+  .person { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 4px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface-card); font: 500 12px var(--font-sans); color: var(--text-primary); cursor: pointer; }
+  .person .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 600 9px var(--font-sans); color: var(--stone-700); }
+  .person[aria-pressed="false"] { color: var(--text-muted); border-style: dashed; }
+  .person[aria-pressed="false"] .av { opacity: .4; }
+  .person[aria-pressed="true"] { border-color: var(--surface-inverse); box-shadow: inset 0 0 0 1px var(--surface-inverse); }
+  .person:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  select.input { appearance: none; font: 600 13px var(--font-sans); color: var(--text-primary); height: 40px; width: 100%; }
+  .covers .list-row { cursor: pointer; }
+  .sheet.tall { gap: 12px; }
+  .daystrip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .daystrip::-webkit-scrollbar { display: none; }
+  .daychip { flex: none; padding: 6px 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-card); font: 600 11px var(--font-sans); text-align: center; }
+  .daychip small { display: block; font: 400 9px var(--font-mono); color: var(--text-muted); }
+  .daychip.on { background: var(--surface-inverse); color: var(--on-ink); border-color: var(--surface-inverse); }
+  .daychip.on small { color: var(--on-ink-muted); }
+  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 24px; }
+  .opt { background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .opt.pick { border-color: var(--pg-accent); box-shadow: inset 0 0 0 1px var(--pg-accent); }
+  .opt h4 { font: 600 13.5px var(--font-sans); margin: 0 0 6px; }
+  .opt p { margin: 0 0 8px; font-size: 13px; color: var(--pg-muted); }
+  .opt ul { margin: 0; padding-left: 18px; font-size: 12.5px; display: grid; gap: 4px; }
+  .opt .pro::marker { content: "+  "; color: var(--geo); }
+  .opt .con::marker { content: "–  "; color: var(--warn); }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Mockups · nothing built yet</div>
+  <h1>Tickets, passes and rentals</h1>
+  <p class="lede">Where a Universal 5-day ticket or a rental car goes. Short answer: <b>not on the Ideas board</b>. The board is for places the group might go, and it stays that way. These costs are added and kept in Expenses. The one place they touch the board is a badge on the parks a ticket covers. The add-a-cost sheet in section 2 works; tap it.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#board">1 · The Ideas board stays places-only</a>
+    <a href="#expenses">2 · Adding a cost in Expenses</a>
+    <a href="#options">3 · Other board options considered</a>
+    <a href="#decide">Decisions for you</a>
+  </nav>
+
+  <!-- ====================================================== 1 -->
+  <section class="feature" id="board">
+    <div class="eyebrow">Section 1</div>
+    <h2>The Ideas board stays places-only</h2>
+    <p class="ask">Each card on the board is somewhere you could go: it has a region, a spot on the map, a duration and hearts. A rental car or a park ticket has none of that. The proposal is to send these costs to Expenses as you add them, and show tickets on the board only where they mean something: on the parks they get you into.</p>
+    <div class="today"><b>Today:</b> the only way to price a rental car is as an idea (<code>Pin</code>) with <code>cost_per = "day"</code>. It goes through New idea, takes a region and a duration, and appears on the board, the map and the Plan tray. A ticket paid once isn't counted at all until someone drags it onto the calendar.</div>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>1a · Today: a rental car in with the places</h3>
+        <p class="note">This is what you get now if you add a rental car or ticket.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Orlando</div><div class="s">IDEAS · 11</div></div><span class="head-btn"><i class="fa-solid fa-plus"></i></span></div>
+          <div class="body">
+            <div class="scrollrow"><span class="chip on">All</span><span class="chip">Universal <span class="n">4</span></span><span class="chip">I-Drive <span class="n">3</span></span><span class="chip">Orlando <span class="n">4</span></span></div>
+            <div class="board">
+              <div class="pcard"><div class="photo"></div><div class="in"><div class="nm">Universal Studios</div><div class="pl"><i></i>Universal</div><div class="meta"><span>$139 each</span><span>♥ 4</span></div></div></div>
+              <div class="pcard wrong"><span class="no" style="right:6px;top:6px">1</span><div class="photo blank"><i class="fa-solid fa-car"></i></div><div class="in"><div class="nm">Rental car</div><div class="pl"><i></i>Orlando</div><div class="meta"><span>$62/day</span><span></span></div></div></div>
+              <div class="pcard"><div class="photo"></div><div class="in"><div class="nm">Islands of Adventure</div><div class="pl"><i></i>Universal</div><div class="meta"><span>$139 each</span><span>♥ 3</span></div></div></div>
+              <div class="pcard wrong"><span class="no" style="right:6px;top:6px">2</span><div class="photo blank"><i class="fa-solid fa-ticket"></i></div><div class="in"><div class="nm">Universal 5-day ticket</div><div class="pl"><i></i>Universal</div><div class="meta"><span>$450 each</span><span></span></div></div></div>
+            </div>
+          </div>
+        </div>
+        <ul class="issues">
+          <li><span class="no">1</span>The car needs a region and a "how long", it has no photo, and it can be dragged onto Plan as if it were a 1-hour visit. Hearting it doesn't mean anything.</li>
+          <li><span class="no">2</span>The ticket costs $0 until it's put on the calendar. The parks keep their $139 prices as well, so once it is scheduled, admission counts twice.</li>
+        </ul>
+      </div>
+
+      <div class="screen-col">
+        <h3>1b · Proposed: places only, with a ticket badge on parks</h3>
+        <p class="note">The car and ticket cards are gone. Parks a ticket covers get a <b>teal ticket badge</b>, and their price reads <em>with ticket</em> instead of $139. Tap the badge to open the ticket in Expenses.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Orlando</div><div class="s">IDEAS · 9</div></div><span class="head-btn"><i class="fa-solid fa-plus"></i></span></div>
+          <div class="body">
+            <div class="scrollrow"><span class="chip on">All</span><span class="chip">Universal <span class="n">3</span></span><span class="chip">I-Drive <span class="n">3</span></span><span class="chip">Orlando <span class="n">3</span></span></div>
+            <div class="board">
+              <div class="pcard"><div class="photo"><span class="badge pass"><i class="fa-solid fa-ticket"></i>5-day ticket</span></div><div class="in"><div class="nm">Universal Studios</div><div class="pl"><i></i>Universal</div><div class="meta"><span class="cov">With ticket</span><span>♥ 4</span></div></div></div>
+              <div class="pcard"><div class="photo"><span class="badge pass"><i class="fa-solid fa-ticket"></i>5-day ticket</span></div><div class="in"><div class="nm">Islands of Adventure</div><div class="pl"><i></i>Universal</div><div class="meta"><span class="cov">With ticket</span><span>♥ 3</span></div></div></div>
+              <div class="pcard"><div class="photo"><span class="badge pass"><i class="fa-solid fa-ticket"></i>5-day ticket</span></div><div class="in"><div class="nm">Epic Universe</div><div class="pl"><i></i>Universal</div><div class="meta"><span class="cov">With ticket</span><span>♥ 4</span></div></div></div>
+              <div class="pcard"><div class="photo"></div><div class="in"><div class="nm">ICON Park</div><div class="pl"><i></i>I-Drive</div><div class="meta"><span>$32 each</span><span>♥ 1</span></div></div></div>
+            </div>
+          </div>
+          <div class="navstrip"><span class="on">Ideas</span><span>Map</span><span>Plan</span><span>Expenses</span><span>Itinerary</span></div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1c · New idea: "Not a place?" sends you to Expenses</h3>
+        <p class="note">People will still reach for the <b>+</b>. When the search text looks like a cost (<em>rental, ticket, pass, parking, insurance, fee</em>), a row at the top offers to add it as a cost instead. It always appears at the bottom of results too. The Google results stay below it, since a rental counter is a real place.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">New idea</div><div class="t">Find a place</div></div></div>
+          <div class="body">
+            <div class="search"><i class="fa-solid fa-magnifying-glass"></i>rental car<span class="caret"></span></div>
+            <div class="escape">
+              <span class="ic"><i class="fa-solid fa-receipt"></i></span>
+              <div><div class="nm">Add “rental car” as a cost</div><div class="sub">Rentals, tickets and passes go in Expenses, not on the board.</div></div>
+              <span class="go"><i class="fa-solid fa-chevron-right"></i></span>
+            </div>
+            <div class="cap">On Google Maps</div>
+            <div>
+              <div class="srow"><span class="ic"><i class="fa-solid fa-location-dot"></i></span><div><div class="nm">Alamo Rent A Car</div><div class="sub">Orlando International Airport (MCO)</div></div></div>
+              <div class="srow"><span class="ic"><i class="fa-solid fa-location-dot"></i></span><div><div class="nm">Enterprise Rent-A-Car</div><div class="sub">International Dr, Orlando</div></div></div>
+              <div class="srow"><span class="ic"><i class="fa-solid fa-location-dot"></i></span><div><div class="nm">Hertz Car Rental</div><div class="sub">Orlando International Airport (MCO)</div></div></div>
+            </div>
+            <div class="hint">Can't find it? <span style="color:var(--accent);font-weight:600">Add by hand</span> · <span style="color:var(--accent);font-weight:600">Add as a cost</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>1d · A covered park's idea page</h3>
+        <p class="note">On Edit idea, the cost field says who the ticket covers. Anyone it doesn't cover (Jo here) still pays the park's own price, so <b>$139</b> stays for Jo. "Turn off" removes the park from the ticket.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="cap">Edit idea</div><div class="t">Universal Studios</div><div class="s">UNIVERSAL · ADDED BY PRIYA</div></div></div>
+          <div class="body">
+            <div class="field">
+              <div class="cap">How long</div>
+              <div class="input">7h<span class="unit" style="margin-left:auto">FULL DAY</span></div>
+            </div>
+            <div class="field">
+              <div class="cap">Cost</div>
+              <div class="covered">
+                <span class="ic"><i class="fa-solid fa-ticket"></i></span>
+                <div><div class="nm">Universal 5-day ticket</div><div class="sub">COVERS SAM, PRIYA, LEO</div></div>
+                <a href="#expenses">Open</a>
+              </div>
+              <div class="seg"><button type="button" aria-pressed="true">Per person</button><button type="button" aria-pressed="false">For the group</button></div>
+              <div class="input">139<span class="unit" style="margin-left:auto">EACH · WITHOUT A TICKET</span></div>
+              <div class="receipt"><div class="row"><span>3 with the ticket</span><b>$0</b></div><div class="row"><span>1 without (Jo) × $139</span><span>$139</span></div></div>
+            </div>
+            <div class="hint">Ticket covers this park by mistake? <span style="color:var(--accent);font-weight:600">Turn off</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 2 -->
+  <section class="feature" id="expenses">
+    <div class="eyebrow">Section 2</div>
+    <h2>Adding a cost in Expenses</h2>
+    <p class="ask">Expenses gets an <b>Add a cost</b> button. The sheet covers a rental, a ticket or pass, and anything else (parking, a resort fee, insurance). A cost can be paid once or per day, priced per person or for the group, and for everyone or just some of the travelers. The sheet below works: pick a type, change the price, the days or who's going, and the receipt updates.</p>
+
+    <div class="screens">
+      <div class="screen-col">
+        <h3>2a · Expenses, by category</h3>
+        <p class="note">"Rentals & daily" becomes <b>Passes & rentals</b> and leads the list. Each row says who it's for when that isn't everyone.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Orlando</div><div class="s">EXPENSES · 7 DAYS · 4 TRAVELERS</div></div><span class="s">USD</span></div>
+          <div class="body">
+            <div class="card summary"><div><div class="cap">Everyone</div><div class="big">$4,618</div></div><div><div class="cap">Trip total</div><div class="small">$4,618</div></div></div>
+            <div class="seg"><button type="button" aria-pressed="false">By day</button><button type="button" aria-pressed="true">By category</button></div>
+            <div class="card gcard">
+              <div class="gh"><span class="cap">Passes &amp; rentals</span><span class="sum">$1,722</span></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-ticket"></i>Universal 5-day ticket</div><div class="how">MAR 13 – 17 · PAID ONCE · 3 OF 4</div></div><div class="amt">$1,350<small>$450 each</small></div></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-car"></i>Rental car</div><div class="how">MAR 12 – 18 · 6 DAYS × $62</div></div><div class="amt">$372<small>$93 each</small></div></div>
+            </div>
+            <button class="add-cost" type="button"><i class="fa-solid fa-plus"></i>Add a cost</button>
+            <div class="card gcard">
+              <div class="gh"><span class="cap">Lodging</span><span class="sum">$1,680</span></div>
+              <div class="exp-row"><div class="l"><div class="nm">Cabana Bay Beach Resort</div><div class="how">MAR 12 – 18 · 6 NIGHTS × $280</div></div><div class="amt">$1,680<small>$420 each</small></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2b · The Add a cost sheet <span class="rec">interactive</span></h3>
+        <p class="note">One sheet for every kind of cost. The type sets sensible defaults: a rental is per day for the group, and a ticket is once per person with a <em>Covers</em> list. Nothing asks for a region, a map spot or a duration.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="scrim" style="padding-top:40px">
+            <div class="sheet tall">
+              <div class="grab"></div>
+              <div><div class="cap">Expenses</div><div class="t">Add a cost</div></div>
+              <div class="types" role="group" aria-label="What is it" style="grid-template-columns:repeat(3,1fr)">
+                <button class="tchip" type="button" data-type="pass" aria-pressed="true"><i class="fa-solid fa-ticket"></i>Ticket or pass</button>
+                <button class="tchip" type="button" data-type="rental" aria-pressed="false"><i class="fa-solid fa-car"></i>Rental</button>
+                <button class="tchip" type="button" data-type="other" aria-pressed="false"><i class="fa-solid fa-receipt"></i>Other</button>
+              </div>
+              <div class="field"><div class="input"><input id="ac-title" aria-label="Name" value="Universal 5-day ticket"></div></div>
+              <div class="field">
+                <div class="seg" id="ac-per" role="group" aria-label="How often"><button type="button" data-v="once" aria-pressed="true">Once</button><button type="button" data-v="day" aria-pressed="false">Per day</button></div>
+                <div class="seg" id="ac-basis" role="group" aria-label="Price is"><button type="button" data-v="per_head" aria-pressed="true">Per person</button><button type="button" data-v="group" aria-pressed="false">For the group</button></div>
+                <div class="input"><span style="color:var(--text-muted)">$</span><input id="ac-price" inputmode="decimal" aria-label="Price" value="450"><span class="unit" id="ac-unit">EACH</span></div>
+              </div>
+              <div class="two">
+                <label class="field"><span class="cap" id="ac-first-l">First day</span><select class="input" id="ac-first"></select></label>
+                <label class="field"><span class="cap" id="ac-last-l">Last day</span><select class="input" id="ac-last"></select></label>
+              </div>
+              <div class="field">
+                <div class="cap">Who's it for</div>
+                <div class="people" id="ac-who"></div>
+              </div>
+              <div class="field covers" id="ac-covers-wrap">
+                <div class="cap">Covers these ideas</div>
+                <div id="ac-covers"></div>
+              </div>
+              <div class="receipt" id="ac-receipt" aria-live="polite"></div>
+              <div class="sheet-actions"><button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Add cost</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-col">
+        <h3>2c · Expenses, by day</h3>
+        <p class="note">This uses the rules already built for stays. A per-day cost is split into a day's worth under each day. A cost paid once appears in full on its first day. On Mar 13, the parks show <em>with ticket</em> at $0 for the ticket holders, plus Jo's own admission.</p>
+        <div class="phone">
+          <div class="bar"></div>
+          <div class="app-head"><div><div class="t">Orlando</div><div class="s">EXPENSES · BY DAY</div></div><span class="s">USD</span></div>
+          <div class="body">
+            <div class="card gcard">
+              <div class="gh"><span class="cap">Fri Mar 12 · Day 1</span><span class="sum">$342</span></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-car"></i>Rental car</div><div class="how">DAY 1 OF 6 · $62/DAY</div></div><div class="amt">$62</div></div>
+              <div class="exp-row"><div class="l"><div class="nm">Cabana Bay Beach Resort</div><div class="how">NIGHT 1 OF 6 · $280/NIGHT</div></div><div class="amt">$280</div></div>
+            </div>
+            <div class="card gcard">
+              <div class="gh"><span class="cap">Sat Mar 13 · Day 2</span><span class="sum">$1,831</span></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-ticket"></i>Universal 5-day ticket</div><div class="how">PAID ONCE · SAM, PRIYA, LEO</div></div><div class="amt">$1,350<small>$450 each</small></div></div>
+              <div class="exp-row"><div class="l"><div class="nm">Universal Studios</div><div class="how">9:00 AM · WITH TICKET · JO $139</div></div><div class="amt">$139</div></div>
+              <div class="exp-row"><div class="l"><div class="nm"><i class="fa-solid fa-car"></i>Rental car</div><div class="how">DAY 2 OF 6 · $62/DAY</div></div><div class="amt">$62</div></div>
+              <div class="exp-row"><div class="l"><div class="nm">Cabana Bay Beach Resort</div><div class="how">NIGHT 2 OF 6 · $280/NIGHT</div></div><div class="amt">$280</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 3 -->
+  <section class="feature" id="options">
+    <div class="eyebrow">Section 3</div>
+    <h2>Other board options considered</h2>
+    <p class="ask">Three other ways to show these costs on the Ideas board, and why the proposal doesn't use them.</p>
+    <div class="compare">
+      <div class="opt pick">
+        <h4>A · Off the board, badge on covered parks <span class="rec">proposed</span></h4>
+        <p>What sections 1 and 2 show.</p>
+        <ul><li class="pro">The board, map and Plan tray only show places, so nothing needs filtering out</li><li class="pro">The badge explains why a park shows no price</li><li class="con">You can't heart Enterprise vs. Alamo. Write it in the cost's notes or a comment</li></ul>
+      </div>
+      <div class="opt">
+        <h4>B · A "Trip costs" strip above the cards</h4>
+        <p>A thin row of cost cards at the top of the board, like the stays strip in the earlier stays mockup.</p>
+        <ul><li class="pro">Everyone sees the big fixed costs while choosing places</li><li class="con">It's still costs on a board of places, just in a separate row</li><li class="con">Duplicates Expenses, so there are two places to edit the same cost</li></ul>
+      </div>
+      <div class="opt">
+        <h4>C · A "Getting around" type, filtered</h4>
+        <p>What the earlier types mockup drew: the rental car as an idea with a type, hidden behind a filter.</p>
+        <ul><li class="pro">No new screen</li><li class="con">It's still on the map and the Plan tray, with a duration it doesn't have</li><li class="con">Doesn't help with tickets: who it covers, or counting it twice</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature" id="decide">
+    <div class="eyebrow">Decisions</div>
+    <h2>What needs your call</h2>
+    <div class="decide">
+      <div>
+        <h4>Board and entry point</h4>
+        <ol>
+          <li>Off the board with park badges (option A)? <span class="rec">rec</span></li>
+          <li>Show the "Add as a cost" row only when the search text looks like a cost, or always at the top?</li>
+          <li>Should a ticket's badge also appear on the Map's park markers?</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Money rules</h4>
+        <ol>
+          <li>A ticket paid once: show it in full on its first day <span class="rec">rec</span>, or spread across the days it's valid?</li>
+          <li>"Who's it for" on stays too (a second room for part of the group)?</li>
+          <li>Ship <em>Covers these ideas</em> with the rest, or first as a hint only ("this park has its own price")?</li>
+        </ol>
+      </div>
+      <div>
+        <h4>Underneath</h4>
+        <ul>
+          <li>Pins get <code>kind = "expense"</code>, plus <code>expense_type</code> and <code>traveler_ids</code> (null means everyone).</li>
+          <li>Covered ideas: <code>covers_pin_ids</code> on the ticket. The park's price is skipped for the ticket holders.</li>
+          <li>Ideas board, Map, Plan tray, Google review and Compare filter out <code>kind = "expense"</code>.</li>
+          <li><code>dailyCosts.js</code>: counts a ticket paid once without it being on the calendar, and splits only among <code>traveler_ids</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const DAYS = [
+    { n: 1, label: "Fri Mar 12" }, { n: 2, label: "Sat Mar 13" }, { n: 3, label: "Sun Mar 14" }, { n: 4, label: "Mon Mar 15" },
+    { n: 5, label: "Tue Mar 16" }, { n: 6, label: "Wed Mar 17" }, { n: 7, label: "Thu Mar 18" },
+  ];
+  const PEOPLE = [
+    { id: "sam", name: "Sam", tint: "#e7dbe8" }, { id: "priya", name: "Priya", tint: "#dbe7ea" },
+    { id: "leo", name: "Leo", tint: "#e9e2d4" }, { id: "jo", name: "Jo", tint: "#dfe6da" },
+  ];
+  const IDEAS = ["Universal Studios", "Islands of Adventure", "Epic Universe", "Volcano Bay"];
+  const PRESETS = {
+    pass: { title: "Universal 5-day ticket", per: "once", basis: "per_head", price: 450, first: 2, last: 6, who: ["sam", "priya", "leo"], covers: [0, 1, 2] },
+    rental: { title: "Rental car", per: "day", basis: "group", price: 62, first: 1, last: 7, who: ["sam", "priya", "leo", "jo"], covers: [] },
+    other: { title: "Resort parking", per: "day", basis: "group", price: 25, first: 1, last: 7, who: ["sam", "priya", "leo", "jo"], covers: [] },
+  };
+  let s;
+  const $ = (id) => document.getElementById(id);
+  const money = (c) => "$" + (Math.round(c * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const names = () => PEOPLE.filter((p) => s.who.includes(p.id)).map((p) => p.name);
+
+  function load(type) {
+    s = { type, ...structuredClone(PRESETS[type]) };
+    $("ac-title").value = s.title;
+    $("ac-price").value = s.price;
+    document.querySelectorAll("[data-type]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.type === type));
+    render();
+  }
+  function fillDays() {
+    $("ac-first").innerHTML = DAYS.map((d) => `<option value="${d.n}" ${d.n === s.first ? "selected" : ""}>${d.label}</option>`).join("");
+    $("ac-last").innerHTML = DAYS.filter((d) => d.n >= s.first).map((d) => `<option value="${d.n}" ${d.n === s.last ? "selected" : ""}>${d.label}</option>`).join("");
+  }
+  function render() {
+    fillDays();
+    $("ac-first-l").textContent = s.type === "rental" ? "Pick up" : s.type === "pass" ? "First day used" : "First day";
+    $("ac-last-l").textContent = s.type === "rental" ? "Drop off" : s.type === "pass" ? "Last day used" : "Last day";
+    $("ac-per").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === s.per));
+    $("ac-basis").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === s.basis));
+    $("ac-unit").textContent = (s.basis === "group" ? "GROUP" : "EACH") + (s.per === "day" ? " / DAY" : "");
+    $("ac-who").innerHTML = PEOPLE.map((p) => `<button type="button" class="person" data-p="${p.id}" aria-pressed="${s.who.includes(p.id)}"><span class="av" style="background:${p.tint}">${p.name[0]}</span>${p.name}</button>`).join("");
+    $("ac-covers-wrap").hidden = s.type !== "pass";
+    $("ac-covers").innerHTML = IDEAS.map((t, i) => `<div class="list-row" data-c="${i}" role="checkbox" tabindex="0" aria-checked="${s.covers.includes(i)}"><span class="check ${s.covers.includes(i) ? "on" : ""}">${s.covers.includes(i) ? '<i class="fa-solid fa-check"></i>' : ""}</span><span class="nm">${t}</span><span class="n">$${i === 3 ? 89 : 139} each</span></div>`).join("");
+
+    const n = s.who.length;
+    const price = Number(s.price) || 0;
+    const days = s.per === "day" ? Math.max(1, s.last - s.first) : 1;
+    const unit = "day";
+    let rows;
+    if (!n) rows = [["Nobody picked yet", "$0"]];
+    else if (s.basis === "group") {
+      const total = price * days;
+      rows = [[s.per === "day" ? `${days} ${unit}${days === 1 ? "" : "s"} × ${money(price)}` : "Paid once", money(total) + " group"], [`÷ ${n} going`, money(total / n) + " each"]];
+    } else {
+      const each = price * days;
+      rows = [[s.per === "day" ? `${days} ${unit}${days === 1 ? "" : "s"} × ${money(price)}` : "Paid once", money(each) + " each"], [`× ${n} going`, money(each * n) + " group"]];
+    }
+    if (n && n < PEOPLE.length) rows.push(["For", names().join(", ")]);
+    if (s.type === "pass" && s.covers.length && n) {
+      const saved = s.covers.reduce((sum, i) => sum + (i === 3 ? 89 : 139), 0) * n;
+      rows.push([`Park prices no longer counted`, "–" + money(saved)]);
+    }
+    $("ac-receipt").innerHTML = rows.map(([l, r], i) => `<div class="row"><span>${l}</span>${i === 0 ? `<b>${r}</b>` : `<span>${r}</span>`}</div>`).join("");
+  }
+
+  document.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => load(b.dataset.type)));
+  $("ac-per").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { s.per = b.dataset.v; render(); } });
+  $("ac-basis").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { s.basis = b.dataset.v; render(); } });
+  $("ac-price").addEventListener("input", (e) => { s.price = e.target.value; render(); });
+  $("ac-first").addEventListener("change", (e) => { s.first = Number(e.target.value); if (s.last < s.first) s.last = s.first; render(); });
+  $("ac-last").addEventListener("change", (e) => { s.last = Number(e.target.value); render(); });
+  $("ac-who").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-p]"); if (!b) return;
+    const id = b.dataset.p;
+    s.who = s.who.includes(id) ? s.who.filter((x) => x !== id) : [...s.who, id];
+    render();
+  });
+  function toggleCover(e) {
+    const r = e.target.closest("[data-c]"); if (!r) return;
+    if (e.type === "keydown" && e.key !== " " && e.key !== "Enter") return;
+    e.preventDefault();
+    const i = Number(r.dataset.c);
+    s.covers = s.covers.includes(i) ? s.covers.filter((x) => x !== i) : [...s.covers, i];
+    render();
+    document.querySelector(`[data-c="${i}"]`)?.focus();
+  }
+  $("ac-covers").addEventListener("click", toggleCover);
+  $("ac-covers").addEventListener("keydown", toggleCover);
+  load("pass");
+})();
+</script>
