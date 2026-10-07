@@ -217,7 +217,7 @@ export default function Expenses() {
               }}
             >
               <FontAwesomeIcon icon={faPlus} style={{ width: 11, height: 11 }} />
-              Add a ticket, pass or rental
+              Add an expense
             </button>
           )}
 
@@ -245,7 +245,7 @@ export default function Expenses() {
                 color: "var(--text-secondary)",
               }}
             >
-              Nothing on the calendar costs anything yet. Add a cost to a visit, or a ticket or rental above, and it shows up here.
+              Nothing on the calendar costs anything yet. Add a cost to a visit, or add an expense above, and it shows up here.
             </div>
           )}
 
