@@ -527,7 +527,7 @@ export default function EditVisit() {
 
       <div className="screen-scroll" style={{ paddingBottom: 24 }}>
 
-        <PhotoPlaceholder height={150} label="photo placeholder" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} alt={pin.title}>
+        <PhotoPlaceholder height={150} label="photo placeholder" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} onError={photo.onError} alt={pin.title}>
           {canEdit ? (
             // Positioned so it draws above the photo, which PhotoPlaceholder
             // lays over the whole box; otherwise the photo swallows the tap.
