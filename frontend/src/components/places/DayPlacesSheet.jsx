@@ -44,6 +44,7 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
   const { movedFrom } = stayRun(dayPlaces, dates, index);
   const onCalendar = useMemo(() => calendarPlacesOnDay(plans, pins, index + 1), [plans, pins, index]);
   const listed = placeNames(day);
+  const stayedAt = useMemo(() => [...new Set(Object.values(dayPlaces).map((d) => d?.lodgingPinId).filter((id) => id != null))], [dayPlaces]);
 
   async function save(next) {
     setError("");
@@ -100,6 +101,7 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
             day={day}
             pins={pins}
             lastNight={samePlace(yesterday.stay, day.stay) ? pins[yesterday.lodgingPinId] ?? null : null}
+            stayedAt={stayedAt}
             onPick={(pinId) => save(withLodging(day, pinId))}
           />
         ) : null}

@@ -128,3 +128,11 @@ test("an expense for everyone is everyone's, said without initials", () => {
   assert.equal(rows[0].totalCents, 19500);
   assert.equal(rows[0].sharersLabel, "");
 });
+
+test("an idea picked as where you're staying is lodging even when it isn't marked as a stay", () => {
+  const hotel = { ...CAR, id: 5, title: "Hotel Xcaret" };
+  const { rows } = buildDailyCosts({ 5: hotel, 7: HOTEL }, { dayPlaces: staying(5, [1, 2]), days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
+  assert.equal(rows.find((r) => r.pinId === 5).lodging, true);
+  const unpicked = buildDailyCosts({ 5: hotel }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
+  assert.equal(unpicked.rows[0].lodging, false);
+});
