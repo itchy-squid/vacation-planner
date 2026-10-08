@@ -140,7 +140,10 @@ export function buildExpenses(plans, { trip, travelers, shownIds, daily = [] }) 
 
   const priced = rows.filter((r) => r.totalCents > 0);
   const free = rows.filter((r) => r.totalCents === 0);
-  const dailyRows = daily.map((row) => ({ ...row, category: row.kind === "stay" ? "lodging" : "daily" }));
+  // Only an expense (a ticket, a rental) is a pass or rental; a hotel
+  // that isn't marked as a stay but is where you're staying is lodging,
+  // and any other idea paid by the day is an activity.
+  const dailyRows = daily.map((row) => ({ ...row, category: row.lodging || row.kind === "stay" ? "lodging" : row.kind === "expense" ? "daily" : "activities" }));
 
   // By day. A day's worth of a stay or rental has no time, so it leads
   // its day.

@@ -153,6 +153,9 @@ export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travele
         pinId: pin.id,
         title: pin.title,
         kind: pin.kind,
+        // Where the group sleeps: marked as a stay, or picked as where
+        // you're staying on some night even though it isn't marked one.
+        lodging: pin.kind === "stay" || (pin.kind !== "expense" && nightsAt(dayPlaces ?? {}, tripDays ?? [], pin.id).length > 0),
         expenseType: pin.expenseType ?? null,
         costPer: pin.costPer ?? "once",
         first: days.first,
