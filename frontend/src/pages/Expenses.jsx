@@ -447,9 +447,7 @@ function WaitingForDays({ items, tripId, onOpenCost }) {
               {item.title}
             </Link>
           )}{" "}
-          {item.kind === "stay"
-            ? "isn’t picked as where you’re staying on any night."
-            : item.kind === "expense"
+          {item.kind === "expense"
             ? "has no days picked."
             : "is paid by the day but has no days picked."}
         </div>
