@@ -3,7 +3,7 @@ import BottomSheet from "../core/BottomSheet";
 import PlaceChips from "./PlaceChips";
 import LodgingChips from "./LodgingChips";
 import { useKnownRegions } from "../map/useKnownRegions";
-import { usePlannerDispatch, usePlannerState } from "../../state/PlannerContext";
+import { useIdeaAccess, usePlannerDispatch, usePlannerState } from "../../state/PlannerContext";
 import { tripDayTitle } from "../../data/trip";
 import {
   NO_PLACES,
@@ -35,6 +35,7 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
   const dispatch = usePlannerDispatch();
   const { dayPlaces, plans, pins, trip } = usePlannerState();
   const names = useKnownRegions();
+  const { canEditIdea } = useIdeaAccess();
   const [error, setError] = useState("");
 
   const dates = useMemo(() => tripDayNumbers(trip), [trip]);
@@ -51,6 +52,18 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
     const result = await dispatch({ type: "SAVE_DAY_PLACES", days: { [date]: next } });
     if (!result?.ok) setError(result?.error ? `Couldn’t save: ${result.error}` : "Couldn’t save. Try again.");
     return result;
+  }
+
+  // An idea picked as where you're staying becomes a stay, so its price
+  // is counted for the nights it's picked and no others (lib/dailyCosts.js)
+  // — switch hotels and the old one's cost goes with it. One that's on the
+  // plan can't be a stay (backend routers/pins.py), so it stays as it is.
+  async function pickLodging(pinId) {
+    const result = await save(withLodging(day, pinId));
+    const pin = pins[pinId];
+    if (result?.ok && pin && pin.kind === "activity" && canEditIdea(pin)) {
+      await dispatch({ type: "PATCH_PIN", id: pin.id, fields: { kind: "stay" } });
+    }
   }
 
   async function clearDay() {
@@ -102,7 +115,7 @@ export default function DayPlacesSheet({ index, onStep, onClose, onCleared }) {
             pins={pins}
             lastNight={samePlace(yesterday.stay, day.stay) ? pins[yesterday.lodgingPinId] ?? null : null}
             stayedAt={stayedAt}
-            onPick={(pinId) => save(withLodging(day, pinId))}
+            onPick={pickLodging}
           />
         ) : null}
 

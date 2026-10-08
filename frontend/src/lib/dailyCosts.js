@@ -16,7 +16,8 @@
 //   anything     its own first and last day (costStartDay/costEndDay),
 //   else         at least one day's worth even when they're the same day.
 //
-// A stay paid once counts once, if it's booked for any night at all.
+// A stay paid once counts once, if it's booked for any night at all. A
+// stay that isn't picked for any night isn't counted or listed at all.
 //
 // An expense (a park ticket, a rental car: a pin that isn't a place) is
 // counted here too, paid once or by the day, since it's never on the
@@ -135,7 +136,9 @@ export function buildDailyCosts(pins, { dayPlaces, days: tripDays, trip, travele
       if (pin.costCents == null) return; // a price this viewer can't see
       const days = chargedDays(pin, { dayPlaces, days: tripDays, trip });
       if (!days.count) {
-        if (pin.costCents > 0) waiting.push({ key: `daily-${pin.id}`, pinId: pin.id, title: pin.title, kind: pin.kind });
+        // A stay not picked for any night isn't where you're staying, so
+        // it costs nothing and isn't listed.
+        if (pin.costCents > 0 && pin.kind !== "stay") waiting.push({ key: `daily-${pin.id}`, pinId: pin.id, title: pin.title, kind: pin.kind });
         return;
       }
       const sharers = sharersOf(pin, travelers);
