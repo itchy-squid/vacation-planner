@@ -116,7 +116,10 @@ Google photo:
   when the idea's place changes (`routers/pins.py _settle_photo`)
 - is looked up fresh when shown (`components/photos/usePinPhoto.js`). Both
   the place lookup and each photo shown are billed, so a place's photos are
-  kept in memory for 30 minutes
+  kept in memory for 30 minutes and in the browser's localStorage for a day
+  (`lib/photoCache.js`), so a reload or a new tab doesn't look them up
+  again. Google's photo links can expire before that, so a photo that won't
+  load forgets its place and looks it up again, once
 - shows "Google Maps · <photographer>" wherever it's drawn
   (`components/photos/PhotoCredit.jsx`): on the board card, the idea's page
   and the Map tab's sheet. The small thumbnails with no room for that (map

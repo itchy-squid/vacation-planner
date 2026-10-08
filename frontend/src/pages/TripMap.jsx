@@ -398,16 +398,19 @@ function SheetHeader({ onClear, children }) {
 // won't load (it can be hotlinked), and the band is left out rather than
 // shown as a placeholder, so the map keeps the room.
 function SheetPhoto({ pin }) {
-  const { src, credit, referrerPolicy } = usePinPhoto(pin);
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) return null;
+  const { src, credit, referrerPolicy, onError } = usePinPhoto(pin);
+  const [failed, setFailed] = useState(null); // the src that wouldn't load
+  if (!src || failed === src) return null;
   return (
     <div style={{ position: "relative" }}>
       <img
         src={src}
         alt={pin.title}
         referrerPolicy={referrerPolicy}
-        onError={() => setFailed(true)}
+        onError={() => {
+          setFailed(src);
+          onError?.();
+        }}
         style={{ display: "block", width: "100%", height: 116, objectFit: "cover", borderRadius: "var(--radius-lg)", background: "var(--pattern-photo)" }}
       />
       <PhotoCredit credit={credit} overlay />

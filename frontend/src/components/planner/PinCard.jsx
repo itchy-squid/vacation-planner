@@ -48,7 +48,7 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
         cursor: "pointer",
       }}
     >
-      <PhotoPlaceholder height={photoHeight} label="photo" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} alt={pin.title}>
+      <PhotoPlaceholder height={photoHeight} label="photo" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} onError={photo.onError} alt={pin.title}>
         {pass ? (
           <div
             title={`Covered by ${pass.title}`}

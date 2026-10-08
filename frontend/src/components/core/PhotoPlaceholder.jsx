@@ -16,8 +16,9 @@ import PhotoCredit from "../photos/PhotoCredit";
 // `credit` names who took a Google photo (components/photos/usePinPhoto.js);
 // Google requires it wherever the photo is shown, so it's drawn over the
 // photo's corner, and it's loaded with `referrerPolicy` (usePinPhoto.js says
-// which).
-export default function PhotoPlaceholder({ height = 112, label = "photo", dark = false, radius, src, alt = "", credit, referrerPolicy = "no-referrer", children }) {
+// which). `onError` is told when the photo won't load, after it falls back
+// to the texture (usePinPhoto.js uses it to look a Google photo up again).
+export default function PhotoPlaceholder({ height = 112, label = "photo", dark = false, radius, src, alt = "", credit, referrerPolicy = "no-referrer", onError, children }) {
   // A pin's photo is hotlinked from someone else's site, so it can 404,
   // hotlink-block, or go behind a login long after it was picked. Falling
   // back to the texture keeps that a non-event rather than a broken-image
@@ -44,7 +45,10 @@ export default function PhotoPlaceholder({ height = 112, label = "photo", dark =
           alt={alt}
           loading="lazy"
           referrerPolicy={referrerPolicy}
-          onError={() => setFailed(true)}
+          onError={() => {
+            setFailed(true);
+            onError?.();
+          }}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (

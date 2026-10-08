@@ -3,7 +3,7 @@ import TextField from "../forms/TextField";
 import { api } from "../../lib/api";
 import { externalHref } from "../../lib/externalHref";
 import { googleImageLink, isGoogleMapsLink } from "../../lib/googleImageLink";
-import { placePhotos } from "../../lib/placePhotos";
+import { forgetPlacePhotos, placePhotos } from "../../lib/placePhotos";
 import { isMapsConfigured } from "../../lib/googleMaps";
 import PhotoCredit from "./PhotoCredit";
 import { GOOGLE_REFERRER_POLICY } from "./usePinPhoto";
@@ -101,7 +101,10 @@ export default function PhotoPicker({ tripId, link, placeId = null, photoUrl, go
                 setPasting(false);
                 onPick("", "", "google", tile.index);
               }}
-              onBroken={() => setBroken((prev) => new Set(prev).add(tile.src))}
+              onBroken={() => {
+                setBroken((prev) => new Set(prev).add(tile.src));
+                google.retry(tile.src);
+              }}
             />
           ))}
         </div>
@@ -160,10 +163,13 @@ export default function PhotoPicker({ tripId, link, placeId = null, photoUrl, go
 }
 
 // A place's Google photos, looked up when the picker opens:
-// { placeId, photos } once loaded ({ failed: true } if that failed), null
-// while looking or with no place.
+// { placeId, photos, retry } once loaded ({ failed: true } if that failed),
+// null while looking or with no place. retry is for a photo that won't load:
+// its link may have expired while the lookup was stored (lib/photoCache.js),
+// so the first one forgets the place and looks it up again.
 function useGooglePhotos(placeId) {
   const [found, setFound] = useState(null);
+  const [retried, setRetried] = useState(null); // the place looked up again
   useEffect(() => {
     if (!placeId) return undefined;
     let cancelled = false;
@@ -173,8 +179,14 @@ function useGooglePhotos(placeId) {
     return () => {
       cancelled = true;
     };
-  }, [placeId]);
-  return placeId && found?.placeId === placeId ? found : null;
+  }, [placeId, retried]);
+  if (!placeId || found?.placeId !== placeId) return null;
+  const retry = (src) => {
+    if (retried === placeId) return;
+    forgetPlacePhotos(placeId, src);
+    setRetried(placeId);
+  };
+  return { ...found, retry };
 }
 
 // Each photographer once, for the credit line under the Google row.
