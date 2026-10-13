@@ -5,13 +5,13 @@ import { dayPlacesOf, placePlan, setDayPlaces } from "../support/seed.js";
 
 // "Where we'll be" (backend routers/day_places.py): the place the group
 // stays in each day, plus any day trips. Set from the whole-trip list
-// (reached from the Plan tab's "All days ›"), one day or several at once,
+// (reached from the places line in the Plan tab's day header), one day or several at once,
 // and cleared with Undo.
 const placesUrl = (trip) => `/trips/${trip.id}/places`;
 const dayRow = (page, day) => page.getByRole("button", { name: new RegExp(`^Day ${day},`) });
 
 test.describe("where we'll be", () => {
-  test("sets a day's stay and day trips via the Plan tab's All days", async ({ page, api, seed }) => {
+  test("sets a day's stay and day trips via the Plan tab's places line", async ({ page, api, seed }) => {
     const trip = await seed({
       pins: [
         { title: "Yehliu Geopark", region: "North Coast" },
@@ -25,7 +25,7 @@ test.describe("where we'll be", () => {
 
     // Places are edited from "Where we'll be", not the day header.
     await expect(page.getByRole("button", { name: /^(Set|Edit) places$/ })).toHaveCount(0);
-    await page.getByRole("button", { name: "All days ›" }).click();
+    await page.getByRole("button", { name: /, all days$/ }).click();
     await dayRow(page, 2).click();
     const sheet = page.getByRole("dialog", { name: "Day 2 places" });
     await sheet.getByRole("group", { name: /Staying in/ }).getByRole("button", { name: "Taipei", exact: true }).click();
