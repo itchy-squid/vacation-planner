@@ -1,0 +1,576 @@
+<title>Day Notes &amp; Idea Types</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: mockup sheet — copy on the left, phones on the right, one concept per row, matching earlier mockup docs */
+:root{
+  --pg:#eeedf1; --pg-text:#1b1a1f; --pg-sub:#5d5b66; --pg-rule:rgba(27,26,31,.12); --pg-card:#ffffff;
+  --pg-accent:#8f4478; --pg-accent-soft:rgba(143,68,120,.1);
+  /* app tokens (phones always render the app's light UI) */
+  --a-page:#f4f3f5; --a-card:#fff; --a-inset:#f9f8fa; --a-sunk:#ecebef; --a-ink:#1b1a1f; --a-2:#6f6d78; --a-mute:#8c8a95;
+  --a-hair:rgba(27,26,31,.09); --a-border:rgba(27,26,31,.12); --a-stone:#d9d7de;
+  --a-plum:#8f4478; --a-plum-tint:rgba(143,68,120,.08);
+  --a-teal:#3d8a9c; --a-teal-tint:rgba(61,138,156,.1); --a-teal-line:rgba(61,138,156,.32);
+  --a-note:#fbf3d9; --a-note-line:#e7d49a; --a-note-ink:#6b5719;
+  --a-photo:repeating-linear-gradient(45deg,#e4e2e8 0 8px,#edecf0 8px 16px);
+  --a-photo-teal:repeating-linear-gradient(45deg,#d8e7eb 0 8px,#e4eff2 8px 16px);
+  --sans:"Libre Franklin",system-ui,sans-serif; --serif:"Newsreader",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){color-scheme:dark;--pg:#16151a;--pg-text:#efedf2;--pg-sub:#a6a3ae;--pg-rule:rgba(255,255,255,.12);--pg-card:#211f26;--pg-accent:#d08bbb;--pg-accent-soft:rgba(208,139,187,.14)}
+}
+:root[data-theme="dark"]{color-scheme:dark;--pg:#16151a;--pg-text:#efedf2;--pg-sub:#a6a3ae;--pg-rule:rgba(255,255,255,.12);--pg-card:#211f26;--pg-accent:#d08bbb;--pg-accent-soft:rgba(208,139,187,.14)}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--pg);color:var(--pg-text);font:15px/1.55 var(--sans);padding:0 16px;margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding-block:40px 64px}
+h1{font:500 clamp(30px,5vw,44px)/1.1 var(--serif);margin:0 0 12px;text-wrap:balance}
+h2{font:500 26px/1.2 var(--serif);margin:0 0 6px;text-wrap:balance}
+.part{font:500 clamp(24px,4vw,32px)/1.15 var(--serif);margin:56px 0 4px;text-wrap:balance}
+.eyebrow{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--pg-accent)}
+.lede{max-width:66ch;color:var(--pg-sub);margin:0}
+.lede strong{color:var(--pg-text);font-weight:600}
+.pick{margin-top:22px;background:var(--pg-card);border:1px solid var(--pg-rule);border-radius:14px;padding:16px 18px;max-width:760px}
+.pick p{margin:6px 0 0;color:var(--pg-sub)}
+.pick b{color:var(--pg-text)}
+section{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:36px;align-items:start;padding-block:40px;border-top:1px solid var(--pg-rule)}
+.copy{min-width:0}
+.copy p{max-width:62ch;margin:10px 0 0}
+.copy ul{margin:12px 0 0;padding-left:18px;max-width:60ch;display:grid;gap:6px}
+.copy li::marker{color:var(--pg-accent)}
+.tag{display:inline-block;font:500 11px var(--mono);padding:3px 8px;border-radius:999px;background:var(--pg-accent-soft);color:var(--pg-accent);margin-left:8px;vertical-align:middle}
+.effort{font:400 12px var(--mono);color:var(--pg-sub);margin-top:14px}
+.hint{font:500 12px var(--sans);color:var(--pg-accent);margin-top:14px}
+.phones{display:flex;gap:18px;flex-wrap:wrap}
+@media (max-width:760px){section{grid-template-columns:1fr}.phones{justify-content:center}}
+
+/* ---------- phone ---------- */
+.phone{width:300px;max-width:100%;height:600px;border-radius:34px;background:#1b1a1f;padding:9px;box-shadow:0 20px 40px -18px rgba(0,0,0,.35);flex:none}
+.scr{position:relative;height:100%;border-radius:26px;overflow:hidden;background:var(--a-page);color:var(--a-ink);font-family:var(--sans);display:flex;flex-direction:column}
+.cap{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--pg-sub);text-align:center;margin-top:10px}
+.hdr{display:flex;align-items:center;gap:6px;padding:16px 12px 4px}
+.hdr .name{flex:1;font:400 19px/1.2 var(--serif);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ibtn{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--a-2);font-size:17px}
+.mc{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--a-mute)}
+.mc.geo{color:var(--a-teal)}
+.body{flex:1;overflow:hidden;padding:6px 12px 0;display:flex;flex-direction:column;gap:9px;min-height:0}
+.nav{background:#111;display:flex;justify-content:center;gap:2px;padding:9px 0 16px;flex:none}
+.nav span{font:13px system-ui,sans-serif;color:rgba(255,255,255,.6);padding:0 8px}
+.nav span.on{color:#c77fb0}
+button{font-family:inherit;color:inherit}
+button:focus-visible,textarea:focus-visible{outline:2px solid var(--a-plum);outline-offset:2px}
+.row{display:flex;align-items:center;gap:8px}
+.link{font:500 11px var(--sans);color:var(--a-plum);background:none;border:0;padding:0;cursor:pointer}
+
+/* day chips */
+.days{display:flex;gap:5px}
+.dchip{flex:1;position:relative;background:var(--a-card);border:1px solid var(--a-hair);border-radius:10px;padding:5px 0 6px;text-align:center}
+.dchip b{display:block;font:600 13px var(--sans)}
+.dchip small{display:block;font:500 8.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--a-mute)}
+.dchip.on{background:var(--a-plum);border-color:var(--a-plum);color:#fff}
+.dchip.on small{color:rgba(255,255,255,.75)}
+.dchip .nd{position:absolute;top:4px;right:5px;width:6px;height:6px;border-radius:2px;background:#d8b84a}
+.dchip.on .nd{background:#f3dc8a}
+
+/* calendar grid */
+.grid{position:relative;flex:1;min-height:0;background:var(--a-card);border:1px solid var(--a-hair);border-radius:12px;overflow:hidden}
+.hr{position:absolute;left:0;right:0;border-top:1px solid var(--a-hair);height:0}
+.hr span{position:absolute;left:6px;top:2px;font:400 9px var(--mono);color:var(--a-mute)}
+.blk{position:absolute;left:38px;right:8px;border-radius:8px;padding:5px 7px;font:600 11px/1.25 var(--sans);overflow:hidden}
+.blk small{display:block;font:400 9.5px var(--mono);color:var(--a-2);margin-top:1px;font-weight:400}
+.blk.loc{background:var(--a-teal-tint);border:1px solid var(--a-teal-line)}
+.blk.free{background:var(--a-inset);border:1px solid var(--a-border)}
+.blk.plain{background:var(--a-plum-tint);border:1px solid rgba(143,68,120,.22)}
+.blk .t{display:flex;align-items:center;gap:4px}
+.blk .t span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* pin glyphs */
+.pg{width:10px;height:13px;flex:none;display:inline-block}
+.pg.solid path{fill:var(--a-teal)}
+.pg.solid circle{fill:#fff}
+.pg.hollow path{fill:none;stroke:var(--a-mute);stroke-width:1.5}
+.pg.hollow line{stroke:var(--a-mute);stroke-width:1.5}
+
+/* ---- notes A1 ---- */
+.note{background:var(--a-note);border:1px solid var(--a-note-line);border-radius:10px;padding:8px 10px;color:var(--a-note-ink);font:400 11.5px/1.45 var(--sans);cursor:text}
+.note .k{display:flex;align-items:center;justify-content:space-between;font:500 9px var(--mono);letter-spacing:.07em;text-transform:uppercase;margin-bottom:3px}
+.note .k em{font-style:normal;text-transform:none;letter-spacing:0;font:400 9.5px var(--sans);opacity:.8}
+.note textarea{width:100%;border:0;background:transparent;resize:none;font:inherit;color:inherit;padding:0;height:52px;outline:none}
+.note.empty{background:transparent;border:1.5px dashed var(--a-border);color:var(--a-mute);text-align:left;width:100%;cursor:pointer}
+.note .more{color:var(--a-plum);font-weight:600}
+
+/* ---- notes A2 ---- */
+.mnote{position:absolute;left:38px;right:8px;display:flex;align-items:flex-start;gap:5px;font:400 10.5px/1.3 var(--sans);color:var(--a-note-ink);background:var(--a-note);border:1px solid var(--a-note-line);border-radius:6px;padding:3px 6px;z-index:2}
+.mnote::before{content:"";position:absolute;left:-30px;top:8px;width:28px;border-top:1.5px dotted #c9ae55}
+.mnote b{font-weight:600}
+.allday{background:var(--a-note);border:1px solid var(--a-note-line);color:var(--a-note-ink);border-radius:8px;padding:5px 8px;font:400 10.5px/1.35 var(--sans);display:flex;gap:6px}
+.allday .mc{color:var(--a-note-ink);opacity:.8;flex:none;padding-top:1px}
+
+/* ---- notes A3 ---- */
+.list{background:var(--a-card);border:1px solid var(--a-hair);border-radius:14px;overflow:hidden}
+.li{padding:9px 11px;border-top:1px solid var(--a-hair)}
+.li:first-child{border-top:0}
+.li .top{display:flex;align-items:baseline;gap:8px}
+.li .top b{font:600 12.5px var(--sans)}
+.li .top .mc{margin-left:auto}
+.li .pl{font:400 10.5px var(--sans);color:var(--a-teal);margin-top:1px}
+.li .nt{margin-top:6px;font:400 11px/1.4 var(--sans);color:var(--a-note-ink);background:var(--a-note);border-radius:7px;padding:5px 7px}
+.li .add{margin-top:5px;font:500 10.5px var(--sans);color:var(--a-mute)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--a-card);border-radius:18px 18px 0 0;padding:10px 14px 18px;box-shadow:0 -6px 22px rgba(27,26,31,.12)}
+.sheet .grab{width:34px;height:4px;border-radius:2px;background:var(--a-stone);margin:0 auto 10px}
+.dim{position:absolute;inset:0;background:rgba(27,26,31,.28)}
+.sheet h4{margin:0;font:400 18px var(--serif)}
+.sheet textarea{width:100%;margin-top:8px;height:86px;border:1px solid var(--a-border);border-radius:10px;padding:8px 10px;font:400 12.5px/1.45 var(--sans);background:var(--a-inset);color:var(--a-ink);resize:none}
+.btn{height:38px;border-radius:11px;background:var(--a-plum);color:#fff;font:600 12.5px var(--sans);border:0;display:flex;align-items:center;justify-content:center;width:100%;cursor:pointer;margin-top:10px}
+.who{font:400 10px var(--sans);color:var(--a-mute);margin-top:6px}
+
+/* ---- idea cards ---- */
+.mas{display:flex;gap:8px}
+.mas>div{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+.card{position:relative;background:var(--a-card);border:1px solid var(--a-hair);border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(27,26,31,.04)}
+.card .ph{position:relative;background:var(--a-photo);height:78px}
+.mas>div:nth-child(2) .card .ph{height:104px}
+.card .tt{font:600 11.5px/1.3 var(--sans);padding:7px 8px 0}
+.card .rg{display:flex;align-items:center;gap:4px;font:400 10px var(--sans);color:var(--a-2);padding:2px 8px 0}
+.card .ft{font:400 9.5px var(--mono);color:var(--a-2);padding:4px 8px 8px}
+.badge{position:absolute;top:6px;left:6px;display:inline-flex;align-items:center;gap:3px;padding:2px 7px 2px 5px;border-radius:999px;font:600 9px var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.badge.on{background:var(--a-teal);color:#fff}
+.badge.on .pg path{fill:#fff}
+.badge.on .pg circle{fill:var(--a-teal)}
+.badge.off{background:rgba(255,255,255,.92);color:var(--a-2)}
+.heart{position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.9);display:grid;place-items:center;font-size:10px;color:var(--a-plum)}
+
+/* B2 shelves */
+.seg{display:flex;background:var(--a-sunk);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;border-radius:8px;padding:5px 0;font:600 11px var(--sans);color:var(--a-2);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}
+.seg button[aria-pressed="true"]{background:var(--a-card);color:var(--a-ink);box-shadow:0 1px 3px rgba(27,26,31,.1)}
+.seg .n{font:500 9.5px var(--mono);color:var(--a-mute)}
+.shelfh{display:flex;align-items:center;gap:6px}
+.shelfh::after{content:"";flex:1;height:1px;background:var(--a-hair)}
+.strip{display:flex;flex-direction:column;background:var(--a-card);border:1px solid var(--a-hair);border-radius:12px;overflow:hidden}
+.srow{display:flex;gap:9px;align-items:center;padding:8px 10px;border-top:1px solid var(--a-hair)}
+.srow:first-child{border-top:0}
+.srow .sq{width:34px;height:34px;border-radius:8px;background:var(--a-photo);flex:none}
+.srow b{display:block;font:600 11.5px var(--sans)}
+.srow small{display:block;font:400 10px var(--sans);color:var(--a-2)}
+.srow .fix{margin-left:auto;font:500 10px var(--sans);color:var(--a-plum);flex:none}
+
+/* B3 ticket cards */
+.card.spot{border-color:var(--a-teal-line)}
+.card.spot .ph{background:var(--a-photo-teal)}
+.card.spot .rg{color:var(--a-teal)}
+.card.tick{background:var(--a-inset);border:1.5px dashed var(--a-border);box-shadow:none}
+.card.tick .ph{height:auto !important;background:none;padding:9px 8px 0;display:flex;align-items:center;gap:6px}
+.card.tick .ph .ico{width:26px;height:26px;border-radius:7px;background:var(--a-sunk);display:grid;place-items:center;font:600 11px var(--sans);color:var(--a-2)}
+.card.tick .ph .heart{position:static;margin-left:auto;background:var(--a-card)}
+.card.tick .tt{padding-top:6px}
+.legend{display:flex;gap:12px;font:400 10px var(--sans);color:var(--a-2)}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.sw{width:12px;height:9px;border-radius:3px;display:inline-block}
+.sw.a{background:var(--a-teal-tint);border:1px solid var(--a-teal-line)}
+.sw.b{background:var(--a-inset);border:1.5px dashed var(--a-border)}
+
+/* summary table */
+.tbl{overflow-x:auto;margin-top:18px}
+table{border-collapse:collapse;min-width:620px;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--pg-rule);vertical-align:top}
+th{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--pg-sub)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="pin" viewBox="0 0 12 16"><path d="M6 .8C3.1.8.8 3.1.8 5.9c0 3.9 5.2 9.2 5.2 9.2s5.2-5.3 5.2-9.2C11.2 3.1 8.9.8 6 .8z"/><circle cx="6" cy="6" r="2"/></symbol>
+    <symbol id="nopin" viewBox="0 0 12 16"><path d="M6 .8C3.1.8.8 3.1.8 5.9c0 3.9 5.2 9.2 5.2 9.2s5.2-5.3 5.2-9.2C11.2 3.1 8.9.8 6 .8z"/><line x1="1.5" y1="14" x2="10.5" y2="1.5"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <div class="eyebrow">Vacation planner · mockups</div>
+  <h1>Day notes, and telling pinned ideas apart</h1>
+  <p class="lede">Two asks. <strong>Notes on a calendar day</strong>: somewhere to write “Bring passports, ferry leaves 7:40” against Day 3. <strong>Pinned vs. unpinned ideas</strong>: an idea with an exact map spot and one without (a Viator tour, “find a good taco place”) look almost identical today. The only difference is an 8.5px label at the bottom of the card.</p>
+  <div class="pick">
+    <div class="eyebrow">If I had to pick</div>
+    <p><b>A1 + A3 for notes</b>: a note card under the day header on the Plan tab, a small dot on the day chips for days that have one, and the same notes shown in the “All days” list. <b>B1 for ideas</b>: a solid teal pin badge on pinned cards and a hollow “No spot” badge on the rest, with the same pin mark carried onto calendar blocks. It's the smallest change, and it works the same way on the board, the calendar and the Add list.</p>
+  </div>
+
+  <div class="part">A · Notes on a day</div>
+  <p class="lede">Each note belongs to a day of the trip (Day 3, not Mar 14), so it moves with the plan the way places and plans already do when dates shift.</p>
+
+  <!-- A1 -->
+  <section>
+    <div class="copy">
+      <h2>A1 · Note card under the day header <span class="tag">recommended</span></h2>
+      <p>A yellow card sits between the day's places line and the calendar. Tap it to type. A day without a note shows a quiet dashed “Add a note for Day 3” row, so you can see where notes go without it taking space.</p>
+      <ul>
+        <li>Shows the first two lines, then “more”. A long note doesn't push the calendar off screen.</li>
+        <li>The day chips get a small yellow corner dot for days that have a note, so you can spot them from any day.</li>
+        <li>Everyone can read it. Planners and owners can edit it, same as places.</li>
+        <li>Shows who last edited it and when (“Sam · 2h ago”).</li>
+      </ul>
+      <p class="hint">Try it: tap the note on the left phone to edit it. Tap the dashed row on the right phone.</p>
+      <div class="effort">Effort: small · one text field per trip day (trip_day_places already keys by day)</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Mexico, spring</span><span class="ibtn">⚙</span></div>
+          <div class="body">
+            <div class="days">
+              <div class="dchip"><small>Wed</small><b>1</b></div>
+              <div class="dchip"><small>Thu</small><b>2</b><i class="nd"></i></div>
+              <div class="dchip on"><small>Fri</small><b>3</b><i class="nd"></i></div>
+              <div class="dchip"><small>Sat</small><b>4</b></div>
+              <div class="dchip"><small>Sun</small><b>5</b></div>
+            </div>
+            <div class="row"><span class="mc geo" style="flex:1">Mar 14 · Staying in Cozumel</span><button class="link" type="button">All days ›</button></div>
+            <div class="note" id="a1note" tabindex="0" role="button" aria-label="Edit Day 3 note">
+              <div class="k">Day 3 note <em>Sam · 2h ago</em></div>
+              <div id="a1text">Ferry leaves Playa at 7:40, so be at the pier by 7:15. Bring cash for the snorkel boat, they don't take cards. <span class="more">more</span></div>
+            </div>
+            <div class="grid" style="height:300px;flex:none">
+              <div class="hr" style="top:0"><span>08</span></div>
+              <div class="hr" style="top:40px"><span>09</span></div>
+              <div class="hr" style="top:80px"><span>10</span></div>
+              <div class="hr" style="top:120px"><span>11</span></div>
+              <div class="hr" style="top:160px"><span>12</span></div>
+              <div class="hr" style="top:200px"><span>13</span></div>
+              <div class="hr" style="top:240px"><span>14</span></div>
+              <div class="blk plain" style="top:4px;height:30px"><div class="t"><span>Ferry to Cozumel</span></div></div>
+              <div class="blk plain" style="top:62px;height:96px"><div class="t"><span>Palancar Reef snorkel</span></div><small>09:45–12:10</small></div>
+              <div class="blk plain" style="top:182px;height:56px"><div class="t"><span>Lunch at Kinta</span></div><small>12:30–13:55</small></div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span>Ideas</span><span>Map</span><span class="on">Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Day with a note</div>
+      </div>
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Mexico, spring</span><span class="ibtn">⚙</span></div>
+          <div class="body">
+            <div class="days">
+              <div class="dchip"><small>Wed</small><b>1</b></div>
+              <div class="dchip"><small>Thu</small><b>2</b><i class="nd"></i></div>
+              <div class="dchip"><small>Fri</small><b>3</b><i class="nd"></i></div>
+              <div class="dchip on"><small>Sat</small><b>4</b><i class="nd" id="a1dot" hidden></i></div>
+              <div class="dchip"><small>Sun</small><b>5</b></div>
+            </div>
+            <div class="row"><span class="mc geo" style="flex:1">Mar 15 · Staying in Cozumel</span><button class="link" type="button">All days ›</button></div>
+            <button class="note empty" id="a1empty" type="button">+ Add a note for Day 4</button>
+            <div class="note" id="a1edit" hidden>
+              <div class="k">Day 4 note <em>Only planners can edit</em></div>
+              <textarea id="a1ta" aria-label="Day 4 note">Check out by 11. Leave bags at the front desk.</textarea>
+            </div>
+            <div class="grid" style="height:300px;flex:none">
+              <div class="hr" style="top:0"><span>08</span></div>
+              <div class="hr" style="top:40px"><span>09</span></div>
+              <div class="hr" style="top:80px"><span>10</span></div>
+              <div class="hr" style="top:120px"><span>11</span></div>
+              <div class="hr" style="top:160px"><span>12</span></div>
+              <div class="hr" style="top:200px"><span>13</span></div>
+              <div class="hr" style="top:240px"><span>14</span></div>
+              <div class="blk plain" style="top:44px;height:70px"><div class="t"><span>Breakfast at Jeannie's</span></div><small>09:05–10:45</small></div>
+              <div class="blk plain" style="top:160px;height:110px"><div class="t"><span>Punta Sur park</span></div><small>12:00–14:45</small></div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span>Ideas</span><span>Map</span><span class="on">Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Day without one</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- A2 -->
+  <section>
+    <div class="copy">
+      <h2>A2 · Notes on the calendar itself</h2>
+      <p>A note can be for the whole day, shown in a strip at the top of the calendar, or pinned to a time. A note for a time is a small yellow tag in the calendar at that hour (“7:15 · be at the pier”), drawn over the blocks without moving them.</p>
+      <ul>
+        <li>Good for reminders that belong to a moment: tickets to print before you leave, a reservation name at lunch.</li>
+        <li>Added from the existing “+ Add” sheet as a new choice, “Note”.</li>
+        <li>Downside: more to tap around on a busy day. Tags can cover the block under them on a narrow phone.</li>
+      </ul>
+      <div class="effort">Effort: medium · notes with an optional start minute, laid out over the grid</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Mexico, spring</span><span class="ibtn">⚙</span></div>
+          <div class="body">
+            <div class="days">
+              <div class="dchip"><small>Wed</small><b>1</b></div>
+              <div class="dchip"><small>Thu</small><b>2</b></div>
+              <div class="dchip on"><small>Fri</small><b>3</b><i class="nd"></i></div>
+              <div class="dchip"><small>Sat</small><b>4</b></div>
+              <div class="dchip"><small>Sun</small><b>5</b></div>
+            </div>
+            <div class="row"><span class="mc geo" style="flex:1">Mar 14 · Staying in Cozumel</span><button class="link" type="button">+ Add</button></div>
+            <div class="allday"><span class="mc">All day</span><span>Bring cash. The snorkel boat doesn't take cards.</span></div>
+            <div class="grid">
+              <div class="hr" style="top:0"><span>07</span></div>
+              <div class="hr" style="top:40px"><span>08</span></div>
+              <div class="hr" style="top:80px"><span>09</span></div>
+              <div class="hr" style="top:120px"><span>10</span></div>
+              <div class="hr" style="top:160px"><span>11</span></div>
+              <div class="hr" style="top:200px"><span>12</span></div>
+              <div class="hr" style="top:240px"><span>13</span></div>
+              <div class="hr" style="top:280px"><span>14</span></div>
+              <div class="hr" style="top:320px"><span>15</span></div>
+              <div class="mnote" style="top:4px"><span><b>7:15</b> · Be at the pier</span></div>
+              <div class="blk plain" style="top:28px;height:42px"><div class="t"><span>Ferry to Cozumel</span></div><small>07:40–08:25</small></div>
+              <div class="blk plain" style="top:110px;height:96px"><div class="t"><span>Palancar Reef snorkel</span></div><small>09:45–12:10</small></div>
+              <div class="mnote" style="top:216px"><span><b>12:30</b> · Table under “Santi”</span></div>
+              <div class="blk plain" style="top:240px;height:56px"><div class="t"><span>Lunch at Kinta</span></div><small>12:30–13:55</small></div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span>Ideas</span><span>Map</span><span class="on">Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">All-day + timed notes</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- A3 -->
+  <section>
+    <div class="copy">
+      <h2>A3 · Notes in “All days”, written from a sheet</h2>
+      <p>The whole-trip “Where we'll be” list gets each day's note under its places, so you can read the trip's notes top to bottom. Tapping “Add a note” on any day opens a sheet. This works alongside A1 or A2 rather than replacing them: the Plan tab is where you see one day, this is where you see all of them.</p>
+      <ul>
+        <li>Handy before the trip: read through every day's notes in one place.</li>
+        <li>Same sheet used from the Plan tab, so there's one way to write a note.</li>
+      </ul>
+      <div class="effort">Effort: small on top of A1</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="ibtn">‹</span><span class="name">Where we'll be</span></div>
+          <div class="body">
+            <div class="list">
+              <div class="li"><div class="top"><b>Day 1</b><span class="mc">Wed Mar 12</span></div><div class="pl">Staying in Playa del Carmen</div><div class="add">+ Add a note</div></div>
+              <div class="li"><div class="top"><b>Day 2</b><span class="mc">Thu Mar 13</span></div><div class="pl">Playa · Day trip to Tulum</div><div class="nt">Rent the car the night before. Cenote closes at 4.</div></div>
+              <div class="li"><div class="top"><b>Day 3</b><span class="mc">Fri Mar 14</span></div><div class="pl">Staying in Cozumel</div><div class="nt">Ferry 7:40, be at the pier by 7:15. Bring cash for the boat.</div></div>
+              <div class="li"><div class="top"><b>Day 4</b><span class="mc">Sat Mar 15</span></div><div class="pl">Staying in Cozumel</div><div class="add">+ Add a note</div></div>
+            </div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <h4>Note for Day 4</h4>
+            <div class="mc" style="margin-top:2px">Sat Mar 15 · Cozumel</div>
+            <textarea id="a3ta" aria-label="Note for Day 4">Check out by 11. Leave bags at the front desk.</textarea>
+            <div class="who">Everyone on the trip can see this.</div>
+            <button class="btn" type="button">Save note</button>
+          </div>
+          <div class="nav"><span>Home</span><span>Ideas</span><span>Map</span><span class="on">Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Writing a note from All days</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="part">B · Pinned vs. unpinned ideas</div>
+  <p class="lede">“Pinned” means the idea has an exact spot (lat/lng). It shows as a dot on the Map tab and gets ride times on the plan. “Unpinned” ideas only know their region, so on the map they're a count in the region's area, and on the plan they get no ride.</p>
+
+  <!-- B1 -->
+  <section>
+    <div class="copy">
+      <h2>B1 · A pin badge on every card <span class="tag">recommended</span></h2>
+      <p>The photo gets a badge in its top-left corner. Pinned ideas get a solid teal map pin. Unpinned ideas get a white badge with a crossed-out hollow pin and “No spot”. Your eye catches teal vs. white before reading anything.</p>
+      <ul>
+        <li>Teal already means “on the map” in the app (the places line, the map dots), so it reads the same everywhere.</li>
+        <li>The same pin mark goes on calendar blocks and in the Add list, so you can tell which stops will get rides.</li>
+        <li>Pass badges move to the bottom-left of the photo to make room.</li>
+        <li>Tapping “No spot” opens “Find on Google” to give it a spot.</li>
+      </ul>
+      <div class="effort">Effort: small · reuses pin.lat, no backend change</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Ideas</span><span class="ibtn">＋</span></div>
+          <div class="body">
+            <div class="mas">
+              <div>
+                <div class="card"><div class="ph"><span class="badge on"><svg class="pg"><use href="#pin"/></svg>Pinned</span><span class="heart">♥</span></div><div class="tt">Palancar Reef</div><div class="rg">Cozumel</div><div class="ft">$65 each · 2h30m</div></div>
+                <div class="card"><div class="ph"><span class="badge off"><svg class="pg hollow"><use href="#nopin"/></svg>No spot</span><span class="heart">♡</span></div><div class="tt">Sunset catamaran (Viator)</div><div class="rg">Playa del Carmen</div><div class="ft">$89 each · 3h</div></div>
+                <div class="card"><div class="ph"><span class="badge on"><svg class="pg"><use href="#pin"/></svg>Pinned</span><span class="heart">♡</span></div><div class="tt">Kinta Kitchen</div><div class="rg">Cozumel</div><div class="ft">1h30m</div></div>
+              </div>
+              <div>
+                <div class="card"><div class="ph"><span class="badge off"><svg class="pg hollow"><use href="#nopin"/></svg>No spot</span><span class="heart">♥</span></div><div class="tt">A good taco stand</div><div class="rg">Tulum</div><div class="ft">1h</div></div>
+                <div class="card"><div class="ph"><span class="badge on"><svg class="pg"><use href="#pin"/></svg>Pinned</span><span class="heart">♡</span></div><div class="tt">Cenote Dos Ojos</div><div class="rg">Tulum</div><div class="ft">$25 each · 2h</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span class="on">Ideas</span><span>Map</span><span>Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Ideas board</div>
+      </div>
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Mexico, spring</span><span class="ibtn">⚙</span></div>
+          <div class="body">
+            <div class="days">
+              <div class="dchip"><small>Wed</small><b>1</b></div>
+              <div class="dchip on"><small>Thu</small><b>2</b></div>
+              <div class="dchip"><small>Fri</small><b>3</b></div>
+              <div class="dchip"><small>Sat</small><b>4</b></div>
+              <div class="dchip"><small>Sun</small><b>5</b></div>
+            </div>
+            <div class="row"><span class="mc geo" style="flex:1">Mar 13 · Day trip to Tulum</span></div>
+            <div class="grid">
+              <div class="hr" style="top:0"><span>09</span></div>
+              <div class="hr" style="top:40px"><span>10</span></div>
+              <div class="hr" style="top:80px"><span>11</span></div>
+              <div class="hr" style="top:120px"><span>12</span></div>
+              <div class="hr" style="top:160px"><span>13</span></div>
+              <div class="hr" style="top:200px"><span>14</span></div>
+              <div class="hr" style="top:240px"><span>15</span></div>
+              <div class="hr" style="top:280px"><span>16</span></div>
+              <div class="hr" style="top:320px"><span>17</span></div>
+              <div class="blk plain" style="top:20px;height:80px"><div class="t"><svg class="pg solid"><use href="#pin"/></svg><span>Cenote Dos Ojos</span></div><small>09:30–11:30</small></div>
+              <div class="blk plain" style="top:140px;height:40px"><div class="t"><svg class="pg hollow"><use href="#nopin"/></svg><span>A good taco stand</span></div><small>12:30–13:30 · no ride</small></div>
+              <div class="blk plain" style="top:220px;height:80px"><div class="t"><svg class="pg solid"><use href="#pin"/></svg><span>Tulum ruins</span></div><small>14:30–16:30</small></div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span>Ideas</span><span>Map</span><span class="on">Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Same mark on the calendar</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- B2 -->
+  <section>
+    <div class="copy">
+      <h2>B2 · Split the board in two</h2>
+      <p>A switch at the top of the board: “On the map” and “No spot”, each with a count. Unpinned ideas get a compact list with a “Find spot” shortcut, since they usually have no good photo anyway.</p>
+      <ul>
+        <li>Clearest separation. You never see the two kinds mixed.</li>
+        <li>Makes “No spot” a to-do list: pin these before planning.</li>
+        <li>Downside: you can't see all ideas for a region in one place, and it adds a control to a screen that already has region chips.</li>
+      </ul>
+      <p class="hint">Try it: switch between the two tabs.</p>
+      <div class="effort">Effort: medium · new board layout</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Ideas</span><span class="ibtn">＋</span></div>
+          <div class="body">
+            <div class="seg" role="group" aria-label="Which ideas">
+              <button type="button" id="b2on" aria-pressed="true"><svg class="pg solid"><use href="#pin"/></svg>On the map <span class="n">12</span></button>
+              <button type="button" id="b2off" aria-pressed="false"><svg class="pg hollow"><use href="#nopin"/></svg>No spot <span class="n">4</span></button>
+            </div>
+            <div id="b2a" class="mas">
+              <div>
+                <div class="card"><div class="ph"><span class="heart">♥</span></div><div class="tt">Palancar Reef</div><div class="rg">Cozumel</div><div class="ft">$65 each · 2h30m</div></div>
+                <div class="card"><div class="ph"><span class="heart">♡</span></div><div class="tt">Kinta Kitchen</div><div class="rg">Cozumel</div><div class="ft">1h30m</div></div>
+              </div>
+              <div>
+                <div class="card"><div class="ph"><span class="heart">♡</span></div><div class="tt">Cenote Dos Ojos</div><div class="rg">Tulum</div><div class="ft">$25 each · 2h</div></div>
+                <div class="card"><div class="ph"><span class="heart">♡</span></div><div class="tt">Tulum ruins</div><div class="rg">Tulum</div><div class="ft">$5 each · 2h</div></div>
+              </div>
+            </div>
+            <div id="b2b" hidden style="display:flex;flex-direction:column;gap:8px">
+              <div class="mc">These show as a count on the map and get no rides</div>
+              <div class="shelfh mc">Tulum</div>
+              <div class="strip">
+                <div class="srow"><span class="sq"></span><div><b>A good taco stand</b><small>1h · Ana</small></div><span class="fix">Find spot ›</span></div>
+              </div>
+              <div class="shelfh mc">Playa del Carmen</div>
+              <div class="strip">
+                <div class="srow"><span class="sq"></span><div><b>Sunset catamaran</b><small>Viator · $89 each · 3h</small></div><span class="fix">Find spot ›</span></div>
+                <div class="srow"><span class="sq"></span><div><b>Cooking class</b><small>Airbnb Experiences · 3h</small></div><span class="fix">Find spot ›</span></div>
+                <div class="srow"><span class="sq"></span><div><b>Mayan chocolate tasting</b><small>1h30m · Sam</small></div><span class="fix">Find spot ›</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span class="on">Ideas</span><span>Map</span><span>Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Board with a switch</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- B3 -->
+  <section>
+    <div class="copy">
+      <h2>B3 · Two different card styles</h2>
+      <p>Pinned ideas look like they do now, with a faint teal edge and teal region line. Unpinned ideas become dashed “ticket” cards: no photo area, a small initial in a square, a sunken background. The dashed edge matches how the plan review already draws a stop with no spot.</p>
+      <ul>
+        <li>Very easy to tell apart, even when scrolling fast.</li>
+        <li>Unpinned cards are shorter, so the board packs tighter.</li>
+        <li>Downside: an unpinned idea with a nice photo (a Viator tour) loses it. It can also read as “unfinished” or less important, which may not be fair to a booked tour.</li>
+      </ul>
+      <div class="effort">Effort: small to medium · second card variant</div>
+    </div>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="scr">
+          <div class="hdr"><span class="name">Ideas</span><span class="ibtn">＋</span></div>
+          <div class="body">
+            <div class="legend"><span><i class="sw a"></i>On the map</span><span><i class="sw b"></i>No map spot</span></div>
+            <div class="mas">
+              <div>
+                <div class="card spot"><div class="ph"><span class="heart">♥</span></div><div class="tt">Palancar Reef</div><div class="rg"><svg class="pg solid"><use href="#pin"/></svg>Cozumel</div><div class="ft">$65 each · 2h30m</div></div>
+                <div class="card tick"><div class="ph"><span class="ico">S</span><span class="heart">♡</span></div><div class="tt">Sunset catamaran (Viator)</div><div class="rg">Playa del Carmen · area only</div><div class="ft">$89 each · 3h</div></div>
+                <div class="card spot"><div class="ph"><span class="heart">♡</span></div><div class="tt">Kinta Kitchen</div><div class="rg"><svg class="pg solid"><use href="#pin"/></svg>Cozumel</div><div class="ft">1h30m</div></div>
+              </div>
+              <div>
+                <div class="card tick"><div class="ph"><span class="ico">T</span><span class="heart">♥</span></div><div class="tt">A good taco stand</div><div class="rg">Tulum · area only</div><div class="ft">1h</div></div>
+                <div class="card spot"><div class="ph"><span class="heart">♡</span></div><div class="tt">Cenote Dos Ojos</div><div class="rg"><svg class="pg solid"><use href="#pin"/></svg>Tulum</div><div class="ft">$25 each · 2h</div></div>
+                <div class="card tick"><div class="ph"><span class="ico">C</span><span class="heart">♡</span></div><div class="tt">Cooking class</div><div class="rg">Playa del Carmen · area only</div><div class="ft">3h</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="nav"><span>Home</span><span class="on">Ideas</span><span>Map</span><span>Plan</span><span>Costs</span></div>
+        </div></div>
+        <div class="cap">Ticket cards for no spot</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:block">
+    <h2>Side by side</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Option</th><th>What it adds</th><th>Best at</th><th>Watch out for</th><th>Effort</th></tr></thead>
+        <tbody>
+          <tr><td>A1 Note card</td><td>One note per day under the header, dot on day chips</td><td>Quick daily reminders</td><td>Long notes need “more”</td><td>Small</td></tr>
+          <tr><td>A2 Calendar notes</td><td>All-day strip + timed tags on the grid</td><td>Reminders tied to a time</td><td>Crowds a busy day</td><td>Medium</td></tr>
+          <tr><td>A3 All days list</td><td>Every day's note in the trip list, sheet to write</td><td>Reading the whole trip</td><td>Pairs with A1 or A2</td><td>Small</td></tr>
+          <tr><td>B1 Pin badge</td><td>Teal pin vs. “No spot” badge, same mark on blocks</td><td>Consistent everywhere</td><td>One more badge on the photo</td><td>Small</td></tr>
+          <tr><td>B2 Split board</td><td>Switch between pinned and unpinned</td><td>Cleaning up ideas without spots</td><td>Splits a region's ideas</td><td>Medium</td></tr>
+          <tr><td>B3 Card styles</td><td>Dashed ticket card for unpinned</td><td>Telling apart while scrolling</td><td>Hides photos, looks “unfinished”</td><td>Small–medium</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  // A1 — left phone: tap to edit the note in place
+  var note=document.getElementById('a1note'), text=document.getElementById('a1text');
+  var full="Ferry leaves Playa at 7:40, so be at the pier by 7:15. Bring cash for the snorkel boat, they don't take cards.";
+  function editA(){
+    if(note.querySelector('textarea'))return;
+    var ta=document.createElement('textarea');ta.id='a1ta-left';ta.value=full;ta.setAttribute('aria-label','Day 3 note');
+    text.replaceWith(ta);ta.focus();
+    ta.addEventListener('blur',function(){full=ta.value.trim();var d=document.createElement('div');d.id='a1text';d.textContent=full;ta.replaceWith(d);text=d;});
+  }
+  note.addEventListener('click',editA);
+  note.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target===note){e.preventDefault();editA();}});
+  // A1 — right phone: empty row becomes an editor
+  var empty=document.getElementById('a1empty'), ed=document.getElementById('a1edit'), ta=document.getElementById('a1ta'), dot=document.getElementById('a1dot');
+  empty.addEventListener('click',function(){empty.hidden=true;ed.hidden=false;dot.hidden=false;ta.focus();});
+  ta.addEventListener('blur',function(){if(!ta.value.trim()){ed.hidden=true;empty.hidden=false;dot.hidden=true;}});
+  // B2 switch
+  var on=document.getElementById('b2on'), off=document.getElementById('b2off'), a=document.getElementById('b2a'), b=document.getElementById('b2b');
+  function show(which){on.setAttribute('aria-pressed',which==='on');off.setAttribute('aria-pressed',which==='off');a.hidden=which!=='on';b.hidden=which!=='off';}
+  on.addEventListener('click',function(){show('on')});off.addEventListener('click',function(){show('off')});
+})();
+</script>
