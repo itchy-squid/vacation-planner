@@ -1,9 +1,9 @@
 import CommentMark from "./CommentMark";
 
 // The comments on a day, as a chip the size of the Ideas board's pin
-// badge: a bubble and how many there are, or, on a day with none, a dashed
-// "Comment" for someone who can add one (nothing at all for someone who
-// can't). Either opens the day's comments (DayCommentsSheet.jsx).
+// badge: a bubble and how many there are, or, on a day with none, just a
+// dashed bubble for someone who can add one (nothing at all for someone
+// who can't). Either opens the day's comments (DayCommentsSheet.jsx).
 export default function DayCommentChip({ count, canComment, onOpen, day }) {
   if (!count && !canComment) return null;
   const any = count > 0;
@@ -18,7 +18,7 @@ export default function DayCommentChip({ count, canComment, onOpen, day }) {
         alignItems: "center",
         gap: 4,
         height: 22,
-        padding: "0 8px 0 6px",
+        padding: any ? "0 8px 0 6px" : "0 6px",
         borderRadius: "var(--radius-pill)",
         font: `${any ? 600 : 500} 10.5px var(--font-sans)`,
         color: any ? "var(--comment)" : "var(--text-muted)",
@@ -27,7 +27,7 @@ export default function DayCommentChip({ count, canComment, onOpen, day }) {
       }}
     >
       <CommentMark size={12} filled={any} />
-      {any ? count : "Comment"}
+      {any ? count : null}
     </button>
   );
 }

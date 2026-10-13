@@ -36,11 +36,11 @@ test.describe("where we'll be", () => {
     // "‹ Plan" goes back to the day it came from.
     await page.getByRole("button", { name: "‹ Plan" }).click();
 
-    await expect(page.getByText("Staying in Taipei · Day trip to North Coast")).toBeVisible();
+    await expect(page.getByText("Taipei · + North Coast")).toBeVisible();
     // Jiufen is on the calendar but not one of the day's places.
     await expect(page.getByRole("note").filter({ hasText: "Jiufen Old Street is in Jiufen" })).toBeVisible();
     await page.getByRole("button", { name: "Add Jiufen as a day trip" }).click();
-    await expect(page.getByText("Staying in Taipei · Day trip to North Coast and Jiufen")).toBeVisible();
+    await expect(page.getByText("Taipei · + North Coast and Jiufen")).toBeVisible();
     await expect(page.getByRole("note")).toHaveCount(0);
 
     // "+ Add" shows the day's places first.

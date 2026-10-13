@@ -1,28 +1,42 @@
-import { describeDay, includesPlace, isSet, placeNames } from "../../lib/dayPlaces";
+import { describeDay, describeDayShort, includesPlace, isSet, placeNames } from "../../lib/dayPlaces";
 
 /**
  * The Plan tab's line above the day strip (pages/DaySchedule.jsx): the
  * date, when the trip has dates ("Mar 12" — the strip's chips have the
- * weekday and day but not the month); the places set for the day
- * ("Staying in Taipei · Day trip to North Coast"), or, when none are, what
- * the calendar suggests (`fallback`, the old "Scheduling · Taipei"); then
- * on the right `children` (the day's travel time, open blocks) and "All
- * days", the whole trip in "Where we'll be", which is where places are set
- * and edited. The places wrap before anything on the right is pushed off.
+ * weekday and day but not the month); the places set for the day, short
+ * ("Taipei · + North Coast", describeDayShort) with describeDay's sentence
+ * for screen readers, or, when none are, what the calendar suggests
+ * (`fallback`, the old "Scheduling · Taipei"). Under it, a row of
+ * `children` (the comment chip, the day's travel time, open blocks) and,
+ * on the right, "All days": the whole trip in "Where we'll be", which is
+ * where places are set and edited. The places get the full width, so they
+ * wrap far less than they would sharing a row with the chips.
  */
 export function DayPlacesLine({ day, previousStay, fallback, date = "", onAllDays, children }) {
   const set = isSet(day);
-  const places = set ? describeDay(day, previousStay) : fallback;
+  const prefix = date ? `${date} · ` : "";
+  const hasRow = onAllDays || [children].flat().some(Boolean);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div className="mono-caption" style={{ flex: 1, minWidth: 0, lineHeight: 1.4, color: set ? "var(--geo)" : undefined }}>
-        {date ? `${date} · ${places}` : places}
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="mono-caption" style={{ lineHeight: 1.4, color: set ? "var(--geo)" : undefined }}>
+        {set ? (
+          <>
+            <span aria-hidden="true">{prefix + describeDayShort(day, previousStay)}</span>
+            <span className="visually-hidden">{prefix + describeDay(day, previousStay)}</span>
+          </>
+        ) : (
+          prefix + fallback
+        )}
       </div>
-      {children}
-      {onAllDays ? (
-        <button type="button" onClick={onAllDays} style={{ flex: "none", font: "500 11.5px var(--font-sans)", color: "var(--accent)" }}>
-          All days ›
-        </button>
+      {hasRow ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 22 }}>
+          {children}
+          {onAllDays ? (
+            <button type="button" onClick={onAllDays} style={{ flex: "none", marginLeft: "auto", font: "500 11.5px var(--font-sans)", color: "var(--accent)" }}>
+              All days ›
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
