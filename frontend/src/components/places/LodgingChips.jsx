@@ -36,7 +36,7 @@ export default function LodgingChips({ day, pins, lastNight, stayedAt = [], onPi
       <div id={labelId} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "2px 8px" }}>
         <span className="mono-caption">Staying at</span>
         <span style={{ font: "400 11.5px var(--font-sans)", color: "var(--text-secondary)" }}>
-          {stays.length ? "trips from the map start and end here · only ideas marked as a stay are listed · tap again to clear" : "trips from the map start and end here · mark an idea as a stay to list only those"}
+          {stays.length ? "trips from the map start and end here · only ideas marked as a stay are listed · tap again to clear" : "trips from the map start and end here · the one you pick is marked as a stay"}
         </span>
       </div>
       {shown.length ? (

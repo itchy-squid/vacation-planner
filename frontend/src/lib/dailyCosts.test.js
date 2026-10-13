@@ -136,3 +136,8 @@ test("an idea picked as where you're staying is lodging even when it isn't marke
   const unpicked = buildDailyCosts({ 5: hotel }, { dayPlaces: {}, days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
   assert.equal(unpicked.rows[0].lodging, false);
 });
+
+test("a stay not picked for any night isn't counted or listed", () => {
+  const { rows, waiting } = buildDailyCosts({ 7: HOTEL }, { dayPlaces: staying(5, [1, 2]), days: DAYS, trip: TRIP, travelers: TRAVELERS, shownIds: [1] });
+  assert.equal(rows.length + waiting.length, 0);
+});
