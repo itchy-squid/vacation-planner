@@ -11,7 +11,7 @@ import SplitEdgeHandle from "../components/planner/SplitEdgeHandle";
 import { DayPlacesLine, DayTripDot, PlacesMismatch, StayBar } from "../components/places/DayPlacesLine";
 import { calendarPlacesOnDay, isSet, placeNames, placesOn, stayBefore, stayRun, tripDayNumbers, withVisit } from "../lib/dayPlaces";
 import { usePlannerState, usePlannerDispatch, useCurrentUser, useCan, useMyTraveler } from "../state/PlannerContext";
-import { getTripDays } from "../data/trip";
+import { getTripDays, tripDayLabel } from "../data/trip";
 import { tripMinute, clockLabel } from "../lib/planTime";
 import {
   DAY_END_MIN,
@@ -37,6 +37,11 @@ import { dragKind } from "../lib/planDrag";
 import { biasAround, dayTravelMinutes, formatMinutes, stayEnd, travelGaps } from "../lib/travel";
 import TripHeader from "../components/core/TripHeader";
 import TripDaysNotice from "../components/trip/TripDaysNotice";
+import DayCommentChip from "../components/comments/DayCommentChip";
+import DayCommentsSheet from "../components/comments/DayCommentsSheet";
+import { DayCommentDot } from "../components/comments/CommentMark";
+import { useDayComments } from "../components/comments/useDayComments";
+import { planSpot } from "../lib/pinSpot";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
@@ -67,6 +72,12 @@ export default function DaySchedule() {
   const can = useCan();
   const canPlan = can("plans:write");
   const canPropose = can("plans:propose");
+  const canComment = can("comments:write");
+
+  // Comments on the whole day: a chip on the places line opens them, and
+  // the day strip marks the days that have any.
+  const dayComments = useDayComments(trip?.id);
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   // Drafts are excluded from the grid, from the overlap checks and from
   // the tray's "unplaced" reckoning: a draft block claims no time and is
@@ -659,6 +670,9 @@ export default function DaySchedule() {
             date={todayDate}
             onAllDays={dates.length ? () => navigate(`/trips/${trip.id}/places`, { state: { fromDay: dayIndex } }) : null}
           >
+            {tripDays.length > 0 && (
+              <DayCommentChip day={dayIndex} count={dayComments.byDay[dayIndex]?.length ?? 0} canComment={canComment} onOpen={() => setCommentsOpen(true)} />
+            )}
             {travelMinutes > 0 && (
               <span className="mono-data-sm" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 5, color: "var(--geo)" }}>
                 <FontAwesomeIcon icon={faRoute} style={{ width: 10, height: 10 }} />
@@ -721,6 +735,7 @@ export default function DaySchedule() {
                     <div className="mono-data-sm" style={{ color: selected ? "rgba(255,255,255,.6)" : "var(--text-faint)", letterSpacing: 0 }}>{d.dow || "DAY"}</div>
                     <div style={{ font: "600 14px var(--font-sans)", marginTop: 1, color: selected ? "#fff" : "var(--text-primary)" }}>{d.n}</div>
                     {placesOn(dayPlaces, dates[i]).visits.length > 0 ? <DayTripDot selected={selected} /> : null}
+                    {dayComments.byDay[n]?.length ? <DayCommentDot /> : null}
                   </button>
                   {dates.length ? <StayBar run={stayRun(dayPlaces, dates, i)} gap={DAY_STRIP_GAP} /> : null}
                 </div>
@@ -934,6 +949,7 @@ export default function DaySchedule() {
                       continuesBefore={startMin < DAY_START_MIN}
                       continuesAfter={endMin > DAY_END_MIN}
                       onTap={() => {}}
+                      spot={planSpot(displayPlan, pins)}
                       faces={branch ? membersOf(branch, travelers) : null}
                       newcomers={Boolean(branch?.takesNewcomers)}
                       tightFaces={entry.width <= 1 / 3}
@@ -1096,6 +1112,21 @@ export default function DaySchedule() {
       )}
 
       <PlanDetailsSheet planId={detailsPlanId} onClose={() => setDetailsPlanId(null)} />
+
+      {commentsOpen && (
+        <DayCommentsSheet
+          day={dayIndex}
+          label={tripDayLabel(dayIndex, trip)}
+          comments={dayComments.byDay[dayIndex] ?? []}
+          contributors={state.contributors}
+          currentUserId={state.currentUserId}
+          canComment={canComment}
+          onAdd={dayComments.add}
+          onEdit={dayComments.edit}
+          onDelete={dayComments.remove}
+          onClose={() => setCommentsOpen(false)}
+        />
+      )}
 
       {proposeSheet && (
         // Absolute, not fixed — see components/planner/PlanDetailsSheet.jsx's

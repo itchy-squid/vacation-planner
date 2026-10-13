@@ -21,7 +21,7 @@ from datetime import date
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
-from .models import AvailabilityOverride, AvailabilityRule, Contest, Pin, Plan, Split, Trip, TripDayPlace
+from .models import AvailabilityOverride, AvailabilityRule, Comment, Contest, Pin, Plan, Split, Trip, TripDayPlace
 
 MINUTES_PER_DAY = 1440
 # Far past any trip's length, so stepping every row through it first can't
@@ -46,12 +46,13 @@ def clock(minute: int) -> str:
 
 def has_calendar(db: Session, trip_id: int) -> bool:
     """Whether anything is on the trip's calendar that moving its start
-    date would move: plans (drafts too), splits, places for a day, or an
-    idea's own first and last day."""
+    date would move: plans (drafts too), splits, places or comments for a
+    day, or an idea's own first and last day."""
     checks = (
         exists().where(Plan.trip_id == trip_id),
         exists().where(Split.trip_id == trip_id),
         exists().where(TripDayPlace.trip_id == trip_id),
+        exists().where(Comment.trip_id == trip_id),
         exists().where(Pin.trip_id == trip_id, Pin.cost_start_day.is_not(None)),
     )
     return any(db.scalar(select(check)) for check in checks)
@@ -86,6 +87,8 @@ def move_calendar(db: Session, trip_id: int, days: int) -> None:
         .values(cost_start_day=Pin.cost_start_day - days, cost_end_day=Pin.cost_end_day - days)
     )
     _shift_days(db, TripDayPlace, TripDayPlace.trip_id == trip_id, days)
+    # Nothing makes a day's comments unique, so they move in one step.
+    db.execute(update(Comment).where(Comment.trip_id == trip_id).values(day=Comment.day - days))
     pin_ids = select(Pin.id).where(Pin.trip_id == trip_id)
     _shift_days(db, AvailabilityOverride, AvailabilityOverride.pin_id.in_(pin_ids), days)
     # A pin's available days are a JSON list, so they move one rule at a time.

@@ -477,4 +477,7 @@ export const api = {
 
   listPinComments: (pinId) => request(`/api/pins/${pinId}/comments`),
   createComment: (tripId, payload) => request(`/api/trips/${tripId}/comments`, { method: "POST", body: payload }),
+  updateComment: (tripId, commentId, body) => request(`/api/trips/${tripId}/comments/${commentId}`, { method: "PATCH", body: { body } }),
+  deleteComment: (tripId, commentId) => request(`/api/trips/${tripId}/comments/${commentId}`, { method: "DELETE" }),
+  listDayComments: (tripId) => request(`/api/trips/${tripId}/day-comments`),
 };

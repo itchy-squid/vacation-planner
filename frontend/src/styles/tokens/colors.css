@@ -33,6 +33,11 @@
 
   --moss-600: #6f7f3c;   /* oklch(.55 .11 110) — user drafts (Set C) */
   --rust-600: #b4553f;   /* oklch(.55 .12 40)  — tight / at-risk numbers */
+  --blue-600: #4a62b5;   /* oklch(.52 .13 270) — an idea's exact spot on the map (the pin mark) */
+  --amber-50:  #fbf3d9;  /* comments on a day: the chip and the comment's own fill */
+  --amber-300: #e2cc86;
+  --amber-500: #d8b84a;
+  --amber-800: #6b5719;
 
   /* ---- contributor identity tints (desaturated, never used for status) ---- */
   --who-1: #c9c6d0;
@@ -65,6 +70,11 @@
   --geo-quiet:     var(--teal-50);
   --draft:         var(--moss-600);
   --warn:          var(--rust-600);
+  --pin:           var(--blue-600);
+  --comment:       var(--amber-800);
+  --comment-quiet: var(--amber-50);
+  --comment-line:  var(--amber-300);
+  --comment-mark:  var(--amber-500);
 
   --hairline:      rgba(27, 26, 31, 0.09);
   --border:        rgba(27, 26, 31, 0.12);
