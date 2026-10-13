@@ -54,21 +54,19 @@ test.describe("comments on a day", () => {
   });
 });
 
-test("ideas and calendar blocks say whether they have a map spot", async ({ page, api, seed }) => {
+test("calendar events made from ideas carry the pin, custom events don't", async ({ page, api, seed }) => {
   const trip = await seed({
     pins: [
       { title: "Longshan Temple", region: "Taipei", minutes: 60, lat: 25.0372, lng: 121.4999 },
       { title: "A good night market", region: "Taipei", minutes: 60 },
     ],
+    events: [{ title: "Scooter hire", minutes: 60 }],
   });
   await placePlan(api, trip, { from: "10:00", to: "11:00", pin: trip.pins["Longshan Temple"] });
   await placePlan(api, trip, { from: "18:00", to: "19:00", pin: trip.pins["A good night market"] });
-
-  await page.goto(`/trips/${trip.id}/board`);
-  await expect(page.getByText("Pinned", { exact: true })).toHaveCount(1);
-  await expect(page.getByText("No spot", { exact: true })).toHaveCount(1);
+  await placePlan(api, trip, { from: "13:00", to: "14:00", event: trip.events["Scooter hire"] });
 
   await page.goto(dayUrl(trip));
-  await expect(page.getByRole("img", { name: "On the map" })).toHaveCount(1);
-  await expect(page.getByRole("img", { name: "No map spot" })).toHaveCount(1);
+  await expect(page.getByText("Scooter hire")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Idea" })).toHaveCount(2);
 });
