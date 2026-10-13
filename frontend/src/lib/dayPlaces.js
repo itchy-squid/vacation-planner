@@ -153,6 +153,18 @@ export function describeDay(day, previousStay = null, lodgingTitle = null) {
   return parts.join(" · ");
 }
 
+/**
+ * describeDay, short enough for the Plan tab's places line on a phone:
+ * "Taipei · + North Coast", or "Mountains → Taipei" on a moving day. The
+ * line keeps describeDay's sentence for screen readers.
+ */
+export function describeDayShort(day, previousStay = null) {
+  const parts = [];
+  if (day.stay) parts.push(previousStay && !samePlace(previousStay, day.stay) ? `${previousStay} → ${day.stay}` : day.stay);
+  if (day.visits.length) parts.push(`+ ${joinNames(day.visits)}`);
+  return parts.join(" · ");
+}
+
 /** "Day 3", or "Days 1–4, 7" for day numbers in any order. */
 export function dayRangeLabel(dayNumbers) {
   const sorted = [...dayNumbers].sort((a, b) => a - b);

@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's built-in test runner, no dependencies).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NO_PLACES, describeDay, lodgingFor, withLodging, withStay, withVisit } from "./dayPlaces.js";
+import { NO_PLACES, describeDay, describeDayShort, lodgingFor, withLodging, withStay, withVisit } from "./dayPlaces.js";
 
 const DATES = [1, 2, 3];
 
@@ -32,4 +32,10 @@ test("a day's trips start where the group woke up and end where it sleeps", () =
 test("a day says where it's staying at", () => {
   assert.equal(describeDay({ stay: "Playa", visits: [] }, null, "Hotel Xcaret"), "Staying in Playa at Hotel Xcaret");
   assert.equal(describeDay({ stay: "Tulum", visits: [] }, "Playa"), "Moving to Tulum from Playa");
+});
+
+test("the Plan tab's places line says the same thing in fewer words", () => {
+  assert.equal(describeDayShort({ stay: "Taipei", visits: ["North Coast"] }, "Taipei"), "Taipei · + North Coast");
+  assert.equal(describeDayShort({ stay: "Taipei", visits: ["North Coast", "Jiufen"] }, "Mountains"), "Mountains → Taipei · + North Coast and Jiufen");
+  assert.equal(describeDayShort({ stay: null, visits: ["Jiufen"] }), "+ Jiufen");
 });

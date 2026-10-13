@@ -30,7 +30,7 @@ import {
 // (lib/dayPlaces.js). Every day in a list; tap one to set it
 // (components/places/DayPlacesSheet.jsx), or Select several and set or
 // clear them together. Bulk changes offer Undo. Opened from the Plan tab's
-// day header ("All days"), and back there with ‹ Plan. Anyone on the trip
+// day header (tap the day's places), and back there with ‹ Plan. Anyone on the trip
 // can look; planners (plans:write) can change it.
 export default function DayPlaces() {
   const navigate = useNavigate();
