@@ -95,6 +95,17 @@ test("there's room for travel between two blocks that follow one another", () =>
   });
 });
 
+test("travel that already arrives where the next block is leaves no gap before it", () => {
+  const pins = { 7: { place: "Epcot" } };
+  const drive = plan(540, 570, [leg("Drive Hotel Alma → Epcot", 30, "car", "Hotel Alma", "Epcot")]);
+  const epcot = plan(570, 900, [stop("Epcot day", 330, 7)]);
+  const dinner = plan(900, 960, [stop("Dinner", 60, 7)]); // the same idea
+  const show = plan(1000, 1060, [stop("Show", 60)]);
+  const alma = stayEnd({ id: 50, title: "Hotel Alma" });
+  const gaps = travelGaps(plansOnDay([drive, epcot, dinner, show], 1), pins, { lastNight: alma });
+  assert.deepEqual(gaps.map((g) => [g.startMin, g.endMin]), [[960, 1000]]);
+});
+
 test("a block overlapping the gap closes it", () => {
   const plans = [plan(540, 600, [stop("A", 60)]), plan(560, 700, [stop("Long", 140)]), plan(650, 720, [stop("B", 70)])];
   assert.deepEqual(travelGaps(plansOnDay(plans, 1), {}), []);

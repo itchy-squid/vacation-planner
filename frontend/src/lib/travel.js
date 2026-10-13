@@ -127,11 +127,17 @@ function onlyTravel(plan) {
   return plan.items.length > 0 && plan.items.every(isTravelItem);
 }
 
+// Are two ends the same place: the same idea, or the same name (travel's
+// typed end is the name its chip filled in)?
+function samePlace(a, b) {
+  if (!a || !b) return false;
+  if (a.pinId != null && b.pinId != null) return a.pinId === b.pinId;
+  return a.label.trim().toLowerCase() === b.label.trim().toLowerCase();
+}
+
 // Is this end already the stay: the stay's own idea, or travel to or from it by name?
 function atStay(end, stay) {
-  if (!end) return true;
-  if (end.pinId != null) return end.pinId === stay.pinId;
-  return end.label.toLowerCase() === stay.label.toLowerCase();
+  return !end || samePlace(end, stay);
 }
 
 /**
@@ -142,7 +148,9 @@ function atStay(end, stay) {
  * - Between two blocks for everyone that follow one another, however
  *   close (back to back is a gap of nothing: the travel pushes what's
  *   after it later, pushesFor), unless both are already travel. So a
- *   flight gets one after it, from the airport it lands at.
+ *   flight gets one after it, from the airport it lands at. Not when
+ *   both ends are the same place: travel already arriving where the next
+ *   block is, or two blocks at the same idea.
  * - With `stays` ({ lastNight, tonight }, each stayEnd()): from last
  *   night's stay to the day's first block (`edge: "start"`, arriving as
  *   it starts: the drive to the airport), and from the last block to
@@ -174,12 +182,10 @@ export function travelGaps(entries, pins, stays = {}) {
     if (after.startMin < before.endMin) continue;
     if (before.endMin < DAY_START_MIN || after.startMin > DAY_END_MIN) continue;
     if (onlyTravel(before.plan) && onlyTravel(after.plan)) continue;
-    gaps.push({
-      startMin: before.endMin,
-      endMin: after.startMin,
-      from: endpoint(last(before.plan), pins, "end"),
-      to: endpoint(first(after.plan), pins, "start"),
-    });
+    const from = endpoint(last(before.plan), pins, "end");
+    const to = endpoint(first(after.plan), pins, "start");
+    if (samePlace(from, to)) continue;
+    gaps.push({ startMin: before.endMin, endMin: after.startMin, from, to });
   }
 
   const closing = settled.length ? settled.reduce((a, b) => (b.endMin >= a.endMin ? b : a)) : null;
