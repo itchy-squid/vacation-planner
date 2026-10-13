@@ -30,6 +30,7 @@
   --teal-tint: rgba(61, 138, 156, 0.22);
   --teal-line: rgba(61, 138, 156, 0.45);
   --teal-50:  #eef2f3;
+  --teal-100: #d4e5e9;   /* an idea on the calendar, against grey custom events */
 
   --moss-600: #6f7f3c;   /* oklch(.55 .11 110) — user drafts (Set C) */
   --rust-600: #b4553f;   /* oklch(.55 .12 40)  — tight / at-risk numbers */
