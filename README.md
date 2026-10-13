@@ -181,12 +181,15 @@ Engineering additions, not design-reviewed screens:
   can edit or delete it. Stored by day of the trip, so they move with the
   dates like places do. Loaded when the Plan tab or Itinerary opens
   (`useDayComments`), not kept in PlannerContext.
-- **Map pin mark** (`frontend/src/components/core/PinMark.jsx`) — every
-  idea card says whether it has an exact spot: a solid pin, "Pinned", or a
-  hollow crossed-out one, "No spot". The same mark is on calendar blocks
-  and Itinerary stops. The pin has a colour of its own, `--pin` (blue),
-  used for nothing else, so it stands out on the teal calendar. Design:
-  B1 in `Claude outputs/day-notes-and-idea-types-mockups.html`.
+- **Ideas vs. custom events on the calendar**
+  (`frontend/src/components/planner/PlanBlock.jsx`,
+  `frontend/src/components/core/PinMark.jsx`) — like events and tasks on
+  Google Calendar, a block's fill says what it is: teal (`--teal-100`) with
+  a small map pin for an idea from the board, grey for a custom event or a
+  ride. The left edge says where it stands: solid when placed, dashed when
+  unconfirmed, plum with a lock when locked. Itinerary stops from ideas
+  carry the same pin, which has a colour of its own, `--pin` (blue), used
+  for nothing else.
 
 ## Repo layout
 

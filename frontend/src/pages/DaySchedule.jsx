@@ -41,7 +41,7 @@ import DayCommentChip from "../components/comments/DayCommentChip";
 import DayCommentsSheet from "../components/comments/DayCommentsSheet";
 import { DayCommentDot } from "../components/comments/CommentMark";
 import { useDayComments } from "../components/comments/useDayComments";
-import { planSpot } from "../lib/pinSpot";
+import { planHasIdea } from "../lib/ideaPin";
 import { branchName, branchesById, membersOf, namesOf, splitHoursProblem, splitsOnDay, unassigned } from "../lib/splits";
 
 // Screen 4 — tap-to-place calendar. Handoff README screen 4, rebuilt
@@ -949,7 +949,7 @@ export default function DaySchedule() {
                       continuesBefore={startMin < DAY_START_MIN}
                       continuesAfter={endMin > DAY_END_MIN}
                       onTap={() => {}}
-                      spot={planSpot(displayPlan, pins)}
+                      idea={planHasIdea(displayPlan, pins)}
                       faces={branch ? membersOf(branch, travelers) : null}
                       newcomers={Boolean(branch?.takesNewcomers)}
                       tightFaces={entry.width <= 1 / 3}

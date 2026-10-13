@@ -8,6 +8,7 @@ import HeaderIconButton from "../components/core/HeaderIconButton";
 import EmptyBoard from "../components/planner/EmptyBoard";
 import InviteSheet from "../components/sharing/InviteSheet";
 import RegionFilter, { ALL_REGIONS } from "../components/planner/RegionFilter";
+import { regionKey } from "../lib/regions";
 import { coversEveryone, passesByPin } from "../lib/expenseTypes";
 
 // Screen 2 — "collect candidate places." Handoff README screen 2. The
@@ -22,7 +23,7 @@ import { coversEveryone, passesByPin } from "../lib/expenseTypes";
 // twice.
 export default function PinBoard() {
   const navigate = useNavigate();
-  const { trip: TRIP, pins, costs, travelers, contributors: CONTRIBUTORS } = usePlannerState();
+  const { trip: TRIP, pins, costs, travelers, contributors: CONTRIBUTORS, regions: REGION_LOCATIONS } = usePlannerState();
   // Tickets and rentals aren't on the board (they're kept in Expenses,
   // state.costs); a ticket shows only as a badge on the places it covers.
   const passes = useMemo(() => passesByPin(costs), [costs]);
@@ -83,6 +84,12 @@ export default function PinBoard() {
   filtered.forEach((pin, i) => columns[i % 2].push(pin));
 
   const initialFor = (pin) => CONTRIBUTORS.find((c) => c.id === pin.who)?.initial ?? "?";
+  // Where each card will be on the Map tab: at its own spot, or in its
+  // region once the trip knows where that region is.
+  const locationLabelFor = (pin) => {
+    if (pin.lat != null) return "On the map";
+    return pin.region && REGION_LOCATIONS[regionKey(pin.region)] ? `Shown in ${pin.region}` : null;
+  };
   // "+" and "Type a place" go to place search (pages/NewPin.jsx; without a
   // Maps key that's the by-hand form, starting in the title). "Paste a
   // link" goes straight to the by-hand form.
@@ -153,6 +160,7 @@ export default function PinBoard() {
                   column={ci}
                   contributorInitial={initialFor(pin)}
                   highlighted={pin.id === justAddedId}
+                  locationLabel={locationLabelFor(pin)}
                   pass={passes.get(pin.id)?.[0] ?? null}
                   passCoversAll={passes.has(pin.id) && coversEveryone(passes.get(pin.id), travelers)}
                   onOpen={() => navigate(`/trips/${TRIP.id}/edit/${pin.id}?from=board`)}

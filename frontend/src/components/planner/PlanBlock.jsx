@@ -86,10 +86,13 @@ function Faces({ people, tight = false, newcomers = false }) {
   );
 }
 
-// `spot` says whether the plan's ideas have an exact spot on the map
-// (lib/pinSpot.js planSpot): "spot" draws the pin in its own
-// colour, "none" the hollow pin, null (a ride, a custom event) nothing.
-export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false, newcomers = false, spot = null }) {
+// `idea` is a plan made from an idea on the board (lib/ideaPin.js). Like
+// events and tasks on Google Calendar, the two kinds read apart at a
+// glance: the fill says what it is (teal for an idea, with the pin; grey
+// for a custom event or a ride) and the left edge says where it stands
+// (solid when placed, dashed when unconfirmed, plum with a lock when
+// locked). A vote keeps its own plum look whatever is in it.
+export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false, newcomers = false, idea = false }) {
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
   const startLabel = plan.startDt ? clockLabel(plan.startDt.minuteOfDay) : "";
   const endLabel = plan.endDt ? clockLabel(plan.endDt.minuteOfDay) : "";
@@ -99,7 +102,9 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
   const travel = plan.items.length > 0 && plan.items.every(isTravelItem);
   const travelMark = (color) =>
     travel ? <ModeIcon mode={plan.items[0].mode} style={{ width: 10, height: 10, flexShrink: 0, color }} /> : null;
-  const spotMark = spot ? <PinMark spotted={spot === "spot"} size={9} title={spot === "spot" ? "On the map" : "No map spot"} /> : null;
+  const ideaMark = idea ? <PinMark size={9} /> : null;
+  const fill = idea ? "var(--teal-100)" : "var(--surface-sunken)";
+  const kindEdge = idea ? "var(--geo)" : "var(--stone-500)";
 
   const base = {
     position: "absolute",
@@ -139,7 +144,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
         <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: "var(--accent)", overflow: "hidden" }}>
           {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--accent)" />}
           {travelMark("var(--accent)")}
-          {spotMark}
+          {ideaMark}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--accent)" />}
           <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
@@ -170,7 +175,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
           ...base,
           borderRadius: "var(--radius-md)",
           ...clipRadius,
-          background: "var(--surface-page)",
+          background: fill,
           borderLeft: "3px solid var(--accent)",
           padding: compact ? "3px 7px" : "6px 8px",
         }}
@@ -185,8 +190,8 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
               plan would render indistinguishably from an unlocked one.
               Same icon as the lock toggle in PlanDetailsSheet.jsx. */}
           <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
-          {travelMark("var(--geo)")}
-          {spotMark}
+          {travelMark("var(--text-secondary)")}
+          {ideaMark}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
           <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
@@ -210,15 +215,15 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
         ...base,
         borderRadius: "var(--radius-md)",
         ...clipRadius,
-        background: isPencilled ? "var(--surface-page)" : "var(--teal-50)",
-        borderLeft: `3px solid ${isPencilled ? "var(--stone-250)" : "var(--geo)"}`,
+        background: fill,
+        borderLeft: `3px ${isPencilled ? "dashed" : "solid"} ${kindEdge}`,
         padding: compact ? "3px 7px" : "6px 8px",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: isPencilled ? "var(--text-secondary)" : "var(--text-primary)", overflow: "hidden" }}>
         {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
-        {travelMark("var(--geo)")}
-        {spotMark}
+        {travelMark("var(--text-secondary)")}
+        {ideaMark}
         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
         <Faces people={faces} tight={tightFaces} newcomers={newcomers} />

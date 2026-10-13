@@ -4,8 +4,6 @@ import PhotoPlaceholder from "../core/PhotoPlaceholder";
 import HeartButton from "../core/HeartButton";
 import { usePinHeart } from "../../state/PlannerContext";
 import { usePinPhoto } from "../photos/usePinPhoto";
-import PinMark from "../core/PinMark";
-import { hasSpot } from "../../lib/pinSpot";
 
 // The two photo heights the masonry rhythm alternates between (handoff
 // README screen 2). Exported so anything elsewhere that wants to preview
@@ -26,20 +24,17 @@ export const BOARD_PHOTO_HEIGHT_SECONDARY = 150;
 // sample cards on the empty board (EmptyBoard.jsx), which aren't real pins
 // and so can't be hearted.
 // `highlighted` outlines the card in plum: the pin that was just added
-// (pages/PinBoard.jsx). A badge on the photo's top corner says whether it
-// has an exact spot on the map: a solid pin, "Pinned", in the pin colour,
-// or a hollow one, "No spot", for an idea that only knows its region
-// (components/core/PinMark.jsx). Not on the empty board's samples.
+// (pages/PinBoard.jsx). `locationLabel` says where it is on the Map tab
+// ("On the map" or "Shown in Cozumel"), teal for an exact spot.
 // `pass` is a ticket that gets people into this place (a 5-day ticket on a
-// Universal park — components/expenses/CostSheet.jsx): a teal badge on the
-// photo's bottom corner says so, and when it covers everyone the price
-// reads "With ticket" rather than a price nobody pays.
-export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false, pass = null, passCoversAll = false }) {
+// Universal park — components/expenses/CostSheet.jsx): a teal badge says
+// so, and when it covers everyone the price reads "With ticket" rather
+// than a price nobody pays.
+export default function PinCard({ pin, column, contributorInitial, onOpen, example = false, highlighted = false, locationLabel = null, pass = null, passCoversAll = false }) {
   const heart = usePinHeart(pin);
   const photo = usePinPhoto(pin);
   const photoHeight = column === 0 ? BOARD_PHOTO_HEIGHT_PRIMARY : BOARD_PHOTO_HEIGHT_SECONDARY;
   const dotColor = column === 0 ? "var(--accent)" : "var(--geo)";
-  const spotted = hasSpot(pin);
   return (
     <div
       className="tap"
@@ -54,35 +49,14 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
       }}
     >
       <PhotoPlaceholder height={photoHeight} label="photo" src={photo.src} credit={photo.credit} referrerPolicy={photo.referrerPolicy} onError={photo.onError} alt={pin.title}>
-        {example ? null : (
-          <div
-            style={{
-              position: "absolute",
-              top: 8,
-              left: 8,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "3px 8px 3px 6px",
-              borderRadius: "var(--radius-pill)",
-              background: spotted ? "var(--pin)" : "rgba(255,255,255,.94)",
-              color: spotted ? "#fff" : "var(--text-secondary)",
-              font: "600 9.5px var(--font-sans)",
-              boxShadow: "var(--shadow-raised)",
-            }}
-          >
-            <PinMark spotted={spotted} size={8} color="#fff" dot="var(--pin)" />
-            {spotted ? "Pinned" : "No spot"}
-          </div>
-        )}
         {pass ? (
           <div
             title={`Covered by ${pass.title}`}
             style={{
               position: "absolute",
-              bottom: 8,
+              top: 8,
               left: 8,
-              maxWidth: "calc(100% - 16px)",
+              maxWidth: "calc(100% - 64px)",
               display: "inline-flex",
               alignItems: "center",
               gap: 4,
@@ -147,6 +121,11 @@ export default function PinCard({ pin, column, contributorInitial, onOpen, examp
             {contributorInitial}
           </span>
         </div>
+        {locationLabel ? (
+          <div className="mono-data-sm" style={{ marginTop: 6, fontSize: 8.5, letterSpacing: ".06em", textTransform: "uppercase", color: pin.lat != null ? "var(--geo)" : "var(--text-secondary)" }}>
+            {locationLabel}
+          </div>
+        ) : null}
       </div>
     </div>
   );

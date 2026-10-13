@@ -10,7 +10,6 @@ import { fmtMin } from "../data/derive";
 import { getTripDays, tripDayLabel } from "../data/trip";
 import { clockLabel } from "../lib/planTime";
 import PinMark from "../components/core/PinMark";
-import { hasSpot } from "../lib/pinSpot";
 import DayCommentsPreview from "../components/comments/DayCommentsPreview";
 import DayCommentsSheet from "../components/comments/DayCommentsSheet";
 import { useDayComments } from "../components/comments/useDayComments";
@@ -72,11 +71,10 @@ export default function FinalItinerary() {
             : "just you"
           : namesOf(people);
         p.items.forEach((item) => {
-          const pin = item.pinId != null ? pins[item.pinId] : null;
           stops.push({
-            // Whether the stop is an idea with an exact spot on the map
-            // (components/core/PinMark.jsx); null for a ride or an event.
-            spotted: pin ? hasSpot(pin) : null,
+            // An idea from the board gets the pin (components/core/
+            // PinMark.jsx); a ride or a custom event doesn't.
+            idea: item.pinId != null && pins[item.pinId] != null,
             withLabel,
             time: clockLabel(item.startMinuteOfDay ?? p.startDt.minuteOfDay),
             sortKey: item.startMinuteOfDay ?? p.startDt.minuteOfDay,
@@ -234,7 +232,7 @@ function DayCard({ label, stops, elsewhere = [], contributors, comments = null }
             <div className="mono-data-sm" style={{ width: 44, flex: "none", color: "var(--text-muted)", paddingTop: 2 }}>{s.time}</div>
             <div style={{ flex: 1, borderLeft: `2px solid ${s.notable ? "var(--stone-250)" : "var(--geo)"}`, paddingLeft: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, font: "600 13px var(--font-sans)", color: "var(--text-primary)" }}>
-                {s.spotted != null ? <PinMark spotted={s.spotted} size={9} title={s.spotted ? "On the map" : "No map spot"} /> : null}
+                {s.idea ? <PinMark size={9} /> : null}
                 {s.title}
               </div>
               <div style={{ font: "400 11px var(--font-sans)", color: "var(--text-secondary)", marginTop: 1 }}>{s.detail}{s.notable ? " · unconfirmed" : ""}</div>
