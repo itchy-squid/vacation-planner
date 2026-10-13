@@ -3,6 +3,7 @@ import { faAnglesDown, faAnglesUp, faLock } from "@fortawesome/free-solid-svg-ic
 import { clockLabel } from "../../lib/planTime";
 import { isTravelItem } from "../../lib/travel";
 import ModeIcon from "../trip/ModeIcon";
+import PinMark from "../core/PinMark";
 
 // Renders one Plan absolutely positioned on the DaySchedule calendar grid
 // — replaces TimeBlock.jsx, whose heights were a duration heuristic
@@ -85,7 +86,10 @@ function Faces({ people, tight = false, newcomers = false }) {
   );
 }
 
-export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false, newcomers = false }) {
+// `spot` says whether the plan's ideas have an exact spot on the map
+// (lib/pinSpot.js planSpot): "spot" draws the pin in its own
+// colour, "none" the hollow pin, null (a ride, a custom event) nothing.
+export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, continuesAfter = false, faces = null, tightFaces = false, newcomers = false, spot = null }) {
   const title = plan.items.map((i) => i.title).join(" + ") || plan.label || "Untitled";
   const startLabel = plan.startDt ? clockLabel(plan.startDt.minuteOfDay) : "";
   const endLabel = plan.endDt ? clockLabel(plan.endDt.minuteOfDay) : "";
@@ -95,6 +99,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
   const travel = plan.items.length > 0 && plan.items.every(isTravelItem);
   const travelMark = (color) =>
     travel ? <ModeIcon mode={plan.items[0].mode} style={{ width: 10, height: 10, flexShrink: 0, color }} /> : null;
+  const spotMark = spot ? <PinMark spotted={spot === "spot"} size={9} title={spot === "spot" ? "On the map" : "No map spot"} /> : null;
 
   const base = {
     position: "absolute",
@@ -134,6 +139,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
         <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: "var(--accent)", overflow: "hidden" }}>
           {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--accent)" />}
           {travelMark("var(--accent)")}
+          {spotMark}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--accent)" />}
           <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
@@ -180,6 +186,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
               Same icon as the lock toggle in PlanDetailsSheet.jsx. */}
           <FontAwesomeIcon icon={faLock} style={{ width: 9, height: 9, flexShrink: 0 }} />
           {travelMark("var(--geo)")}
+          {spotMark}
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
           <Faces people={faces} tight={tightFaces} newcomers={newcomers} />
@@ -211,6 +218,7 @@ export default function PlanBlock({ plan, rect, onTap, continuesBefore = false, 
       <div style={{ display: "flex", alignItems: "center", gap: 4, font: "600 11.5px var(--font-sans)", color: isPencilled ? "var(--text-secondary)" : "var(--text-primary)", overflow: "hidden" }}>
         {continuesBefore && <ContinuationMark icon={faAnglesUp} color="var(--text-secondary)" />}
         {travelMark("var(--geo)")}
+        {spotMark}
         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
         {continuesAfter && <ContinuationMark icon={faAnglesDown} color="var(--text-secondary)" />}
         <Faces people={faces} tight={tightFaces} newcomers={newcomers} />

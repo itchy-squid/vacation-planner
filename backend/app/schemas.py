@@ -1104,6 +1104,12 @@ class CommentCreate(BaseModel):
     body: str
     pin_id: int | None = None
     plan_id: int | None = None
+    # A day of the trip (1 is the first): a comment on the whole day.
+    day: int | None = None
+
+
+class CommentUpdate(BaseModel):
+    body: str
 
 
 class CommentOut(BaseModel):
@@ -1113,4 +1119,6 @@ class CommentOut(BaseModel):
     contributor_id: int
     pin_id: int | None
     plan_id: int | None
+    day: int | None = None
     created_at: datetime
+    edited_at: datetime | None = None

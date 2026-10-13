@@ -82,6 +82,7 @@ class Trip(Base):
     )
     regions: Mapped[list["TripRegion"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
     day_places: Mapped[list["TripDayPlace"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
+    day_comments: Mapped[list["Comment"]] = relationship(back_populates="trip", cascade="all, delete-orphan")
 
 
 class Contributor(Base):
@@ -714,13 +715,25 @@ class Comment(Base):
     """Attributed to a person, per design_system readme ("Group software
     works when you can see who said what"). Threading is not designed yet
     (handoff README "Not yet designed") — comments are a flat list.
-    Attaches to either a pin or a plan, via pin_id / plan_id."""
+    Attaches to a pin, a plan, or a day of the trip: pin_id, plan_id, or
+    trip_id + day.
+
+    A day comment is on the whole day (the Plan tab's day line, the
+    Itinerary), stored by day of the trip like TripDayPlace, so it moves
+    with the trip's dates (app/tripdays.py). `edited_at` is set when its
+    author changes it."""
 
     __tablename__ = "comments"
+    __table_args__ = (CheckConstraint("(day IS NULL) = (trip_id IS NULL)", name="ck_comment_day_on_trip"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pin_id: Mapped[int | None] = mapped_column(ForeignKey("pins.id", ondelete="CASCADE"), nullable=True)
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"), nullable=True)
+    trip_id: Mapped[int | None] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), nullable=True, index=True)
+    day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     contributor_id: Mapped[int] = mapped_column(ForeignKey("contributors.id", ondelete="CASCADE"))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    trip: Mapped[Trip | None] = relationship(back_populates="day_comments")
