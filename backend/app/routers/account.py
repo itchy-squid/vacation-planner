@@ -94,7 +94,7 @@ def _delete_trip(db: Session, trip_id: int) -> None:
 
     statements = [
         delete(Vote).where(Vote.contest_id.in_(contest_ids)),
-        delete(Comment).where(or_(Comment.pin_id.in_(pin_ids), Comment.plan_id.in_(plan_ids))),
+        delete(Comment).where(or_(Comment.pin_id.in_(pin_ids), Comment.plan_id.in_(plan_ids), Comment.trip_id == trip_id)),
         delete(PlanItem).where(PlanItem.plan_id.in_(plan_ids)),
         delete(PinHeart).where(PinHeart.pin_id.in_(pin_ids)),
         delete(AvailabilityOverride).where(AvailabilityOverride.pin_id.in_(pin_ids)),

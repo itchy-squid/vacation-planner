@@ -172,6 +172,21 @@ Engineering additions, not design-reviewed screens:
   API answers 409 `move_required`). Whatever ends up outside the trip's
   days is kept, and the Plan tab says so and can clear it. Design:
   `Claude outputs/flexible-dates-mockups.html`.
+- **Comments on a day** (`Comment.trip_id` + `Comment.day`;
+  `backend/app/routers/comments.py`, `frontend/src/components/comments/`)
+  — anyone who can comment (companions and up) can comment on a whole day
+  of the trip. A chip on the Plan tab's places line counts them and opens
+  the day's comments, the day strip marks days that have any, and the
+  Itinerary shows the latest two under each day. Only a comment's author
+  can edit or delete it. Stored by day of the trip, so they move with the
+  dates like places do. Loaded when the Plan tab or Itinerary opens
+  (`useDayComments`), not kept in PlannerContext.
+- **Map pin mark** (`frontend/src/components/core/PinMark.jsx`) — every
+  idea card says whether it has an exact spot: a solid pin, "Pinned", or a
+  hollow crossed-out one, "No spot". The same mark is on calendar blocks
+  and Itinerary stops. The pin has a colour of its own, `--pin` (blue),
+  used for nothing else, so it stands out on the teal calendar. Design:
+  B1 in `Claude outputs/day-notes-and-idea-types-mockups.html`.
 
 ## Repo layout
 
